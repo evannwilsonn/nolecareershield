@@ -10,6 +10,8 @@ stand, what was decided and why, and what's next.
   published as the Claude artifact "NoleCareerShield Demo (Copy)"). Rebuild after any site change. Both embed the
   footage (about 7 MB), so they are not kept in git. The demo runs the real
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
+  The demo also has easy apply (Garnet's Social Media Intern takes applications) and the network (five sample students,
+  one incoming request for Jordan), mirrored from `easyapply.py` and `network.py`; change both sides together.
 - **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
   commit; `tests/test_installer.py` fails if it's out of date.
 - **Tests:** `python -m pytest -q` (143 passing at handoff).
@@ -29,6 +31,23 @@ stand, what was decided and why, and what's next.
 - **Employers:** own entrance at `/employers` with separate log-in and sign-up. Reviewer approval required. Detailed company
   pages with a trust score (0-100, **higher is safer**). Hiring tools per listing: ranked student matches, one-click
   invite, candidate tracker with stages and private notes, views / Apply clicks / messages.
+- **Easy apply (`easyapply.py`):** an employer ticks "Collect applications on NoleCareerShield" on the post form and writes up
+  to 5 questions (short / long / yes-no, optional or required). Questions can't ask for SSN, bank or card details,
+  passwords or ID numbers (regex in `easyapply._BANNED`), and the question text is added to what the scam scanner reads.
+  Students get a form filled from their profile (`/job/{id}/easy`), see what the employer will get before sending (name,
+  major, graduation term, links, answers, note, resume only if ticked, never email), and can withdraw
+  (`/applications`). The application lands in the employer's candidate tracker as **Applied**, with the answers in a
+  collapsible block. Applying opens that student's profile to that employer only and allows them to message (even if the
+  student is hidden from employers). Only approved employers can take easy-apply applications. 40 applications a day per
+  student. Tables: `applications` (+ `jobs.easy_apply`, `jobs.questions`).
+- **Network (`network.py`):** students connect with students (request with optional 200-char note, accept / decline,
+  remove; a declined request can't be re-sent; 50 pending max; the note goes through the msgcheck scam scan and is not
+  sent if the band is block or review). Connections show as counts and mutuals on profiles and power "People you may
+  know" (same major +3, class year +2, shared skills up to +3, mutual connections +2 each). **There is no student to
+  student messaging** (a deliberate call: no new inbox for strangers). Students can switch requests and discovery off
+  (`allow_connections`, setup step 3). Students also follow approved employers; the jobs page has a "Companies I follow"
+  filter; employers see a follower count, never who. Tables: `connections`, `follows`. Nav: Network (badge of incoming
+  requests) and Applications for students.
 - **Visitors:** listings are private. The home page shows a teaser (title, company, category, counts) and every job link
   goes to sign-in and back. The scam check is public with two tabs, **A job listing** (default) and **A message**.
   Visitors get the verdict and up to three reasons, 10 checks a day; FSU students and approved employers get the full
@@ -101,6 +120,11 @@ stand, what was decided and why, and what's next.
 - **Trust score 100 = good; listing number is labelled "scam risk":** two opposite scales must never share a label.
 - **Employer view counts are totals only:** employers never see which students viewed or clicked Apply. Students appear in
   a tracker only when they message, are invited, or are saved from matches.
+- **Easy apply shares only what the student sees on the form,** and only with the employer they apply to; withdrawing
+  deletes the answers. Nothing changes for students who keep using external Apply links.
+- **Connections without messages:** the site's safety pitch is that strangers can't reach students freely, so connecting
+  is a mutual link plus counts, not an inbox. Add student messaging only with the same scan-and-report rules as employer
+  messaging.
 - **"Let approved employers find me" is checked by default at setup** (site and demo), and students can uncheck it.
   Without it the employer side has almost no students to match. **Revisit if FSU buys or partners on it:** a university
   will likely want students to opt in, so switch the default to unchecked then.
@@ -115,5 +139,6 @@ stand, what was decided and why, and what's next.
    `https://<site>/sso/callback`, then set `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` on Render.
 2. Decide whether students keep the three privacy toggles (visible to employers, share resume, allow messages).
 3. Optional: `ANTHROPIC_API_KEY` on Render turns on AI for the assistant, resume tools and the scam check's second opinion.
-4. Ideas raised but not built: a "usually replies within a day" badge; applicant-fraud flags for employers (fake or
+4. Ideas raised but not built: student-to-student messages, employer "requests to connect", a followers-only feed,
+   email digests for new listings from followed companies, a "usually replies within a day" badge; applicant-fraud flags for employers (fake or
    duplicate student accounts).
