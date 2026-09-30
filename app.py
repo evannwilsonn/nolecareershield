@@ -333,10 +333,7 @@ def _score_pill(j: dict) -> str:
     """The reviewer's verdict pill. The scam score only counts scam rules; a listing flagged by the separate
     aggregator/lead-gen check says so instead of showing "Score 0 · flagged"."""
     lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
-    if lead_gen and int(j["score"]) < 15:
-        text = "Aggregator · flagged"
-    else:
-        text = f"Scam risk {ui.shown_score(j['score'])} · {j['scam_status']}" + (" · aggregator" if lead_gen else "")
+    text = f"Scam risk {ui.shown_score(j['score'], lead_gen)} · {j['scam_status']}"
     return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
 
 

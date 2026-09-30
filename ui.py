@@ -712,13 +712,13 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 @media (hover:none){.keys{display:none}}
 /* reviewer gauge: 0-100 in four zones (0-25 green, 26-50 yellow, 51-75 orange, 76-100 red), solid colours; the marker
    sits at the score (ui.risk_position) */
-.risk{--g:#3f9e6a;--y:#c99a06;--o:#d9680f;--r:#b8281a;
+.risk{--g:#5f9a7b;--y:#d3b04f;--o:#d98e57;--r:#c1554b;
   display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11.5px;font-weight:600;color:var(--muted)}
 .risk .end{font-size:10.5px;color:var(--faint);font-weight:500;font-variant-numeric:tabular-nums}
-.risk .gauge{position:relative;flex:1;max-width:360px;height:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin:0 8px}
-.risk .gauge i{border-radius:999px}
+.risk .gauge{position:relative;flex:1;max-width:360px;height:6px;display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:0 8px}
+.risk .gauge i{border-radius:2px}.risk .gauge i:first-child{border-radius:999px 2px 2px 999px}.risk .gauge i:last-child{border-radius:2px 999px 999px 2px}
 .risk .gauge .z0{background:var(--g)}.risk .gauge .z1{background:var(--y)}.risk .gauge .z2{background:var(--o)}.risk .gauge .z3{background:var(--r)}
-.risk .gauge b{position:absolute;top:50%;left:var(--pos);width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--surface);box-shadow:0 0 0 3px var(--mk),0 2px 6px rgba(0,0,0,.25)}
+.risk .gauge b{position:absolute;top:50%;left:var(--pos);width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:var(--surface);border:3px solid var(--mk);box-shadow:0 1px 4px rgba(20,20,19,.28)}
 .risk.z0{--mk:var(--g)}.risk.z1{--mk:var(--y)}.risk.z2{--mk:var(--o)}.risk.z3{--mk:var(--r)}
 .risk .rl{color:color-mix(in oklab,var(--mk) 80%,var(--ink));margin-left:4px;font-family:var(--display);font-weight:750;font-stretch:80%;font-size:15px;font-variant-numeric:tabular-nums;min-width:3ch}
 .risk.in .gauge b{transition:left 1s var(--ease)}
@@ -1163,10 +1163,9 @@ def risk_position(score: int, status: str = "", aggregator: bool = False) -> tup
 
 def risk_meter(score: int, status: str, aggregator: bool = False) -> str:
     zone, pos, frac = risk_position(score, status, aggregator)
-    agg = aggregator and int(score) < 15
     cells = "".join(f'<i class="z{i}"></i>' for i in range(4))
     return (f'<div class="risk z{zone}" style="--pos:{pos}%"><span class="end">0</span><span class="gauge" role="img" '
-            f'aria-label="Scam risk {int(pos)} of 100{", aggregator" if agg else ""}">{cells}<b></b></span><span class="end">100</span>'
+            f'aria-label="Scam risk {int(pos)} of 100">{cells}<b></b></span><span class="end">100</span>'
             f'<span class="rl">{int(pos)}</span></div>')
 
 

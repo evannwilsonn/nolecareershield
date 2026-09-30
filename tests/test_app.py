@@ -842,9 +842,9 @@ def test_confirming_needs_the_password(client):
 def test_reviewer_pill_names_aggregators_instead_of_score_zero(client):
     import json as _json
     pill = client.appmod._score_pill
-    assert ">Aggregator · flagged<" in pill({"score": 0, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
+    assert ">Scam risk 60 · flagged<" in pill({"score": 0, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
     assert ">Scam risk 96 · held<" in pill({"score": 100, "scam_status": "held", "findings_json": "[]"})
-    assert ">Scam risk 40 · flagged · aggregator<" in pill({"score": 40, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
+    assert ">Scam risk 40 · flagged<" in pill({"score": 40, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
 
 
 

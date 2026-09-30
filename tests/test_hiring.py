@@ -133,5 +133,5 @@ def test_risk_gauge_follows_the_score():
     zone, pos, _ = ui.risk_position(0, "flagged", aggregator=True)
     assert zone == 2 and pos == 60                                                       # aggregators sit at 60
     html = ui.risk_meter(0, "flagged", aggregator=True)
-    assert "aggregator" in html and "Scam risk 60 of 100" in html and '<span class="rl">60</span>' in html
+    assert "Scam risk 60 of 100" in html and '<span class="rl">60</span>' in html
     assert '<span class="rl">93</span>' in ui.risk_meter(93, "held")

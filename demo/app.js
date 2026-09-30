@@ -218,8 +218,8 @@ function riskPosition(score, status, agg) {
   const sc = shownScore(score, agg), zone = RISK_BANDS.findIndex(([, hi]) => sc <= hi), [lo, hi] = RISK_BANDS[zone];
   return [zone, sc, Math.round((sc - lo) / (hi - lo) * 100) / 100];
 }
-const riskMeter = (score, status, agg) => { const [zone, pos] = riskPosition(score, status, agg), isAgg = agg && score < 15;
-  return `<div class="risk z${zone}" style="--pos:${pos}%"><span class="end">0</span><span class="gauge" role="img" aria-label="Scam risk ${pos} of 100${isAgg ? ", aggregator" : ""}">${[0, 1, 2, 3].map(i => `<i class="z${i}"></i>`).join("")}<b></b></span><span class="end">100</span><span class="rl">${pos}</span></div>`; };
+const riskMeter = (score, status, agg) => { const [zone, pos] = riskPosition(score, status, agg);
+  return `<div class="risk z${zone}" style="--pos:${pos}%"><span class="end">0</span><span class="gauge" role="img" aria-label="Scam risk ${pos} of 100">${[0, 1, 2, 3].map(i => `<i class="z${i}"></i>`).join("")}<b></b></span><span class="end">100</span><span class="rl">${pos}</span></div>`; };
 const pageHead = (t, lede, num) => `<div class="page-head">${num ? `<div class="num">${esc(num)}</div>` : ""}<h1>${esc(t)}</h1>${lede ? `<p>${lede}</p>` : ""}</div>`;
 const takeFlash = () => { const f = S.flash; S.flash = null; return f ? banner(f.kind, f.text, f.raw) : ""; };
 const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
@@ -344,7 +344,7 @@ function netRemove(other, next) {   // removes a connection, or withdraws a requ
 // The scam score only counts scam rules; a listing flagged by the separate aggregator check says so (same as app._score_pill).
 function scorePill(j) {
   const lg = j.findings.some(f => f.rule_id === "lead_gen");
-  return lg && j.score < 15 ? "Aggregator · flagged" : `Scam risk ${shownScore(j.score)} · ${j.scam_status}` + (lg ? " · aggregator" : "");
+  return `Scam risk ${shownScore(j.score, lg)} · ${j.scam_status}`;
 }
 
 // ---------------- job cards ----------------
