@@ -43,7 +43,7 @@ stand, what was decided and why, and what's next.
   - **Student home:** a camera move along a brick walk, through a gothic arch under live oaks, into a sunlit quad.
     It is pinned and scrubbed by scroll (75 frames in `static/media/arch-*.webp`, drawn on a canvas by
     `static/fx.js`), with three captions that cross-fade: "Student jobs. Checked for scams." then "Scanned for scam
-    signals." then "Then approved by a person." Then a photo chapter ("Not every offer is an offer."), the
+    signals." then "Then approved by a person." Then a photo chapter ("Not every offer is what it seems."), the
     listing scanner, and a second photo chapter before the listings.
   - **Employer page:** a full-bleed office photo as the hero, three "what you get" tiles, the how-it-works bento, and a
     career-fair photo chapter.
