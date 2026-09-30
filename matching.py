@@ -270,11 +270,14 @@ def rank_jobs(jobs: list[dict], profile: dict | None = None, query: str = "", li
                     score += 10; hit_terms.append(q["work_type"])
                 elif strict_query:
                     continue
+            wrong_kind = False
             for kind in q["kinds"]:
                 if any(w in low for w in KIND_WORDS[kind]):
                     score += 8; hit_terms.append(kind)
                 elif strict_query and kind == "internship":
-                    continue
+                    wrong_kind = True            # asked for internships; this isn't one
+            if wrong_kind:
+                continue
             if strict_query and (q["keywords"] or q["skills"] or q["category"]) and not hit_terms:
                 continue
             if hit_terms:
