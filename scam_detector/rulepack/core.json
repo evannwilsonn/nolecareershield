@@ -1,5 +1,5 @@
 {
- "version": "2026.09.29.2",
+ "version": "2026.09.30.1",
  "rules": [
   {
    "id": "advance_fee",
@@ -536,7 +536,9 @@
     "\\bdrop\\s+your\\s+(?:phone|cell|mobile)\\s+number\\b",
     "\\b(?:send|provide|reply\\s+with)\\b[^.\\n]{0,40}\\bgmail\\b"
    ],
-   "guards": [],
+   "guards": [
+    "disclaimer"
+   ],
    "min_matches": 1,
    "bonus": 3,
    "added": "2026-09-30",

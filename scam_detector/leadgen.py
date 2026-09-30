@@ -44,7 +44,7 @@ URL_POINTS = {
 TEXT_PATTERNS = [
     (re.compile(r"\b(?:we are|is|are)\s+not\s+the\s+employer(?:\s+of\s+record)?\b|\baggregat(?:or|ed)\b|\bcross-?posted\b", re.I),
      3, "The listing describes itself as an aggregator"),
-    (re.compile(r"\ba\s+(?:remote\s+|growing\s+|leading\s+)?(?:company|firm|organization|business)\s+(?:is\s+)?(?:seeking|looking|hiring)\b|\bour\s+client\b|\b(?:confidential|undisclosed)\s+(?:employer|company|client)\b", re.I),
+    (re.compile(r"\ba\s+(?:remote\s+|growing\s+|leading\s+)?(?:company|firm|organization|business)\s+(?:is\s+)?(?:seeking|looking|hiring)\b|\bour\s+clients?\b|\b(?:confidential|undisclosed)\s+(?:employer|company|client)\b", re.I),
      2, "The employer is described but not named"),
     (re.compile(r"\bregardless\s+of\s+(?:your\s+)?experience\b", re.I),
      1, "Generic 'regardless of experience' boilerplate"),
@@ -61,6 +61,15 @@ TEXT_PATTERNS = [
      2, "Asks you to create an account on a third-party site"),
     (re.compile(r"\bljbffr\b", re.I),
      3, "Carries a scraped job ID from a reposting network"),
+    # Added from the Oct 2026 job-board batch (10 listings each from LinkedIn, Indeed, ZipRecruiter, Glassdoor).
+    (re.compile(r"\b(?:recruiting|hiring|sourcing\s+candidates)\s+(?:for|on\s+behalf\s+of)\s+(?:one\s+of\s+)?(?:our|a|an)\s+clients?\b|\babout\s+our\s+client\s*:", re.I),
+     6, "A staffing firm or reposter hiring for a client it never names"),
+    (re.compile(r"\b(?:income|performance)[- ]based\s+(?:income|earnings?|earning\s+potential)\b|\bincome[- ]earning\s+potential\b", re.I),
+     4, "Pay is 'earning potential' instead of a wage"),
+    (re.compile(r"\bbuild\s+(?:something\s+of\s+your\s+own|an?\s+income\s+from\s+home|your\s+own\s+business)\b|\bbe\s+your\s+own\s+boss\b", re.I),
+     2, "Pitched as building your own business, not a job"),
+    (re.compile(r"\bbegin\s+a\s+long[- ]lasting\s+(?:career|profession)\s+with\s+(?:limitless|unlimited)\s+opportunit", re.I),
+     3, "Funnel boilerplate: 'begin a long-lasting career with limitless opportunity'"),
 ]
 
 FLAG_THRESHOLD = 6

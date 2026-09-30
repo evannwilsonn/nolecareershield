@@ -62,7 +62,9 @@
   function postHire(text, m) {
     return POST_HIRE.test(text.slice(Math.max(0, m.index - 120), m.index + m[0].length + 120));
   }
-  const GUARDS = {negation: negated, post_hire: postHire};
+  const DISCLAIMER = /\b(?:at\s+no\s+time|will\s+never|would\s+never|we\s+never|never\s+(?:ask|request|contact|move)|will\s+not\s+ever|won't\s+ever)\b/i;
+  const disclaimer = (text, m) => DISCLAIMER.test(sentenceBefore(text, m.index));
+  const GUARDS = {negation: negated, post_hire: postHire, disclaimer};
 
   // ---------------- rulepack ----------------
   const RULES = RULEPACK.rules.filter(r => (r.status || "active") === "active").map(r => ({
@@ -199,7 +201,7 @@
     url_domain_mismatch: [3, "The apply link doesn't lead to the named employer"]};
   const LG_TEXT = [
     [/\b(?:we are|is|are)\s+not\s+the\s+employer(?:\s+of\s+record)?\b|\baggregat(?:or|ed)\b|\bcross-?posted\b/i, 3, "The listing describes itself as an aggregator"],
-    [/\ba\s+(?:remote\s+|growing\s+|leading\s+)?(?:company|firm|organization|business)\s+(?:is\s+)?(?:seeking|looking|hiring)\b|\bour\s+client\b|\b(?:confidential|undisclosed)\s+(?:employer|company|client)\b/i, 2, "The employer is described but not named"],
+    [/\ba\s+(?:remote\s+|growing\s+|leading\s+)?(?:company|firm|organization|business)\s+(?:is\s+)?(?:seeking|looking|hiring)\b|\bour\s+clients?\b|\b(?:confidential|undisclosed)\s+(?:employer|company|client)\b/i, 2, "The employer is described but not named"],
     [/\bregardless\s+of\s+(?:your\s+)?experience\b/i, 1, "Generic 'regardless of experience' boilerplate"],
     [/\btaking\s+a\s+(?:minute|moment)\s+to\s+(?:fill\s+out|complete|finish)\s+our\s+(?:online\s+)?application\b/i, 4, "Boilerplate 'start a career, fill out our application' pitch with no real role"],
     [/\b(?:research|market\s+research|focus\s+group|survey)\s+panel(?:ist)?s?\b|\bpaid\s+(?:focus\s+groups?|surveys?|research\s+studies)\b|\btake\s+(?:paid\s+)?surveys?\b|\bfocus\s+group\s+(?:participants?|studies)\b/i, 4, "A survey or focus-group panel signup dressed up as a job"],
@@ -207,6 +209,10 @@
     [/\bnot\s+a\s+salaried\s+job\b|\b(?:independent\s+)?(?:business|income)\s+opportunity\b|\bearnings\s+depend\s+on\s+your\b/i, 4, "An income or referral 'opportunity', not a job with an employer"],
     [/\bcreate\s+(?:your\s+)?(?:a\s+)?free\s+account\b|\bsign\s+up\s+(?:for\s+)?free\b/i, 2, "Asks you to create an account on a third-party site"],
     [/\bljbffr\b/i, 3, "Carries a scraped job ID from a reposting network"],
+    [/\b(?:recruiting|hiring|sourcing\s+candidates)\s+(?:for|on\s+behalf\s+of)\s+(?:one\s+of\s+)?(?:our|a|an)\s+clients?\b|\babout\s+our\s+client\s*:/i, 6, "A staffing firm or reposter hiring for a client it never names"],
+    [/\b(?:income|performance)[- ]based\s+(?:income|earnings?|earning\s+potential)\b|\bincome[- ]earning\s+potential\b/i, 4, "Pay is 'earning potential' instead of a wage"],
+    [/\bbuild\s+(?:something\s+of\s+your\s+own|an?\s+income\s+from\s+home|your\s+own\s+business)\b|\bbe\s+your\s+own\s+boss\b/i, 2, "Pitched as building your own business, not a job"],
+    [/\bbegin\s+a\s+long[- ]lasting\s+(?:career|profession)\s+with\s+(?:limitless|unlimited)\s+opportunit/i, 3, "Funnel boilerplate: 'begin a long-lasting career with limitless opportunity'"],
   ];
   const LG_VERDICT = "This looks like an aggregator or lead-generation listing: the link goes through a middleman, not the employer. It may collect your email and profile. Find the employer's own posting before you apply.";
   function leadGen(text, urlFindings) {
