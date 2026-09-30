@@ -26,6 +26,7 @@ import accounts
 import ai
 import matching
 import network
+import employer_dash
 import employer_page
 import profile_page
 import resume_engine
@@ -507,7 +508,10 @@ def company_page(uid: int, request: Request):
         p = store.employer_profile(conn, uid)
         if not p or (p["status"] != "approved" and user["id"] != uid):
             return web.page('<p class="empty" style="margin:40px 0">That organization isn\'t available.</p>', "Company", active="", status=404)
-        body = '<a class="back" href="/jobs">← Jobs</a>' + employer_page.company_html(conn, p, uid, user)
+        if p["status"] == "approved":
+            employer_dash.record_company_view(conn, uid, user)
+        back = '<a class="back" href="/jobs">← Jobs</a>' if user["role"] == "student" else ""
+        body = back + employer_page.company_html(conn, p, uid, user)
     return web.page(body, p["company"], active="")
 
 
@@ -598,6 +602,8 @@ def delete_account(request: Request, password: str = Form(""), csrf: str = Form(
 # ---------- signed-in home (bento) ----------
 
 def dashboard(user: dict) -> str:
+    if user["role"] == "employer":
+        return employer_dash.dashboard(user)          # the hiring dashboard
     from datetime import datetime
     hour = datetime.now().hour
     hello = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"

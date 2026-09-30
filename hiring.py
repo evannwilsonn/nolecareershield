@@ -213,7 +213,7 @@ def listing(job_id: int, request: Request, tab: str = "matches"):
     rate = f'{round(100 * s["clicks"] / s["views"])}% of viewers' if s["views"] else ""
     stage_bits = " · ".join(f'{n} {STAGE_NAME.get(k, k).lower()}' for k, n in sorted(s["stages"].items(), key=lambda kv: [x[0] for x in STAGES].index(kv[0]) if kv[0] in STAGE_NAME else 99))
     week_note = f"{s['views_week']} this week"
-    view_link = f'<a class="b sm sec" href="/job/{int(j["id"])}">View listing</a>' if j["review_status"] == "approved" else ""
+    view_link = __import__("employer_dash").preview_link(j["id"], "b sm sec") if j["review_status"] == "approved" else ""
     body = (f'<a class="back" href="/hiring">← Your listings</a><div class="row between" style="align-items:flex-start;margin-top:6px">'
             f'<div><h2 class="page" style="margin:0">{esc(j["title"])}</h2><p class="job-co">{esc(j["company"])} · {esc(j["work_type"].title())}'
             f'{" · " + esc(j["location"]) if j["location"] else ""}</p></div><div class="row"><span class="pill {tone}">{esc(label)}</span>{view_link}</div></div>'

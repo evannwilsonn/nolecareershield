@@ -279,6 +279,14 @@ CREATE TABLE IF NOT EXISTS follows (
     PRIMARY KEY (student_id, employer_id)
 );
 CREATE INDEX IF NOT EXISTS idx_follow_emp ON follows (employer_id);
+-- Company page views (employer_dash.py): students only, one row per viewer per day. Employers see totals, never who.
+CREATE TABLE IF NOT EXISTS company_views (
+    employer_id INTEGER NOT NULL,
+    viewer_id INTEGER,
+    day TEXT NOT NULL,
+    UNIQUE (employer_id, viewer_id, day)
+);
+CREATE INDEX IF NOT EXISTS idx_company_views ON company_views (employer_id, day);
 -- Jobs a student bookmarked on the board (jobboard.py). Private to the student; gone with the listing or the account.
 -- In-site copy of every email sent to an account holder (emails.py). Sign-in links are redacted.
 CREATE TABLE IF NOT EXISTS emails (
@@ -375,6 +383,8 @@ def purge(conn) -> None:
     for t in ("job_views", "job_apply_clicks", "candidates", "applications", "saved_jobs"):
         conn.execute(f"DELETE FROM {t} WHERE job_id NOT IN (SELECT id FROM jobs)")
     conn.execute("DELETE FROM job_views WHERE day < ?", (time.strftime("%Y-%m-%d", time.gmtime(now - 180 * 86400)),))
+    conn.execute("DELETE FROM company_views WHERE day < ? OR employer_id NOT IN (SELECT user_id FROM employer_profiles)",
+                 (time.strftime("%Y-%m-%d", time.gmtime(now - 180 * 86400)),))
     # In-site email copies are kept for a year.
     conn.execute("DELETE FROM emails WHERE sent_at < ?", (now - 365 * 86400,))
     # Assistant chats go after 180 days without a new message.
@@ -414,6 +424,8 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM applications WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
     conn.execute("DELETE FROM connections WHERE user_a = ? OR user_b = ?", (user_id, user_id))
     conn.execute("DELETE FROM follows WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
+    conn.execute("DELETE FROM company_views WHERE employer_id = ?", (user_id,))
+    conn.execute("UPDATE company_views SET viewer_id = NULL WHERE viewer_id = ?", (user_id,))   # the employer keeps the total, not the person
     conn.execute("DELETE FROM saved_jobs WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM emails WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_msgs WHERE user_id = ?", (user_id,))

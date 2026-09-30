@@ -255,11 +255,17 @@
       if (el.__drawn) return; el.__drawn = true;
       if (seenIO) seenIO.observe(el); else el.classList.add("in");
     });
+    // Only a number already on screen is zeroed up front (so it doesn't flash); one further down keeps its
+    // real value until it scrolls in, then counts from 0. A number that never comes into view (a tall sticky
+    // column, a printout, a full-page capture) must still read true, never a stuck "0".
+    var vh = window.innerHeight || document.documentElement.clientHeight;
     document.querySelectorAll(COUNT).forEach(function (el) {
       if (el.__counted) return; el.__counted = true;
       var t = el.textContent.trim();
       if (!seenIO || !/^\d{1,5}$/.test(t) || +t === 0) return;
-      el.__text = t; el.__count = +t; el.textContent = "0";
+      el.__text = t; el.__count = +t;
+      var r = el.getBoundingClientRect();
+      if (r.bottom > 0 && r.top < vh && r.width) el.textContent = "0";
       seenIO.observe(el);
     });
   }

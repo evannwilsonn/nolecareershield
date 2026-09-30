@@ -66,7 +66,7 @@ const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [], dismissed: {}, suggs: {},
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, mailN: 0, itemN: 0, applyClicks: new Set(), timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null, mems: [], csPins: {}};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, mailN: 0, itemN: 0, applyClicks: new Set(), timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null, mems: [], csPins: {}, companyViews: []};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -152,6 +152,14 @@ function reset() {
   // Listing stats: students who opened the Garnet Analytics listing and pressed Apply (totals only).
   for (let k = 0; k < 23; k++) recordView(1, 1000 + k);
   for (let k = 0; k < 7; k++) (S.clicks[1] = S.clicks[1] || new Set()).add(1000 + k);
+  // Sample students who opened Garnet's listings, followed it, and looked at its company page (Page stats shows totals only).
+  [m.id, blair.id, casey.id, morgan.id, riley.id].forEach(id => recordView(1, id)); [blair.id, morgan.id].forEach(id => recordView(9, id));
+  // Waiting on Garnet: Morgan quick-applied to the Social Media Intern role and Blair asked about it (the employer home's action queue).
+  S.apps.push({job: 9, student: morgan.id, employer: 4, answers: [{q: "Why this role?", a: "I run the Marketing Club's Instagram and want to learn how an agency measures what works."}, {q: "Are you authorized to work in the US?", a: "Yes"}, {q: "Portfolio link", a: ""}], note: "", share: false, at: t - 5 * 3600e3});
+  addCandidate(9, morgan.id, 4, "applied");
+  const c4 = convo(blair.id, 4, 9); addMsg(c4, blair.id, "Hi Pat! Is the Social Media Intern role open to sophomores? I'd love to apply.", t - 2 * 3600e3);
+  [[m.id, 3], [blair.id, 12], [morgan.id, 40], [riley.id, 75]].forEach(([id, d]) => S.follows.push({student: id, employer: 4, at: t - d * 86400e3}));
+  [[m.id, 1], [blair.id, 1], [blair.id, 4], [casey.id, 6], [morgan.id, 9], [riley.id, 22], [m.id, 45]].forEach(([id, d]) => S.companyViews.push({employer: 4, viewer: id, day: dayOf(t - d * 86400e3)}));
   // A held message only reviewers see.
   const c3 = convo(m.id, 7, 0); addMsg(c3, 7, "Congratulations, you have been pre-selected for a remote payments assistant position. You will receive a check to buy equipment from our approved vendor; deposit it and send the balance by Zelle.", t - 900e3);
 
@@ -374,15 +382,17 @@ function scorePill(j) {
 // ---------------- layout ----------------
 const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Career assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "network", "Network"]]],
   ["Career tools", [["send", "applications", "Applications"], ["file", "resume", "Resume studio"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Profile"]]]];
-const EMPLOYER_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "talent", "Find students"]]],
-  ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Company profile"]]]];
+const EMPLOYER_NAV = [["", [["home", "home", "Home"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "talent", "Find students"]]],
+  ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"]]], ["You", [["user", "profile", "Company profile"]]]];
 function sidebar(active) {
   const n = unread(me().id), reqs = isStudent() ? incomingReqs(me().id).length : 0, mails = myEmails().filter(m => !m.read).length, out = [];
   for (const [grp, items] of (isStudent() ? STUDENT_NAV : EMPLOYER_NAV)) {
     if (grp) out.push(`<div class="grp">${esc(grp)}</div>`);
     for (const [ic, go, label] of items) out.push(`<a href="#" data-go="${go}"${go === active ? ' class="on" aria-current="page"' : ""}>${icon(ic)}<span>${esc(label)}</span>${go === "messages" && n ? `<span class="count" aria-label="${n} unread">${n}</span>` : go === "network" && reqs ? `<span class="count" aria-label="${reqs} connection requests">${reqs}</span>` : go === "emails" && mails ? `<span class="count" aria-label="${mails} unread emails">${mails}</span>` : ""}</a>`);
   }
-  return `<aside class="side"><nav aria-label="Main">${out.join("")}</nav><div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. <a href="#" data-go="scam?kind=message">Check a message</a>.</div></aside>`;
+  const tip = isStudent() ? '<div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. <a href="#" data-go="scam?kind=message">Check a message</a>.</div>'
+    : '<div class="tip"><b>Tip:</b> listings with pay, hours and a named contact get more applicants. <a href="#" data-go="profile">Your company page</a>.</div>';
+  return `<aside class="side"><nav aria-label="Main">${out.join("")}</nav>${tip}</aside>`;
 }
 function nav() {
   $("#inboxBtn").textContent = "Demo inbox" + (S.inbox.length ? ` (${S.inbox.length})` : "");
@@ -424,20 +434,98 @@ ${resumeTile}
 <div class="tile w3"><h3>${icon("user")}Profile</h3><div class="meter"><i style="width:${pct}%"></i></div><p>${pct}% complete${missing.length ? ". Add " + esc(missing[0]) : ""}</p><div class="foot"><a class="b sm sec" href="#" data-go="profile">View profile</a></div></div>
 <div class="tile w6"><h3>${icon("feed")}From the FSU feed</h3>${posts.map(x => `<p style="border-left:2px solid var(--line);padding-left:10px;margin-top:6px">${esc(x.body.slice(0, 120))}${x.body.length > 120 ? "…" : ""}</p>`).join("")}<div class="foot"><a class="b sm sec" href="#" data-go="feed">Open the feed</a></div></div></div>`;
 }
+// ---------------- employer home: the hiring dashboard (twin of employer_dash.py) ----------------
+const ED_APPLICANT = ["applied", "messaged"], ED_ROWS = 8, ED_EXPIRY_DAYS = 7, MAJORS_MIN = 3;
+const ED_STATUS = {draft: ["warn", "Finish your company profile so a reviewer can approve you", "setup?step=1", "Finish profile"],
+  pending: ["", "Your organization is waiting for a reviewer. Messaging and the student directory open once you're approved", "profile", "View profile"],
+  rejected: ["warn", "Your profile wasn't approved. Update it and send it again", "setup?step=1", "Update profile"],
+  suspended: ["warn", "Your account is suspended. Contact us if you think this is a mistake", "about", "Contact"]};
+function profileGap(tips) {   // "a tagline, your LinkedIn page and your perks" from the trust card's "Add ... to your company profile." tip
+  const tip = tips.find(t => t.startsWith("Add ") && t.endsWith(" to your company profile.")); if (!tip) return "";
+  const parts = tip.slice(4, -" to your company profile.".length).split(", ");
+  return parts.length === 1 ? parts[0] : parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+}
+const awaitingReply = uid => S.convos.filter(c => { if (c.employer !== uid || c.blocked_by || c.hidden[uid]) return false;
+  const ms = c.messages.filter(m => m.status === "delivered"); return ms.length && ms[ms.length - 1].from === c.student; }).length;
+function edData(uid) {
+  const p = EP(uid) || {}, now = NOW();
+  const jobs = S.jobs.filter(j => j.employer_id === uid && ["approved", "pending"].includes(j.review_status)).sort((a, b) => (b.review_status === "approved") - (a.review_status === "approved") || b.id - a.id);
+  const cands = S.candidates.filter(c => c.employer === uid), stages = Object.fromEntries(STAGES.map(([k]) => [k, 0]));
+  cands.forEach(c => { if (c.stage in stages) stages[c.stage]++; });
+  const newApps = cands.filter(c => c.stage === "new" && ED_APPLICANT.includes(c.source));
+  const rows = jobs.slice(0, ED_ROWS).map(j => { const s = jobStats(j), apps = cands.filter(c => c.job === j.id && ED_APPLICANT.includes(c.source));
+    const pcts = apps.slice(0, 200).map(c => SP(c.student)).filter(Boolean).map(sp => N.fitScore(j, sp).percent);
+    return {id: j.id, title: j.title, status: j.review_status, views: s.views, clicks: s.clicks, applicants: apps.length, match: pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null, new: apps.filter(c => c.stage === "new").length}; });
+  const expiring = jobs.filter(j => j.review_status === "approved" && j.expires_at).map(j => ({id: j.id, title: j.title, t: typeof j.expires_at === "number" ? (j.expires_at > 1e12 ? j.expires_at : j.expires_at * 1000) : Date.parse(j.expires_at)}))
+    .filter(e => e.t >= now && e.t <= now + ED_EXPIRY_DAYS * 86400e3).map(e => ({id: e.id, title: e.title, days: Math.floor((e.t - now) / 86400e3)}));
+  const jobsOf = new Set(newApps.map(c => c.job));
+  return {company: p.company || "", status: p.status || "draft", status_note: p.status_note || "", new_apps: newApps.length, new_job: jobsOf.size === 1 ? newApps[0].job : null,
+    awaiting: awaitingReply(uid), expiring, gap: profileGap(trustOf(uid).tips), pending: jobs.filter(j => j.review_status === "pending").length, live: jobs.filter(j => j.review_status === "approved").length,
+    stages, rows, more: Math.max(0, jobs.length - ED_ROWS), events: S.events ? S.events.filter(e => e.host === uid && e.at >= now - 3600e3).sort((a, b) => a.at - b.at).slice(0, 3) : null};
+}
+function edQueue(d) {
+  const items = [], inDays = n => n <= 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`;
+  if (ED_STATUS[d.status]) { const [tone, text, g, act] = ED_STATUS[d.status]; items.push([tone, "shield", esc(text + (d.status === "rejected" && d.status_note ? ": " + d.status_note : "") + "."), g, act]); }
+  if (d.new_apps) items.push(["hot", "people", `<b>${esc(plural(d.new_apps, "new applicant"))}</b> to review`, d.new_job ? `hjob?id=${d.new_job}&amp;tab=candidates` : "hiring", "Review"]);
+  if (d.awaiting) items.push(["hot", "chat", `<b>${esc(plural(d.awaiting, "student message"))}</b> waiting for a reply`, "messages", "Reply"]);
+  d.expiring.forEach(e => items.push(["warn", "jobs", `<b>${esc(e.title)}</b> expires ${inDays(e.days)}`, `hjob?id=${e.id}`, "Manage"]));
+  if (d.gap) items.push(["", "user", `Your company profile is missing <b>${esc(d.gap)}</b>`, "setup?step=1", "Add them"]);
+  if (d.pending) items.push(["", "check", `${esc(plural(d.pending, "listing"))} waiting for review. Nothing is published until a person approves it`, "hiring", "See status"]);
+  return items;
+}
 function employerHome() {
   const p = EP(me().id); if (!p || !p.company) { go("setup?step=1"); return null; }
-  const h = new Date().getHours(), hello = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening", n = unread(me().id);
-  const mine = S.jobs.filter(j => j.employer_id === me().id);
-  const tile = {pending: ["goldt", "Your organization is in review", "You can post jobs now. Messaging, the student directory and feed posts open once you're approved.", '<a class="b sm sec" href="#" data-go="admin">Approve it in the reviewer view</a>'],
-    approved: ["", "You're an approved employer", "You can message students, browse the directory and post opportunities to the FSU feed.", '<a class="b sm sec" href="#" data-go="talent">Find students</a>'],
-    rejected: ["tint", "Your profile wasn't approved", p.status_note || "Update your details and send it again.", '<a class="b" href="#" data-go="setup?step=1">Update profile</a>']}[p.status] || ["tint", "Finish your company profile", "", '<a class="b" href="#" data-go="setup?step=1">Finish profile</a>'];
-  const live = mine.filter(j => j.review_status === "approved").length, st = mine.map(jobStats), viewed = st.reduce((a, x) => a + x.views, 0), cands = S.candidates.filter(c => mine.some(j => j.id === c.job)).length;
-  const kpis = kpi(live, `live listing${live !== 1 ? "s" : ""}`, "hiring") + kpi(viewed, `student view${viewed !== 1 ? "s" : ""} of your listings`, "hiring") + kpi(cands, `candidate${cands !== 1 ? "s" : ""} in your tracker`, "hiring") + kpi(n, "unread", "messages", n > 0);
-  return `${helloBand("Employer", `${hello},<br><em>${esc(p.company)}.</em>`, "Post roles for FSU students, answer messages, and share opportunities on the feed.", kpis, "office-960.webp")}
-<div class="bento"><div class="tile w4 ${tile[0]}"><h3>${esc(tile[1])}</h3><p>${esc(tile[2])}</p><div class="foot">${tile[3]}</div></div>
-<div class="tile w2"><h3>${icon("jobs")}Live listings</h3><div class="big">${mine.filter(j => j.review_status === "approved").length}</div><p>${mine.filter(j => j.review_status === "pending").length} waiting for review</p><div class="foot row"><a class="b sm" href="#" data-go="hiring">Matches &amp; stats</a><a class="b sm sec" href="#" data-go="post">Post a job</a></div></div>
-<div class="tile w3"><h3>${icon("people")}Find students</h3><p>Search students who opted in, by skill or major.</p><div class="foot"><a class="b sm sec" href="#" data-go="talent">Open directory</a></div></div>
-<div class="tile w3"><h3>${icon("feed")}FSU feed</h3><p>Share internships, info sessions and advice. Posts must be relevant to FSU students.</p><div class="foot"><a class="b sm sec" href="#" data-go="feed">Open the feed</a></div></div></div>`;
+  const h = new Date().getHours(), hello = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  const date = new Date().toLocaleDateString("en-US", {weekday: "long", month: "long", day: "numeric"});
+  const d = edData(me().id), items = edQueue(d), nHot = items.filter(i => ["hot", "warn"].includes(i[0])).length;
+  const sub = (nHot ? `${plural(nHot, "thing needs", "things need")} you today.` : "You're all caught up.") + ` ${plural(d.live, "live listing")}.`;
+  const head = `<section class="ed-hello"><div class="ed-hi"><div class="eyebrow">Employer · ${esc(date)}</div><h1>${esc(hello)}${d.company ? "," : "."} <em>${esc(d.company)}</em></h1><p>${esc(sub)}</p></div>`
+    + `<nav class="ed-quick" aria-label="Quick actions"><a class="b" href="#" data-go="post">${icon("plus", 16)} Post a job</a><a class="b sec" href="#" data-go="talent">${icon("people", 16)} Find students</a><a class="b sec" href="#" data-go="messages">${icon("chat", 16)} Open messages</a></nav></section>`;
+  const qBody = items.length ? `<ul class="ed-acts">${items.map(([tone, ic, text, g, act]) => `<li class="ed-act ${tone}"><a href="#" data-go="${g}"><span class="ed-ic">${icon(ic, 17)}</span><span class="ed-t">${text}</span><span class="ed-go">${esc(act)} →</span></a></li>`).join("")}</ul>`
+    : `<p class="ed-clear">${icon("check", 18)} Nothing waiting on you. New applicants and messages show up here.</p>`;
+  const q = `<section class="card ed-queue" aria-labelledby="ed-q"><div class="phead"><h2 id="ed-q">Needs your attention</h2>${nHot ? `<span class=ed-badge>${nHot}</span>` : ""}</div>${qBody}</section>`;
+  const total = Object.values(d.stages).reduce((a, b) => a + b, 0);
+  const pipe = `<section class="card ed-pipe" aria-labelledby="ed-p"><div class="phead"><h2 id="ed-p">Candidate pipeline</h2><span class="small faint">${esc(plural(total, "candidate"))}</span></div><div class="pipe" aria-label="Candidates by stage, all listings">${STAGES.map(([k, v]) => `<div class="pstep${d.stages[k] ? " has" : ""}"><span class="n">${d.stages[k]}</span><span class="l">${esc(v)}</span></div>`).join("")}</div><p class="small faint">Across all your listings. Stages and notes are private to your organization.</p></section>`;
+  const tone = {approved: ["ok", "Live"], pending: ["warn", "In review"]};
+  const lst = d.rows.length ? `<section class="card ed-list" aria-labelledby="ed-l"><div class="phead"><h2 id="ed-l">Your listings</h2><a class="small ed-all" href="#" data-go="hiring">Manage all →</a></div><div class="ed-rows">${d.rows.map(r =>
+      `<div class="ed-row"><div class="ed-ti"><a class="ed-name" href="#" data-go="hjob?id=${r.id}">${esc(r.title)}</a><span class="pill ${tone[r.status][0]}">${tone[r.status][1]}</span>${r.new ? `<span class="pill gold">${r.new} new</span>` : ""}</div>`
+      + `<div class="ed-m"><b>${r.views}</b><span>viewed</span></div><div class="ed-m"><b>${r.clicks}</b><span>Apply clicks</span></div><div class="ed-m"><b>${r.applicants}</b><span>applicants</span></div><div class="ed-m"><b>${r.match === null ? "—" : r.match + "%"}</b><span>avg match</span></div>`
+      + `<div class="ed-ac">${r.status === "approved" ? previewLink(r.id, "ed-pv") : ""}</div></div>`).join("")}</div>${d.more ? `<p class="small muted" style="margin-top:10px">${d.more} more on <a href="#" data-go="hiring">Your listings</a>.</p>` : ""}<p class="small faint" style="margin-top:10px">Views and Apply clicks are totals; you never see which students viewed.</p></section>`
+    : `<section class="card ed-list"><div class="phead"><h2>Your listings</h2></div><div class="empty">No listings yet. <a href="#" data-go="post">Post your first job</a>; every one is scam-checked and approved by a person.</div></section>`;
+  const ev = d.events === null ? "" : `<section class="card ed-events"><div class="phead"><h2>Upcoming events</h2><a class="small ed-all" href="#" data-go="events">Events →</a></div>${d.events.length ? `<ul class="ed-ev">${d.events.map(e => `<li><b>${esc(e.title)}</b><span>${esc(new Date(e.at).toLocaleString("en-US", {weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"}))}</span></li>`).join("")}</ul>` : '<p class="small muted">Nothing scheduled. Host an info session or a coffee chat for FSU students.</p>'}</section>`;
+  return head + `<div class="ed-grid">${q}${pipe}${lst}${ev}</div>`;
+}
+const previewLink = (id, cls) => `<a class="${cls || "b sm ghost"}" href="#" data-go="job?id=${id}">Preview as students see it</a>`;
+// ---- the company page's Page stats card, owner only (twin of employer_dash.page_stats) ----
+const roundCount = n => n < 5 ? "under 5" : `about ${5 * Math.round(n / 5)}`;
+function foldMajors(rows, students) {
+  if (students < MAJORS_MIN) return null;
+  const named = rows.filter(r => r[1] >= 2).slice(0, 4), other = students - named.reduce((a, r) => a + r[1], 0);
+  const out = named.map(([m, n]) => [m, roundCount(n), Math.round(100 * n / students)]);
+  if (other > 0) out.push(["Other majors", roundCount(other), Math.round(100 * other / students)]);
+  return out;
+}
+const dayOf = t => new Date(t).toISOString().slice(0, 10);
+function recordCompanyView(eid) {
+  const u = me(); if (!u || u.role !== "student" || u.id === eid) return;
+  const day = dayOf(NOW()); if (!S.companyViews.some(v => v.employer === eid && v.viewer === u.id && v.day === day)) S.companyViews.push({employer: eid, viewer: u.id, day});
+}
+function pageStats(uid) {
+  const now = NOW(), month = dayOf(now - 30 * 86400e3), jobs = S.jobs.filter(j => j.employer_id === uid);
+  const viewers = new Set(), counts = {}; let listingViews = 0, students = 0;
+  jobs.forEach(j => { const vs = S.views[j.id] || new Set(); listingViews += vs.size; vs.forEach(id => viewers.add(id)); });
+  viewers.forEach(id => { const sp = SP(id); if (sp && sp.major) { students++; counts[sp.major] = (counts[sp.major] || 0) + 1; } });
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const cv = S.companyViews.filter(v => v.employer === uid), fol = S.follows.filter(f => f.employer === uid);
+  return {views_30: cv.filter(v => v.day >= month).length, views_all: cv.length, followers: fol.length, followers_30: fol.filter(f => f.at >= now - 30 * 86400e3).length,
+    listing_views: listingViews, majors: foldMajors(rows, students)};
+}
+function pageStatsCard(st) {
+  const grow = st.followers_30 ? `+${st.followers_30} in the last 30 days` : "No new followers in the last 30 days";
+  const cells = `<div class="ps-c"><b>${st.views_30}</b><span>company page views</span><em>last 30 days · ${st.views_all} all time</em></div><div class="ps-c"><b>${st.followers}</b><span>followers</span><em>${esc(grow)}</em></div><div class="ps-c"><b>${st.listing_views}</b><span>listing views</span><em>students who opened a listing</em></div>`;
+  const majors = st.majors === null ? `<p class="small muted">Majors show once at least ${MAJORS_MIN} students have viewed your listings. We only ever show rounded totals, never who.</p>`
+    : `<ul class="ps-maj">${st.majors.map(([m, n, pct]) => `<li><span class="ps-m">${esc(m)}</span><span class="ps-bar" aria-hidden="true"><i style="width:${Math.max(4, pct)}%"></i></span><span class="ps-v">${esc(n)}</span></li>`).join("")}</ul>`;
+  return `<section class="card pcard ps" id="page-stats"><div class="phead"><h2>Page stats</h2><span class="small faint">Only you see this</span></div><div class="ps-grid">${cells}</div><h3 class="ps-h">Majors looking at your listings</h3>${majors}<p class="small faint" style="margin-top:10px">Views count FSU students only, once per student per day. Totals only; you never see which students viewed.</p></section>`;
 }
 function completion(p) {
   const checks = [[!!p.display_name, "your name"], [!!p.major, "your major"], [!!p.grad_term, "your graduation term"], [(p.skills || []).length >= 3, "at least 3 skills"],
@@ -638,6 +726,7 @@ function jbDetail(j, prof, next, record, saved, extra) {   // twin of jobboard.d
 }
 P.jobs = () => {
   if (!me()) { go("start?next=jobs"); return null; }
+  if (isEmployer()) { go("hiring"); return null; }   // employers manage their own listings; the board is for students
   if (S.route.q.job) { go("job?id=" + S.route.q.job); return null; }   // the old two-pane address opens the listing page
   return jbBoard();
 };
@@ -1908,7 +1997,7 @@ function companyHtml(p, uid, notice) {
     + ((p.hires_for || []).length ? sec("Hires for", `<div class="chips">${p.hires_for.map(x => `<span class="pill">${esc(x)}</span>`).join("")}</div>`) : "")
     + ((p.perks || []).length ? sec("Perks for student hires", `<div class="chips">${p.perks.map(x => `<span class="chip">✓ ${esc(x)}</span>`).join("")}</div>`) : "")
     + `<section class="card pcard"><div class="phead"><h2>Open listings</h2><span class="small faint">${jobs.length}</span></div>${jobs.map(j => `<a class="job" href="#" data-go="job?id=${j.id}"><div class="job-title">${esc(j.title)}</div><div class="job-meta"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div></a>`).join("") || '<p class="small muted">No open listings right now.</p>'}</section>`;
-  return (notice || "") + hero + `<div class="pgrid"><aside class="pside">${trustCard(t, owner)}${glance}${contact}</aside><div class="pmain">${main}</div></div>`;
+  return (notice || "") + hero + `<div class="pgrid co"><aside class="pside">${trustCard(t, owner)}${glance}${contact}</aside><div class="pmain">${owner ? pageStatsCard(pageStats(uid)) : ""}${main}</div></div>`;
 }
 
 P.profile = () => {
@@ -2269,7 +2358,7 @@ ${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class=
 <div class="form-field"><label for="nt${c.student}">Private note</label><input id="nt${c.student}" name="note" maxlength="300" value="${esc(c.note)}" placeholder="Only your team sees this"></div><button class="b sm" type="submit">Update</button></form>
 <div class="row" style="margin-top:8px">${msg}<a class="b sm ghost" href="#" data-go="u?id=${c.student}">View profile</a></div></div>`; }).join("")
     : '<div class="empty">No candidates yet. Students appear here when they apply here, when they message you about this listing, when you invite them, or when you save them from the ranked matches.</div>';
-  return `<a class="back" href="#" data-go="hiring">← Your listings</a>${takeFlash()}<div class="row between" style="align-items:flex-start;margin-top:6px"><div><h2 class="page" style="margin:0">${esc(j.title)}</h2><p class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</p></div><div class="row"><span class="pill ${tone}">${esc(label)}</span>${live ? `<a class="b sm sec" href="#" data-go="job?id=${j.id}">View listing</a>` : ""}</div></div>
+  return `<a class="back" href="#" data-go="hiring">← Your listings</a>${takeFlash()}<div class="row between" style="align-items:flex-start;margin-top:6px"><div><h2 class="page" style="margin:0">${esc(j.title)}</h2><p class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</p></div><div class="row"><span class="pill ${tone}">${esc(label)}</span>${live ? previewLink(j.id, "b sm sec") : ""}</div></div>
 ${funnel(s, ["", s.views ? Math.round(100 * s.clicks / s.views) + "% of viewers" : "", "", stageBits])}
 <p class="small faint">Views and Apply clicks are totals. You see who a student is only when they message you, you invite them, or you save them from matches.</p>
 <div class="seg" role="tablist" style="margin:18px 0"><a href="#" data-go="hjob?id=${j.id}&amp;tab=matches"${tab === "matches" ? ' class="on" aria-current="page"' : ""}>Ranked matches</a><a href="#" data-go="hjob?id=${j.id}&amp;tab=candidates"${tab === "candidates" ? ' class="on" aria-current="page"' : ""}>Candidates (${cands.length})</a></div>${content}`;
@@ -2311,7 +2400,8 @@ P.company = () => {
   if (!me()) return needLogin("company pages");
   const id = Number(S.route.q.id), p = EP(id);
   if (!p || (p.status !== "approved" && id !== me().id)) return '<p class="empty" style="margin:40px 0">That organization isn\'t available.</p>';
-  return '<a class="back" href="#" data-go="jobs">← Jobs</a>' + companyHtml(p, id);
+  if (p.status === "approved") recordCompanyView(id);
+  return (isStudent() ? '<a class="back" href="#" data-go="jobs">← Jobs</a>' : "") + companyHtml(p, id);
 };
 P.talent = () => {
   if (!isEmployer()) return needLogin("the student directory", "employer");
@@ -2806,7 +2896,8 @@ document.addEventListener("submit", e => {
     S.posts = S.posts.filter(p => p.author !== uid); S.posts.forEach(p => { p.comments = p.comments.filter(c => c.author !== uid); });
     S.convos.forEach(c => { c.messages.forEach(m => { if (m.from === uid) { m.body = ""; m.status = "removed"; } }); if (c.student === uid || c.employer === uid) c.blocked_by = uid; });
     S.versions = S.versions.filter(v => v.user !== uid); S.apps = S.apps.filter(a => a.student !== uid && a.employer !== uid);
-    S.conns = S.conns.filter(c => c.a !== uid && c.b !== uid); S.follows = S.follows.filter(x => x.student !== uid && x.employer !== uid); S.savedJobs = S.savedJobs.filter(x => x.user !== uid); S.mems = (S.mems || []).filter(m => m.user !== uid); S.session = null;
+    S.conns = S.conns.filter(c => c.a !== uid && c.b !== uid); S.follows = S.follows.filter(x => x.student !== uid && x.employer !== uid);
+    S.companyViews = S.companyViews.filter(v => v.employer !== uid); S.companyViews.forEach(v => { if (v.viewer === uid) v.viewer = null; }); S.savedJobs = S.savedJobs.filter(x => x.user !== uid); S.mems = (S.mems || []).filter(m => m.user !== uid); S.session = null;
     flash("verified", "Your account is deleted. Your profile, resume, posts and comments are gone, and the messages you sent were blanked."); S.route = {name: "about", q: {}}; return render();
   }
   // messaging

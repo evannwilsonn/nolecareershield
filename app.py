@@ -560,6 +560,8 @@ def jobs_feed(request: Request):
     viewer = getattr(request.state, "user", None)
     if not viewer:
         return RedirectResponse("/login?next=/jobs", status_code=303)       # the board is for FSU students and employers only
+    if viewer["role"] == "employer":
+        return RedirectResponse("/hiring", status_code=303)                 # employers manage their own listings; the board is for students
     old = jobboard.old_pane_link(request.query_params)            # /jobs?job=ID was the two-pane board; listings have their own page now
     if old:
         return RedirectResponse(f"/job/{old}", status_code=301)

@@ -258,5 +258,9 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
                     + (f'<span class="chip">{esc(j["location"])}</span>' if j["location"] else "") + '</div></a>' for j in jobs)
     cards = cards or '<p class="small muted">No open listings right now.</p>'
     listings = f'<section class="card pcard"><div class="phead"><h2>Open listings</h2><span class="small faint">{len(jobs)}</span></div>{cards}</section>'
-    main = about + fsu + roles + perk_html + listings
-    return notice + hero + f'<div class="pgrid"><aside class="pside">{side}</aside><div class="pmain">{main}</div></div>'
+    stats = ""
+    if owner:
+        import employer_dash                       # imported here: employer_dash builds on this module
+        stats = employer_dash.page_stats_card(employer_dash.page_stats(conn, uid))
+    main = stats + about + fsu + roles + perk_html + listings
+    return notice + hero + f'<div class="pgrid co"><aside class="pside">{side}</aside><div class="pmain">{main}</div></div>'
