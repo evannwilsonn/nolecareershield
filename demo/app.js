@@ -17,6 +17,7 @@ const ICONS = {
   jobs: '<rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5v2"/><path d="M3.5 12.5h17"/>',
   feed: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12.5h8M8 16h5"/>',
   chat: '<path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z"/>',
+  mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="1.5"/><path d="m4 7 8 6 8-6"/>',
   spark: '<path d="M12 3.5 13.8 10.2 20.5 12 13.8 13.8 12 20.5 10.2 13.8 3.5 12 10.2 10.2Z"/>',
   file: '<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/><path d="M9.5 12h6M9.5 15.5h6"/>',
   shield: '<path d="M12 3.5 19 6v6c0 4.5-3 7.5-7 8.5-4-1-7-4-7-8.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
@@ -57,12 +58,15 @@ const EXTRA_LISTINGS = [
 const APPLY_FIX = {1: "https://garnetanalytics.example/careers", 2: "https://baysidedental.example/jobs", 3: "https://coastalpolicylab.example/ra",
   4: "https://panhandlefreight.example/work", 5: "https://brightpathstaffing.example/apply", 6: "https://quickcashstaffing.example/apply",
   7: "https://capitalrowpartners.example/internships"};
+// Who posted each seeded employer listing (jobs.poster_name / poster_title / show_email on the site).
+const POSTERS = {1: ["Pat Lee", "Campus Recruiter"], 2: ["Renee Owens", "Office Manager"], 3: ["Dr. Ana Ruiz", "Lab Director", 1], 6: ["Mike", "HR"],
+  7: ["Chris Hall", "Talent Manager"], 9: ["Jamie Cole", "Marketing Lead"], 10: ["Renee Owens", "Office Manager"]};
 const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy Lab": 6, "QuickCash Staffing": 7, "Capital Row Partners": 8};
 
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [], dismissed: {}, suggs: {},
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, mailN: 0, itemN: 0, applyClicks: new Set(), timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -129,7 +133,9 @@ function reset() {
 
   const listings = NCS_SEED.concat(EXTRA_LISTINGS);
   S.jobs = listings.map((l, i) => {
-    const job = Object.assign({}, l, {apply_url: APPLY_FIX[l.id] || l.apply_url, employer_id: EMPLOYER_OF[l.company] || null, age_days: (listings.length - i) * 2});
+    const pst = POSTERS[l.id] || ["", "", 0];
+    const job = Object.assign({}, l, {apply_url: APPLY_FIX[l.id] || l.apply_url, employer_id: EMPLOYER_OF[l.company] || null, age_days: (listings.length - i) * 2,
+      poster_name: pst[0], poster_title: pst[1], show_email: pst[2] ? 1 : 0});
     scoreJob(job); job.review_status = l.state; job.review_label = l.state === "approved" ? "legit" : null; job.seedApproved = l.state === "approved"; return job;
   });
   S.nextJob = 11;
@@ -306,6 +312,21 @@ function connectButton(other, st, next, noteField) {
   if (st === "declined") return '<span class="pill">Not available</span>';
   return `<form class="navform cform2" data-to="${other}" data-next="${esc(next || "")}">${noteField ? `<input name="note" maxlength="${NOTE_MAX}" placeholder="Add a note (optional)" aria-label="Note" class="cnote">` : ""}<button class="b sm" type="submit">${icon("plus", 14)} Connect</button></form>`;
 }
+function connSection(uid, viewer, limit) {   // the Connections card on a student's profile (twin of network.connections_section)
+  limit = limit || 8;
+  const ids = connIds(uid).filter(i => (SP(i) || {}).display_name), own = uid === viewer, mutual = new Set(own ? [] : mutualIds(viewer, uid));
+  let body;
+  if (!ids.length) body = own ? '<p class="small muted" style="margin:0">No connections yet. <a href="#" data-go="network?tab=discover">Find classmates</a></p>' : '<p class="small muted" style="margin:0">No connections yet.</p>';
+  else {
+    ids.sort((x, y) => (mutual.has(x) ? 0 : 1) - (mutual.has(y) ? 0 : 1));
+    const people = ids.slice(0, limit).map(i => { const [n, sub] = who(i);
+      return `<a class="pconn" href="#" data-go="u?id=${i}"><span class="av" aria-hidden="true">${initials(n)}</span><span class="pc-t"><b>${esc(n)}</b><small>${esc(sub)}</small>${mutual.has(i) ? "<em>Mutual</em>" : ""}</span></a>`; }).join("");
+    const more = own && ids.length > limit ? `<a class="small" href="#" data-go="network?tab=connections">See all ${ids.length}</a>` : "";
+    body = `<div class="pconns">${people}</div>${more}`;
+  }
+  const head = plural(ids.length, "connection") + (mutual.size ? ` · ${mutual.size} mutual` : "");
+  return `<section class="psec pconn-sec"><h3 class="sec">Connections <span class="faint">${esc(head)}</span></h3><div class="card">${body}</div></section>`;
+}
 function netStrip(viewer, other, next) {
   const n = connIds(other).length, mutual = mutualIds(viewer, other).length, st = netState(viewer, other);
   const btn = st !== "none" || canReceive(other) ? connectButton(other, st, next, true) : "";
@@ -348,15 +369,15 @@ function scorePill(j) {
 }
 
 // ---------------- layout ----------------
-const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Career assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["people", "network", "Network"]]],
+const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Career assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "network", "Network"]]],
   ["Career tools", [["send", "applications", "Applications"], ["file", "resume", "Resume studio"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Profile"]]]];
-const EMPLOYER_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["people", "talent", "Find students"]]],
+const EMPLOYER_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "talent", "Find students"]]],
   ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Company profile"]]]];
 function sidebar(active) {
-  const n = unread(me().id), reqs = isStudent() ? incomingReqs(me().id).length : 0, out = [];
+  const n = unread(me().id), reqs = isStudent() ? incomingReqs(me().id).length : 0, mails = myEmails().filter(m => !m.read).length, out = [];
   for (const [grp, items] of (isStudent() ? STUDENT_NAV : EMPLOYER_NAV)) {
     if (grp) out.push(`<div class="grp">${esc(grp)}</div>`);
-    for (const [ic, go, label] of items) out.push(`<a href="#" data-go="${go}"${go === active ? ' class="on" aria-current="page"' : ""}>${icon(ic)}<span>${esc(label)}</span>${go === "messages" && n ? `<span class="count" aria-label="${n} unread">${n}</span>` : go === "network" && reqs ? `<span class="count" aria-label="${reqs} connection requests">${reqs}</span>` : ""}</a>`);
+    for (const [ic, go, label] of items) out.push(`<a href="#" data-go="${go}"${go === active ? ' class="on" aria-current="page"' : ""}>${icon(ic)}<span>${esc(label)}</span>${go === "messages" && n ? `<span class="count" aria-label="${n} unread">${n}</span>` : go === "network" && reqs ? `<span class="count" aria-label="${reqs} connection requests">${reqs}</span>` : go === "emails" && mails ? `<span class="count" aria-label="${mails} unread emails">${mails}</span>` : ""}</a>`);
   }
   return `<aside class="side"><nav aria-label="Main">${out.join("")}</nav><div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. <a href="#" data-go="scam?kind=message">Check a message</a>.</div></aside>`;
 }
@@ -367,7 +388,7 @@ function nav() {
   else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="employers">For employers</a>';
 }
 const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages",
-  resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", network: "network", applications: "applications", easy: "jobs", u: "", company: "", about: "", privacy: "", report: ""};
+  resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", network: "network", applications: "applications", emails: "emails", easy: "jobs", u: "", company: "", about: "", privacy: "", report: ""};
 
 // ---------------- pages ----------------
 const P = {};
@@ -551,29 +572,47 @@ function jbScam(j) {
   const fs = j.scam_status !== "clear" ? j.findings.filter(f => f.severity === "critical" || f.severity === "warning").map(f => `<div class="finding ${esc(f.severity)}"><b>${esc(f.title)}</b><br>${esc(f.why)}</div>`).join("") : "";
   return `<section class="js"><div class="js-top"><h3>Scam check</h3><span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span></div>${riskMeter(j.score, j.scam_status, j.findings.some(f => f.rule_id === "lead_gen"))}${ban}${fs ? `<div class="jd-find"><b style="font-size:14px">Signals to be aware of:</b>${fs}</div>` : ""}</section>`;
 }
+const QUICK_NOTE = '<p class="qa-note">Quick apply makes job applications short and sweet. However, experts recommend applying directly on company websites.</p>';
+// Has this student applied: through Quick apply, or by opening the employer's own application link (twin of jobboard.applied).
+const appliedTo = (jid, uid) => !!myApp(jid, uid) || S.applyClicks.has(jid + ":" + uid);
+function posterBlock(j, empOk) {   // twin of jobboard.poster_block
+  if (!j.employer_id) return "";
+  const ep = EP(j.employer_id) || {};
+  let name = (j.poster_name || ep.contact_name || "").trim();
+  const title = (j.poster_title || ep.contact_title || "").trim();
+  if (!name) name = "The hiring team";
+  const u = j.show_email ? U(j.employer_id) : null;
+  const email = u ? `<a class="jp-mail" href="mailto:${esc(u.email)}">${icon("mail", 14)} ${esc(u.email)}</a>` : "";
+  const first = name === "The hiring team" ? "the hiring team" : esc(name.split(" ")[0]);
+  let act = "";
+  if (isStudent() && empOk) act = appliedTo(j.id, me().id) ? `<a class="b" href="#" data-go="newmsg?to=${j.employer_id}&amp;job=${j.id}">${icon("chat", 16)} Message ${first}</a>` : `<p class="jp-hint">You can message ${first} once you apply.</p>`;
+  const whoTxt = esc(title + (title ? " at " : "") + j.company);
+  return `<section class="jp"><h3>Meet the poster</h3><div class="jp-row"><span class="jc-logo" aria-hidden="true">${initials(name)}</span><div class="jp-who"><b>${esc(name)}</b><span>${whoTxt}</span>${email}</div>${act}</div></section>`;
+}
 function jbDetail(j, prof, next, record, saved, full) {
   const student = isStudent(), empOk = !!j.employer_id && approvedEmp(j.employer_id);
-  let co = esc(j.company), trust = "", apply = "", banr = "", following = false;
+  let co = esc(j.company), trust = "", apply = "", banr = "", following = false, done = null;
   if (empOk) { trust = trustPill(trustOf(j.employer_id), "company?id=" + j.employer_id + "#trust"); co = `<a href="#" data-go="company?id=${j.employer_id}">${co}</a>`; }
   if (student) {
     if (record) recordView(j.id, me().id);
     following = empOk && isFollowing(me().id, j.employer_id);
-    const done = j.easy_apply ? myApp(j.id, me().id) : null;
+    done = j.easy_apply ? myApp(j.id, me().id) : null;
     if (j.easy_apply) {
       if (done) banr = `<div class="banner verified">✓ You applied ${ago(done.at)}. <a href="#" data-go="applications">Your applications</a></div>`;
-      else if (empOk) apply = `<a class="apply-btn" href="#" data-go="easy?id=${j.id}">Quick apply →</a>`;
+      else if (empOk) { apply = `<a class="apply-btn" href="#" data-go="easy?id=${j.id}">Quick apply →</a>`;
+        if (j.apply_url) apply += `<a class="b ghost" href="${esc(j.apply_url)}" data-apply="${j.id}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply on company site</a>`; }
       else if (j.contact) banr = `<p style="font-size:14px;color:var(--muted)">Contact: ${esc(j.contact)}</p>`;
     } else if (j.apply_url) apply = `<a class="apply-btn" href="${esc(j.apply_url)}" data-apply="${j.id}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a>`;
     else if (j.contact) banr = `<p style="font-size:14px;color:var(--muted)">Contact: ${esc(j.contact)}</p>`;
   } else apply = `<a class="apply-btn" href="#" data-go="start?next=job-${j.id}">Log in as an FSU student to apply</a>`;
   let acts = apply;
   if (saved !== null) acts += jbSaveBtn(j.id, saved, next, true);
-  if (student && empOk) acts += `<a class="b ghost" href="#" data-go="newmsg?to=${j.employer_id}&amp;job=${j.id}">${icon("chat", 16)} Message</a>` + followButton(j.employer_id, following, "job?id=" + j.id, false);
+  if (student && empOk) acts += followButton(j.employer_id, following, "job?id=" + j.id, false);
   const own = isEmployer() && j.employer_id === me().id ? `<div class="banner info">This is your listing. <a href="#" data-go="hjob?id=${j.id}">See ranked student matches, candidates and stats →</a></div>` : "";
   const f = student && jbHasProfile(prof) ? N.fitScore(j, prof) : null;
   const sub = [jbWhere(j), cap(j.work_type), jbPosted(j)].filter(Boolean).join(" · "), H = full ? "h1" : "h2";
   return `${full ? '<a class="back jd-back" href="#" data-go="jobs">← All jobs</a>' : ""}<article class="jd"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">${initials(j.company)}</span><div class="jd-h"><${H} class="jd-title">${esc(j.title)}</${H}><div class="jd-co">${co}</div><div class="jd-sub">${esc(sub)}</div>${trust ? `<div class="jd-trust">${trust}</div>` : ""}</div></div>`
-    + `${own}<div class="jd-acts">${acts}</div>${banr}${jbScam(j)}${student ? jbMatch(j, f) : ""}${jbQuals(j, f, !!f)}${jbGlance(j)}<section class="jd-desc"><h3>About the job</h3><div class="detail-desc">${esc(j.description)}</div></section></article>`;
+    + `${own}<div class="jd-acts">${acts}</div>${student && j.easy_apply && !done ? QUICK_NOTE : ""}${banr}${posterBlock(j, empOk)}${jbScam(j)}${student ? jbMatch(j, f) : ""}${jbQuals(j, f, !!f)}${jbGlance(j)}<section class="jd-desc"><h3>About the job</h3><div class="detail-desc">${esc(j.description)}</div></section></article>`;
 }
 P.jobs = () => {
   if (!me()) { go("start?next=jobs"); return null; }
@@ -601,6 +640,12 @@ P.post = () => {
 <div class="form-field"><label for="f-location">Location</label><p class="hint">City/state, or leave blank if fully remote.</p><input id="f-location" name="location" maxlength="120" placeholder="e.g. Tallahassee, FL" value="${val("location")}"></div>
 <div class="form-field"><label for="f-description">Description</label><p class="hint">The full posting: responsibilities, requirements, and pay if you can share it.</p><textarea id="f-description" name="description" required maxlength="8000">${val("description")}</textarea></div>
 <div class="form-field"><label for="f-apply_url">Apply URL</label><p class="hint">Where applicants should go. The scanner checks this link too.</p><input id="f-apply_url" name="apply_url" maxlength="2000" placeholder="https://..." value="${val("apply_url")}"></div>
+<fieldset class="form-field easyset"><legend>Who's posting</legend>
+<p class="hint">Your name appears on the listing so students know who they'd be talking to. Students who apply can message you on NoleCareerShield.</p>
+<div class="form-field"><label for="f-poster_name">Your name</label><input id="f-poster_name" name="poster_name" maxlength="80" placeholder="e.g. Dana Whitfield" value="${val("poster_name")}"></div>
+<div class="form-field"><label for="f-poster_title">Your job title</label><input id="f-poster_title" name="poster_title" maxlength="80" placeholder="e.g. Campus Recruiting Manager" value="${val("poster_title")}"></div>
+<label class="toggle" for="f-show_email"><input id="f-show_email" type="checkbox" name="show_email" value="1"${v.show_email ? " checked" : ""}><span><b>Show my email on this listing.</b> Off by default. Students can always message you here after they apply.</span></label>
+<label class="toggle" for="f-direct" style="margin-top:12px"><input id="f-direct" type="checkbox" name="direct" value="1" required${v.direct ? " checked" : ""}><span><b>I work directly for this company.</b> Staffing agencies and second- or third-party recruiters can't post jobs for a client.</span></label></fieldset>
 <fieldset class="form-field easyset"><legend>Quick apply</legend>
 <label class="toggle" for="f-easy"><input id="f-easy" type="checkbox" name="easy_apply" value="1"${v.easy_apply ? " checked" : ""}><span><b>Collect applications on NoleCareerShield.</b> Students apply from their profile in one step, and you get their answers in your candidate tracker. Leave it off to send them to your Apply URL.</span></label>
 <p class="hint" style="margin-top:10px">Optional questions for applicants (up to ${MAX_QUESTIONS}). Nothing that asks for an SSN, bank or card details or a password.</p>${qRows}</fieldset>
@@ -627,7 +672,7 @@ P.easy = () => {
   const resume = p.resume_text ? `<label class="toggle"><input type="checkbox" name="share_resume" value="1"${!dr || v.share_resume === "1" ? " checked" : ""}><span><b>Include my resume.</b> The employer sees the resume saved on your profile.</span></label>`
     : '<p class="small faint">You haven\'t added a resume yet, so none will be sent. <a href="#" data-go="resume">Resume studio</a></p>';
   return `<a class="back" href="#" data-go="job?id=${j.id}">← ${esc(j.title)}</a>` + pageHead("Quick apply", `${esc(j.title)} at ${esc(j.company)}. Your profile fills in the basics; answer the questions and send.`, "Apply")
-    + (dr && dr.error ? banner("warning", dr.error) : "")
+    + QUICK_NOTE + (dr && dr.error ? banner("warning", dr.error) : "")
     + `<form id="easyForm" data-job="${j.id}" class="card easy"><div class="row" style="gap:12px;align-items:center;margin-bottom:14px"><div class="person"><span class="avatar">${initials(p.display_name)}</span><div style="min-width:0"><div class="nm">${esc(p.display_name)}</div><div class="sub">${esc(sub)}</div></div></div></div>`
     + fields
     + `<div class="form-field"><label for="a-note">Note to the employer <span class="faint">(optional)</span></label><textarea id="a-note" name="note" maxlength="${NOTE_LEN}" placeholder="Anything you want them to know">${esc(v.note || "")}</textarea></div>`
@@ -662,7 +707,7 @@ P.applications = () => {
   if (!isStudent()) return needStudent("applications");
   const head = pageHead("Your applications", "Everything you sent with quick apply. Employers see it only while it's here.", "Apply") + takeFlash();
   const apps = S.apps.filter(a => a.student === me().id).sort((x, y) => y.at - x.at);
-  if (!apps.length) return head + '<div class="empty">No applications yet. Listings with an <b>Quick apply</b> button let you apply without leaving the site. <a href="#" data-go="jobs">Browse jobs</a></div>';
+  if (!apps.length) return head + '<div class="empty">No applications yet. Listings with a <b>Quick apply</b> button let you apply without leaving the site. <a href="#" data-go="jobs">Browse jobs</a></div>';
   return head + apps.map(a => { const j = S.jobs.find(x => x.id === a.job) || {title: "Listing", company: ""};
     return `<div class="card app"><div class="row between" style="align-items:flex-start;gap:12px"><div style="min-width:0"><a class="job-title" href="#" data-go="job?id=${a.job}">${esc(j.title)}</a><div class="job-co">${esc(j.company)} · sent ${ago(a.at)}</div></div><button class="b sm ghost" type="button" data-do="withdraw" data-id="${a.job}">Withdraw</button></div></div>`; }).join("");
 };
@@ -1093,7 +1138,7 @@ function sendMessage(c, text) {
   if (m.status === "held") flash("warning", "Your message was held for a safety review because it matched scam patterns. A reviewer checks it before it's delivered.");
   else {
     const other = c.student === me().id ? c.employer : c.student;
-    S.inbox.unshift({to: U(other).email, subject: "You have a new message on NoleCareerShield", body: `${who(me().id)[0]} sent you a message on NoleCareerShield.\n\nRead it on the site. We never put message text in emails, so an email that includes a "message" and asks you to reply is not from us.`, link: null});
+    mail(U(other).email, "You have a new message on NoleCareerShield", `${who(me().id)[0]} sent you a message on NoleCareerShield.\n\nRead it on the site. We never put message text in emails, so an email that includes a "message" and asks you to reply is not from us.`, null);
     if (isStudent() && !c.blocked_by) S.timers.push(setTimeout(() => { if (S.convos.includes(c) && !c.blocked_by) { addMsg(c, c.employer, REPLIES[c.messages.length % REPLIES.length]); if (S.route.name === "messages" || S.route.name === "home") render(true); else nav(); } }, 2600));
   }
 }
@@ -1313,7 +1358,7 @@ P.profile = () => {
   if (isStudent()) {
     const p = SP(me().id); if (!p || !p.display_name) { go("setup?step=1"); return null; }
     const notice = takeFlash() + (S.profileNotice ? banner("info", S.profileNotice) : ""); S.profileNotice = "";
-    return profileHtml(p, {owner: true, showLinks: true, notice, completion: completion(p)}) + `<div class="pdata">${data}</div>`;
+    return profileHtml(p, {owner: true, showLinks: true, notice, completion: completion(p)}) + connSection(me().id, me().id) + `<div class="pdata">${data}</div>`;
   }
   const p = EP(me().id); if (!p || !p.company) { go("setup?step=1"); return null; }
   return takeFlash() + (p.status === "pending" ? banner("info", "A reviewer checks every organization, usually within a business day. In the demo, open the reviewer view to approve it.") : "") + companyHtml(p, me().id, "") + `<div class="pdata">${data}</div>`;
@@ -1615,6 +1660,13 @@ function evidence(f) {
   if (f.checklist.length) bits.push(`<span class="faint">${met} of ${f.checklist.length} requirements met</span>`);
   return bits.join(" · ");
 }
+function reqsHtml(f) {   // which of the listing's requirements this student meets, item by item (twin of hiring._reqs)
+  if (!f.checklist.length) return "";
+  const mark = {met: ["✓", "met", "Met"], missing: ["⊘", "miss", "Not met"], unknown: ["?", "unk", "Not on profile"]};
+  const rows = f.checklist.map(c => `<li class="rq ${mark[c.status][1]}"><span aria-hidden="true">${mark[c.status][0]}</span><span class="sr">${mark[c.status][2]}: </span>${esc(c.text.replace(" (preferred)", ""))}`
+    + `${c.must ? "<em>Required</em>" : (c.text.includes("(preferred)") ? '<em class="p">Preferred</em>' : "")}</li>`).join("");
+  return `<details class="rqs"><summary>Meets ${f.met} of ${f.total} of your requirements</summary><ul>${rows}</ul></details>`;
+}
 function inviteText(eid, p, j) {
   const e = EP(eid) || {}, first = (p.display_name || "").split(" ")[0];
   return `Hi ${first}! ${e.contact_name && e.company ? `I'm ${e.contact_name}, ${e.contact_title} at ${e.company}. ` : ""}Your profile looks like a strong fit for our ${j.title} role, and we'd love for you to apply. You'll find the listing and the Apply link on NoleCareerShield. Happy to answer any questions here.`;
@@ -1642,8 +1694,8 @@ P.hjob = () => {
     const ms = rankedMatches(j), saved = new Set(cands.map(c => c.student)), strong = ms.filter(m => m[0].score >= 65).length;
     content = (live ? "" : banner("info", "Invites open once this listing is approved. You can already see who fits and save them.")) + (ms.length
       ? `<p class="small muted" style="margin-bottom:12px"><b>${strong}</b> good or strong fit${strong !== 1 ? "s" : ""} among ${ms.length} students ranked. Each score uses the student's whole profile: skills, experience, projects, education, certifications and what they're looking for.</p>` +
-        ms.map(([f, p, id]) => `<div class="card mcard"><div class="row between" style="align-items:flex-start;gap:12px"><div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:${f.score}"><b>${f.score}</b></div>${person(id)}</div><span class="pill ${f.score >= 65 ? "ok" : f.score < 45 ? "warn" : ""}">${esc(f.label)}</span></div>
-${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class="small" style="margin-top:8px">${evidence(f)}</p><div class="chips" style="margin-top:8px">${f.parts.map(x => `<span class="chip" title="${esc(x.detail)}">${esc(x.name)} ${x.score}</span>`).join("")}</div>
+        ms.map(([f, p, id]) => `<div class="card mcard"><div class="row between" style="align-items:flex-start;gap:12px"><div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:${f.score}"><b>${f.score}%</b></div>${person(id)}</div><span class="pill ${f.score >= 65 ? "ok" : f.score < 45 ? "warn" : ""}">${f.percent}% match</span></div>
+${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class="small" style="margin-top:8px">${evidence(f)}</p>${reqsHtml(f)}<div class="chips" style="margin-top:8px">${f.parts.map(x => `<span class="chip" title="${esc(x.detail)}">${esc(x.name)} ${x.score}</span>`).join("")}</div>
 <div class="row" style="margin-top:12px">${live && p.allow_messages ? `<a class="b sm" href="#" data-go="newmsg?to=${id}&amp;job=${j.id}&amp;invite=1">${icon("chat", 14)} Invite to apply</a>` : ""}${saved.has(id) ? '<span class="pill ok">In candidates</span>' : `<button class="b sm sec" type="button" data-do="save-cand" data-id="${id}">Save to candidates</button>`}<a class="b sm ghost" href="#" data-go="u?id=${id}">View profile</a></div></div>`).join("")
       : '<div class="empty">No students match yet. Matches come from students who made their profile visible to approved employers.</div>');
   } else content = cands.length ? pipeline(cands) + '<p class="small muted" style="margin-bottom:12px">Stages and notes are private to your organization.</p>' + cands.map(c => {
@@ -1651,8 +1703,8 @@ ${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class=
       const f = N.fitScore(j, p), [src, st] = SOURCES[c.source] || [c.source, ""], convo = S.convos.find(x => x.student === c.student && x.employer === me().id);
       const app = S.apps.find(a => a.job === j.id && a.student === c.student);
       const msg = convo ? `<a class="b sm ghost" href="#" data-go="messages?c=${convo.id}">Open conversation</a>` : live && p.allow_messages ? `<a class="b sm ghost" href="#" data-go="newmsg?to=${c.student}&amp;job=${j.id}${c.source === "applied" ? "" : "&amp;invite=1"}">${c.source === "applied" ? "Message" : "Invite to apply"}</a>` : "";
-      return `<div class="card mcard" id="c${c.student}"><div class="row between" style="align-items:flex-start;gap:12px"><div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:${f.score}"><b>${f.score}</b></div>${person(c.student)}</div><div class="row"><span class="pill ${st}">${esc(src)}</span><span class="small faint">${ago(c.at)}</span></div></div>
-<p class="small" style="margin-top:8px">${evidence(f)}</p>${app ? applicationHtml(app, p) : ""}<form class="cform stageForm" data-student="${c.student}"><div class="form-field"><label for="st${c.student}">Stage</label><select id="st${c.student}" name="stage">${STAGES.map(([k, v]) => `<option value="${k}"${k === c.stage ? " selected" : ""}>${esc(v)}</option>`).join("")}</select></div>
+      return `<div class="card mcard" id="c${c.student}"><div class="row between" style="align-items:flex-start;gap:12px"><div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:${f.score}"><b>${f.score}%</b></div>${person(c.student)}</div><div class="row"><span class="pill ${st}">${esc(src)}</span><span class="small faint">${ago(c.at)}</span></div></div>
+<p class="small" style="margin-top:8px">${evidence(f)}</p>${reqsHtml(f)}${app ? applicationHtml(app, p) : ""}<form class="cform stageForm" data-student="${c.student}"><div class="form-field"><label for="st${c.student}">Stage</label><select id="st${c.student}" name="stage">${STAGES.map(([k, v]) => `<option value="${k}"${k === c.stage ? " selected" : ""}>${esc(v)}</option>`).join("")}</select></div>
 <div class="form-field"><label for="nt${c.student}">Private note</label><input id="nt${c.student}" name="note" maxlength="300" value="${esc(c.note)}" placeholder="Only your team sees this"></div><button class="b sm" type="submit">Update</button></form>
 <div class="row" style="margin-top:8px">${msg}<a class="b sm ghost" href="#" data-go="u?id=${c.student}">View profile</a></div></div>`; }).join("")
     : '<div class="empty">No candidates yet. Students appear here when they apply here, when they message you about this listing, when you invite them, or when you save them from the ranked matches.</div>';
@@ -1671,7 +1723,8 @@ function exportData() {
     saved_posts: S.saves.filter(x => x.user === u.id).map(x => ({post_id: x.post, created_at: new Date(x.at).toISOString()})),
     assistant_chats: csChats().map(c => ({id: c.id, title: c.title, messages: c.msgs.map(m => ({role: m.role, text: m.text, feedback: m.feedback || 0}))})),
     saved_jobs: S.savedJobs.filter(x => x.user === u.id).map(x => ({job_id: x.job, created_at: new Date(x.at).toISOString()})),
-    follows: S.follows.filter(f => f.student === u.id).map(f => ({employer_id: f.employer, created_at: new Date(f.at).toISOString()}))};
+    follows: S.follows.filter(f => f.student === u.id).map(f => ({employer_id: f.employer, created_at: new Date(f.at).toISOString()})),
+    emails: myEmails().slice().reverse().map(m => ({subject: m.subject, body: emailBody(m), sent_at: new Date(m.at).toISOString(), read_at: m.read ? "yes" : null}))};
   return JSON.stringify(d, (k, v) => v instanceof Set ? [...v] : v, 2);
 }
 function canView(viewer, sid) {
@@ -1690,7 +1743,7 @@ P.u = () => {
   const p = SP(id), owner = id === me().id;
   const msg = isEmployer() && p.allow_messages ? `<a class="b sm" href="#" data-go="newmsg?to=${id}">${icon("chat", 16)} Message</a>` : isStudent() && !owner ? netStrip(me().id, id, "u?id=" + id) : "";
   // Other students see the basics only; approved employers also see experience, education and projects (like Handshake).
-  return `<a class="back" href="#" data-go="${isEmployer() ? "talent" : "feed"}">← Back</a>` + takeFlash() + profileHtml(p, {owner, showLinks: links, showResume: resume, messageBtn: msg, showSections: owner || isEmployer()});
+  return `<a class="back" href="#" data-go="${isEmployer() ? "talent" : "feed"}">← Back</a>` + takeFlash() + profileHtml(p, {owner, showLinks: links, showResume: resume, messageBtn: msg, showSections: owner || isEmployer()}) + connSection(id, me().id);
 };
 P.company = () => {
   if (!me()) return needLogin("company pages");
@@ -1776,7 +1829,27 @@ function pwProblems(pw, email) {
 }
 const pwText = p => "Your password needs " + (p.length > 1 ? p.slice(0, -1).join(", ") + " and " : "") + p[p.length - 1] + ".";
 const findUser = (email, role) => S.users.find(u => u.email === email && u.role === role);
-function mail(to, subject, body, link) { S.inbox.unshift({to, subject, body, link}); }
+// Every demo email also leaves an in-site copy (twin of emails.keep): only for a verified account with that address,
+// and one-time sign-in links (confirm, reset) are replaced with a note, so the copy never holds a working credential.
+const EMAIL_REDACTED = "[This one-time link was sent only to your email inbox.]";
+function mail(to, subject, body, link) {
+  const copy = S.users.some(u => u.verified && u.email.toLowerCase() === String(to || "").trim().toLowerCase());
+  S.inbox.unshift({id: ++S.mailN, to, subject, body, link, at: NOW(), copy, read: false, gone: false});
+}
+function myEmails() { const u = me(); if (!u) return []; const e = u.email.toLowerCase(); return S.inbox.filter(m => m.copy && !m.gone && m.to.toLowerCase() === e); }
+const emailBody = m => m.body + (m.link && /^(verify|reset)\b/.test(m.link.go) ? "\n\n" + EMAIL_REDACTED : "");
+P.emails = () => {
+  if (!me()) return needLogin("emails");
+  const rows = myEmails(), cur = rows.find(m => m.id === S.route.q.id) || null;
+  if (cur) cur.read = true;
+  const head = pageHead("Emails", `A copy of every email we send to ${esc(me().email)}. One-time sign-in links stay in your real inbox only.`, "Inbox");
+  if (!rows.length) return head + '<div class="card empty" style="padding:40px;text-align:center"><b>No emails yet</b><p class="small muted">When we email you about your account, listings or messages, a copy shows up here.</p></div>';
+  const items = rows.map(m => `<a class="mi${cur && m.id === cur.id ? " on" : ""}${m.read ? "" : " unread"}" href="#" data-go="emails?id=${m.id}"><b>${esc(m.subject)}</b><small>${ago(m.at)}</small></a>`).join("");
+  const view = cur ? `<a class="back" href="#" data-go="emails">← All emails</a><h2>${esc(cur.subject)}</h2><p class="small muted" style="margin:0">From NoleCareerShield · to ${esc(me().email)} · ${ago(cur.at)}</p>`
+      + `<pre>${esc(emailBody(cur))}</pre><div style="margin-top:18px"><button class="b sm sec" type="button" data-do="email-delete" data-id="${cur.id}">Delete</button></div>`
+    : '<p class="muted" style="margin:40px 0;text-align:center">Pick an email to read it.</p>';
+  return `${head}<div class="mailbox${cur ? " open" : ""}"><div class="ml">${items}</div><div class="mv">${view}</div></div>`;
+};
 function newToken(u, purpose) { const t = "t" + (++S.tokN) + Math.random().toString(36).slice(2, 8); for (const k in S.tokens) if (S.tokens[k].uid === u.id && S.tokens[k].purpose === purpose) S.tokens[k].used = true; S.tokens[t] = {uid: u.id, purpose, used: false}; return t; }
 function sendVerify(u) { mail(u.email, "Confirm your NoleCareerShield account", `Confirm your email to finish creating your ${u.role} account. The link works for 24 hours.\n\nIf you did not sign up, ignore this email and nothing will happen.`, {label: "Open confirmation link", go: "verify?t=" + newToken(u, "verify")}); }
 const okNext = n => /^(?:post|jobs|job-\d+)$/.test(n || "") ? n : "";
@@ -1900,7 +1973,7 @@ const FOOTER = `<footer>Every listing is scanned for scam signals and reviewed b
 function signIn(email, role) { S.session = findUser(email, role); S.chat = null; S.chatId = null; }
 function afterLogin(next) {
   const u = me();
-  if (u.role === "employer" && S.pendingDraft) { submitDraft(); return go("posted"); }
+  if (u.role === "employer" && S.pendingDraft && submitDraft()) return go("posted");
   const n = okNext(next);
   if (u.role === "student" && !(SP(u.id) || {}).setup_step) return go("setup?step=1");
   if (u.role === "employer" && !(EP(u.id) || {}).company) return go("setup?step=1");
@@ -1908,16 +1981,35 @@ function afterLogin(next) {
   if (/^job-\d+$/.test(n)) return go("job?id=" + n.slice(4));
   go("home");
 }
+// Only the hiring organization may post its jobs: no staffing agencies, no second- or third-party recruiters (twin of app._RECRUITER).
+const RECRUITER = new RegExp("\\b(on behalf of (?:our|a|my|an?) (?:valued |esteemed )?client|our client(?:'s)?|for (?:a|our) client|"
+  + "staffing (?:agency|firm|company|partner)|recruit(?:ing|ment) (?:agency|firm|company|partner)|"
+  + "(?:third|3rd|second|2nd)[- ]party recruit\\w*|headhunter|placement (?:agency|firm)|talent acquisition (?:agency|firm)|"
+  + "we are a (?:recruit\\w*|staffing) )", "i");
+const RECRUITER_MSG = "Only the company that is hiring can post its jobs here. Staffing agencies and second- or third-party recruiters can't post on behalf of a client.";
+const CO_SUFFIX = /\b(inc|llc|l\.l\.c|ltd|co|corp|corporation|company|the|group|pllc|pa|plc)\b\.?/gi;
+const coKey = name => String(name || "").toLowerCase().replace(CO_SUFFIX, "").replace(/[^a-z0-9]/g, "");
+function companyMismatch(employerCompany, posted) {   // true when an employer tries to post for an organization other than their own
+  const a = coKey(employerCompany), b = coKey(posted);
+  return !!(a && b && !b.includes(a) && !a.includes(b));
+}
 function submitDraft() {
-  const d = S.pendingDraft; S.pendingDraft = null; if (!d) return;
+  const d = S.pendingDraft; S.pendingDraft = null; if (!d) return false;
+  const ep = EP(me().id) || {};
+  if (companyMismatch(ep.company || "", d.company)) return false;   // same as app._resume_draft: a listing for someone else's company isn't sent
+  if (!d.poster_name) d.poster_name = ep.contact_name || "";   // a listing always names the person who posted it
+  if (!d.poster_title) d.poster_title = ep.contact_title || "";
+  delete d.direct;
   const j = Object.assign({id: S.nextJob++, employer_id: me().id, age_days: 0, review_status: "pending", review_label: null}, d);
   scoreJob(j); S.jobs.push(j);
   mail(me().email, "We received your listing", `We received your listing "${d.title}". It has been scanned, and a person reviews every listing before it appears on the board.`, null);
+  return true;
 }
 
 // ---------------- events ----------------
 document.addEventListener("click", e => {
-  const ap = e.target.closest("[data-apply]"); if (ap && isStudent()) { const k = Number(ap.dataset.apply); (S.clicks[k] = S.clicks[k] || new Set()).add(me().id); return; }
+  const ap = e.target.closest("[data-apply]"); if (ap && isStudent()) { const jk = Number(ap.dataset.apply); (S.clicks[jk] = S.clicks[jk] || new Set()).add(me().id);
+    const had = appliedTo(jk, me().id); S.applyClicks.add(jk + ":" + me().id); if (!had) setTimeout(() => render(true), 0); return; }   // the poster's Message button appears once you applied
   const a = e.target.closest("[data-go]"); if (a) { e.preventDefault(); go(a.dataset.go); return; }
   const b = e.target.closest("[data-act]");
   if (b && S.admin) { const j = S.jobs.find(x => x.id === Number(b.dataset.id)); if (!j) return; const act = b.dataset.act; j.seedApproved = false;
@@ -1978,6 +2070,7 @@ document.addEventListener("click", e => {
     "job-unsave": () => { S.savedJobs = S.savedJobs.filter(x => !(x.user === me().id && x.job === id)); render(true); },
     "del-post": () => { S.posts = S.posts.filter(x => x.id !== id); S.saves = S.saves.filter(x => x.post !== id); render(true); },
     export: () => { S.showExport = !S.showExport; render(true); },
+    "email-delete": () => { const m = myEmails().find(x => x.id === id); if (m) m.gone = true; go("emails"); },
     "emp-approve": () => { EP(id).status = "approved"; EP(id).approved_at = NOW(); mail(U(id).email, "Your organization was approved", "A reviewer approved your organization. You can now message students, browse the directory and post to the FSU feed.", null); render(true); },
     "emp-reject": () => { EP(id).status = "rejected"; EP(id).status_note = d.dataset.note; render(true); },
     "emp-suspend": () => { EP(id).status = "suspended"; S.convos.forEach(cv => cv.messages.forEach(m => { if (m.from === id && m.status === "held") m.status = "removed"; })); render(true); },
@@ -2075,13 +2168,20 @@ document.addEventListener("submit", e => {
   if (id === "postForm") {
     const qt = many("qtext"), qk = many("qkind"), qr = many("qreq");
     const d = {title: g("title"), company: g("company"), category: g("category"), work_type: g("work_type"), location: g("location"), description: g("description"), apply_url: g("apply_url"), contact: "",
-      easy_apply: fd.get("easy_apply") ? 1 : 0, questions: qt.slice(0, MAX_QUESTIONS).map((t, i) => ({q: t, kind: qk[i] || "short", required: qr[i] === "1"}))};
+      easy_apply: fd.get("easy_apply") ? 1 : 0, questions: qt.slice(0, MAX_QUESTIONS).map((t, i) => ({q: t, kind: qk[i] || "short", required: qr[i] === "1"})),
+      poster_name: g("poster_name").replace(/\s+/g, " ").slice(0, 80), poster_title: g("poster_title").replace(/\s+/g, " ").slice(0, 80), show_email: fd.get("show_email") ? 1 : 0, direct: fd.get("direct") ? 1 : 0};
     S.draft = d;
+    // Only the hiring organization may post its jobs (twin of app._clean_listing).
+    if (!d.direct) { flash("warning", "Confirm that you work directly for this company. " + RECRUITER_MSG); return render(); }
+    if (RECRUITER.test([d.title, d.company, d.description, d.poster_title].join(" "))) { flash("warning", RECRUITER_MSG); return render(); }
     if (!d.title || !d.company || !d.description) { flash("warning", "Title, company and description are required."); return render(); }
     if (d.apply_url && !/^https?:\/\/[^\s<>"']+$/i.test(d.apply_url)) { flash("warning", "The apply URL must start with http:// or https://."); return render(); }
     try { d.questions = cleanQuestions(d.questions); } catch (err) { flash("warning", String(err)); S.draft.questions = qt.map((t, i) => ({q: t, kind: qk[i] || "short", required: qr[i] === "1"})); return render(); }
     S.pendingDraft = d; S.draft = null;
-    if (isEmployer()) { submitDraft(); return go("posted"); }
+    if (isEmployer()) {
+      const ep = EP(me().id) || {};
+      if (companyMismatch(ep.company || "", d.company)) { S.draft = d; S.pendingDraft = null; flash("warning", `You can only post jobs for your own organization (${ep.company}). ` + RECRUITER_MSG); return render(); }
+      submitDraft(); return go("posted"); }
     return go("login?role=employer&next=post");
   }
   // profile setup
