@@ -233,19 +233,9 @@ const P = {};
 P.home = () => {
   if (me()) return me().role === "student" ? studentHome() : employerHome();
   const n = approvedJobs().length;
-  const hero = `<section class="hero"><div class="hero-in"><div>
-<div class="eyebrow">For FSU students · Scam-checked</div>
-<h1>Student jobs, <em>checked for scams</em> before you see them.</h1>
-<p>Every listing is scanned and approved by a person. Build a profile, message verified employers, get matched by the job assistant and sharpen your resume, all in one place.</p>
-<div class="cta"><a class="primary" href="#" data-go="start">Join or log in with your @fsu.edu email</a><a class="secondary" href="#" data-go="scam">Try the scam check</a></div>
-<div class="count">${n ? `${n} approved listing${n !== 1 ? "s" : ""} live right now` : "Approved listings will appear here"}</div></div>
-<div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
-<b style="font-family:var(--serif);font-weight:500;font-size:19px">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</b>
-<div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
-<div class="mini"><b>${icon("spark", 15)} Job assistant <span class="pill accent" style="margin-left:4px">FSU students</span></b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
-<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="scam">Try the scam check</a><a class="b sm sec" href="#" data-go="start">Join or log in with @fsu.edu</a></div>
-</div></div></section>
-<section class="how"><div class="how-inner">
+  const count = n ? `${n} approved listing${n !== 1 ? "s" : ""} live right now` : "Approved listings will appear here";
+  // the scan scene is rendered by showcase.py and embedded by build.py, so the demo shows exactly what the site does
+  const hero = NCS_SCAN.replace(/\{JOIN\}/g, 'href="#" data-go="start"').replace(/\{CHECK\}/g, 'href="#" data-go="scam"').replace("{COUNT}", esc(count)) + `<section class="how"><div class="how-inner">
 <div class="how-item"><b>Only vetted listings</b><p>Every posting is scam-scanned, then a person approves it. Employers are reviewed before they can message you.</p></div>
 <div class="how-item"><b>Tools that work for you</b><p>A job assistant that knows your skills, a resume reviewer and tailorer, and a checker for any suspicious message.</p></div>
 <div class="how-item"><b>An FSU-only feed</b><p>Only verified students and approved employers post, and employer posts must be opportunities or advice for FSU students.</p></div>
@@ -1280,6 +1270,7 @@ function render(keepScroll) {
   if (inApp) main.innerHTML = `<div class="app">${sidebar(APP_PAGES[name])}<main class="main" id="main"><div class="wrap">${body}</div>${FOOTER}</main></div>`;
   else main.innerHTML = `${hero}<div class="wrap"><main id="main">${body}</main></div>${FOOTER}`;
   if (!keepScroll) window.scrollTo(0, 0);
+  if (window.NCSScan) NCSScan.setup();
   if (S.scrollTo) { const el = document.getElementById(S.scrollTo); S.scrollTo = null; if (el) el.scrollIntoView({block: "start"}); }
   const th = $("#thread"); if (th) th.scrollTop = th.scrollHeight;
   const lg = $("#log"); if (lg) lg.scrollTop = lg.scrollHeight;

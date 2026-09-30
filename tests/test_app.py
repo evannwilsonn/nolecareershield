@@ -726,8 +726,10 @@ def test_only_the_hashed_script_can_run_and_only_on_account_pages(client):
     csp = client.get("/").headers["content-security-policy"]
     assert f"script-src 'self' '{client.appmod.PAGE_SCRIPT_HASH}'" in csp and "unsafe-inline'" in csp.split("style-src")[1].split(";")[0]
     assert "script-src 'unsafe" not in csp
-    for path in ("/", "/jobs", "/post", "/about", "/privacy"):
+    for path in ("/jobs", "/post", "/about", "/privacy"):
         assert "<script" not in client.get(path).text, path
+    home = client.get("/").text                    # the home page runs only its same-origin scroll script, nothing inline
+    assert home.count("<script") == 1 and re.search(r'<script src="/static/scan\.js\?v=[0-9a-f]{10}" defer></script>', home)
     for path in ("/login/student", "/signup/employer", "/forgot/student"):
         html = client.get(path).text
         assert html.count("<script>") == 1 and f"<script>{client.appmod.PAGE_SCRIPT}</script>" in html, path

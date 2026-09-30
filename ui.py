@@ -7,8 +7,9 @@ Design system: a mix of three Open Design systems (github.com/nexu-io/open-desig
   * Notion - warm-neutral greys, whisper borders (1px, ~10% ink), soft multi-layer shadows,
              pill badges, and the quiet left sidebar for the signed-in app.
   * Bento  - the signed-in home is a modular grid of tiles.
-The single accent is garnet; gold appears only as a small highlight. System fonts only
-(no third-party font requests), light and dark themes from the same tokens.
+The single accent is garnet; gold appears only as a small highlight. System fonts, plus one display face
+for big public headlines (Anton, SIL OFL, self-hosted from /static/fonts, so still no third-party font requests).
+Light and dark themes from the same tokens. The home page's dark 'stage' section is the scan scene (showcase.py).
 """
 
 from __future__ import annotations
@@ -68,6 +69,8 @@ CSS = """
 --serif:Charter,"Bitstream Charter","Sitka Text",Cambria,Georgia,serif;
 --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+--display:"Anton",Impact,"Haettenschweiler","Arial Narrow Bold","Roboto Condensed",sans-serif;
+--stage:#241417;--stage-2:#2f1b1f;--stage-ink:#f6f1e7;--stage-muted:#cdbfb4;
 color-scheme:light;
 }
 @media (prefers-color-scheme:dark){:root{
@@ -76,7 +79,8 @@ color-scheme:light;
 --accent:#9a4458;--accent-hover:#b04f66;--accent-ink:#e3a3b2;--accent-tint:#35222a;--on-accent:#fbf7f3;
 --gold:#CEB888;--gold-tint:#302a1c;--gold-ink:#dcc796;
 --ok:#8fcaa6;--ok-tint:#1d2c23;--warn:#e6b46c;--warn-tint:#33281a;--bad:#f0a193;--bad-tint:#38211d;--info:#a9c2de;--info-tint:#1e2833;
---shadow:0 1px 2px rgba(0,0,0,.3);--shadow-deep:0 12px 40px rgba(0,0,0,.45);color-scheme:dark;}}
+--shadow:0 1px 2px rgba(0,0,0,.3);--shadow-deep:0 12px 40px rgba(0,0,0,.45);--stage:#140c0e;--stage-2:#1f1417;color-scheme:dark;}}
+@font-face{font-family:"Anton";src:url("/static/fonts/anton-latin.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
 *{box-sizing:border-box;margin:0}
 html{-webkit-text-size-adjust:100%}
 body{font-family:var(--sans);font-size:15px;background:var(--canvas);color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased}
@@ -102,8 +106,8 @@ header{background:color-mix(in srgb,var(--canvas) 88%,transparent);backdrop-filt
 .hero-in{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}
 @media(max-width:820px){.hero-in{grid-template-columns:1fr;gap:32px}.hero{padding:40px 20px}}
 .eyebrow{font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-ink)}
-.hero h1{font-family:var(--serif);font-weight:500;font-size:clamp(34px,5.4vw,56px);line-height:1.06;letter-spacing:-.02em;margin:14px 0 16px;max-width:15ch}
-.hero h1 em{font-style:normal;color:var(--accent-ink);background:linear-gradient(transparent 72%,var(--gold-tint) 72%)}
+.hero h1{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:clamp(42px,6.6vw,80px);line-height:.98;letter-spacing:.004em;margin:14px 0 18px;max-width:17ch}
+.hero h1 em{font-style:normal;color:var(--accent-ink)}
 .hero p{font-size:17px;color:var(--muted);max-width:50ch;margin:0 0 26px}
 .hero .cta{display:flex;gap:10px;flex-wrap:wrap}
 .hero .cta a{text-decoration:none;padding:12px 22px;border-radius:9px;font-weight:600;font-size:15px}
@@ -123,6 +127,67 @@ header{background:color-mix(in srgb,var(--canvas) 88%,transparent);backdrop-filt
 .how-item .n{font-family:var(--serif);color:var(--accent-ink);font-size:14px;margin-right:6px}
 .how-item b{font-weight:600}
 .how-item p{color:var(--muted);font-size:13.5px;margin-top:6px}
+/* ---------- home: the scan scene (showcase.py). Static by default; static/scan.js adds .live and drives it by scroll ---------- */
+.scan{background:var(--stage);color:var(--stage-ink);padding:64px 20px 72px}
+.scan-in{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:start}
+.scan .eyebrow{color:var(--gold)}
+.scan h1{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:clamp(46px,7.2vw,96px);line-height:.95;letter-spacing:.004em;margin:16px 0 20px;max-width:12ch}
+.scan h1 em{font-style:normal;color:var(--gold)}
+.scan-copy p{font-size:17px;color:var(--stage-muted);max-width:44ch;margin:0 0 26px}
+.scan .cta{display:flex;gap:10px;flex-wrap:wrap}
+.scan .cta a{text-decoration:none;padding:12px 22px;border-radius:9px;font-weight:600;font-size:15px}
+.scan .cta .primary{background:var(--gold);color:#241a0c}
+.scan .cta .primary:hover{background:#dcc99d}
+.scan .cta .secondary{background:transparent;color:var(--stage-ink);box-shadow:0 0 0 1px color-mix(in srgb,var(--stage-ink) 38%,transparent) inset}
+.scan .cta .secondary:hover{box-shadow:0 0 0 1px var(--gold) inset}
+.scan .count{margin-top:22px;font-size:13px;color:var(--stage-muted)}
+.live-only{display:none}.scan.live .live-only{display:inline}.scan.live .static-only{display:none}
+.scan-card{position:relative;background:var(--surface);color:var(--ink);border-radius:14px;padding:20px 20px 18px;box-shadow:0 30px 60px rgba(0,0,0,.35);border:1px solid var(--whisper);overflow:hidden}
+.scan-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}
+.scan-title{font-weight:700;font-size:17px;line-height:1.3}
+.scan-co{font-size:13px;color:var(--muted);margin-top:2px}
+.scan-tag{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);border:1px solid var(--line-2);border-radius:999px;padding:3px 9px;flex:none}
+.scan-body{font-size:14.5px;line-height:1.75;color:var(--ink-2)}
+.scan-apply{font-size:13.5px;color:var(--muted);margin-top:10px}
+.scan mark{background:var(--warn-tint);color:inherit;border-radius:3px;padding:1px 2px;box-shadow:inset 0 -2px 0 var(--warn);transition:background .35s,box-shadow .35s}
+.scan mark sup{font-size:10px;line-height:0;font-weight:700;color:var(--warn);margin-left:1px;transition:opacity .35s}
+.scan mark[data-s="3"],.scan mark[data-s="4"]{background:var(--bad-tint);box-shadow:inset 0 -2px 0 var(--bad)}
+.scan mark[data-s="3"] sup,.scan mark[data-s="4"] sup{color:var(--bad)}
+.scan-line{display:none}
+.scan-stamp{position:absolute;right:16px;bottom:14px;font-family:var(--display);text-transform:uppercase;font-size:24px;letter-spacing:.02em;color:var(--bad);border:3px solid var(--bad);border-radius:6px;padding:2px 10px;transform:rotate(-7deg);background:color-mix(in srgb,var(--surface) 82%,transparent);transition:opacity .3s,transform .3s cubic-bezier(.2,1.6,.4,1)}
+.scan-body+.scan-apply{padding-right:170px}
+.scan-flags{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:6px}
+.scan-flags li{display:flex;align-items:center;gap:10px;background:var(--stage-2);border:1px solid color-mix(in srgb,var(--stage-ink) 12%,transparent);border-radius:9px;padding:8px 12px;font-size:14px;transition:opacity .35s,transform .35s}
+.scan-flags .k{flex:none;width:22px;height:22px;border-radius:999px;display:grid;place-items:center;font-size:12px;font-weight:700;background:#e6b46c;color:#2a1a05}
+.scan-flags .critical .k{background:#e88774;color:#2a0d07}
+.scan-flags b{font-weight:600;flex:1}
+.scan-flags .sev{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--stage-muted)}
+.scan-verdict{margin-top:12px;border-radius:11px;padding:13px 14px;background:#f5e2dd;color:#6d1f14;transition:opacity .35s,transform .35s}
+.scan-verdict b{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:22px;letter-spacing:.02em;margin-right:10px}
+.scan-verdict .meta{font-size:13px;font-weight:600}
+.scan-verdict p{font-size:13.5px;margin-top:4px}
+.scan-verdict a{color:inherit;font-weight:700;white-space:nowrap}
+/* live: a tall track with a sticky stage; the scan line reveals each flag as it passes */
+.scan.live{padding-bottom:24px}
+.scan.live .scan-copy{position:sticky;top:calc(var(--hdr,57px) + 9vh)}
+.scan.live .scan-track{height:calc(100vh + var(--n) * 36vh)}
+.scan.live .scan-stage{position:sticky;top:calc(var(--hdr,57px) + 5vh)}
+.scan.live .scan-line{display:block;position:absolute;left:0;right:0;top:calc(var(--p,0) * 100%);height:2px;background:var(--gold);box-shadow:0 0 14px 3px color-mix(in srgb,var(--gold) 70%,transparent);opacity:0;transition:opacity .2s;pointer-events:none}
+.scan.live .scan-card.scanning .scan-line{opacity:1}
+.scan.live mark:not(.on){background:transparent;box-shadow:inset 0 0 0 transparent}
+.scan.live mark:not(.on) sup{opacity:0}
+.scan.live .scan-flags li:not(.on),.scan.live .scan-verdict:not(.on){opacity:0;transform:translateY(10px)}
+.scan.live .scan-stamp:not(.on){opacity:0;transform:rotate(-7deg) scale(1.6)}
+@media(max-width:820px){
+.scan{padding:40px 16px 48px}.scan-in{grid-template-columns:1fr;gap:28px}
+.scan.live .scan-copy{position:static}
+.scan.live .scan-track{height:calc(100vh + var(--n) * 30vh)}
+.scan.live .scan-stage{top:calc(var(--hdr,57px) + 10px)}
+.scan-card{padding:16px 16px 14px}.scan-body{font-size:13.5px;line-height:1.65}
+.scan-body+.scan-apply{padding-right:0}.scan-stamp{position:relative;right:auto;bottom:auto;display:inline-block;margin:12px 0 2px 2px;font-size:19px}
+.scan-flags{gap:5px;margin-top:10px}.scan-flags li{padding:6px 10px;font-size:13px}.scan-flags .sev{display:none}
+.scan-verdict b{font-size:19px}
+}
 /* ---------- signed-in app layout (Notion-style sidebar) ---------- */
 .app{display:grid;grid-template-columns:236px minmax(0,1fr);max-width:1180px;margin:0 auto;min-height:calc(100vh - 60px)}
 .side{border-right:1px solid var(--whisper);padding:18px 12px;position:sticky;top:57px;height:calc(100vh - 57px);overflow:auto}
@@ -570,7 +635,7 @@ def _footer() -> str:
 
 
 def shell(body: str, title: str = "NoleCareerShield", hero: str = "", admin: bool = False,
-          scripts: bool = False, active: str | None = None, js: bool = False) -> str:
+          scripts: bool = False, active: str | None = None, js: bool = False, scan: bool = False) -> str:
     """One page. Signed-in people get the app layout (sidebar) unless it's an admin or auth page.
     `scripts` adds the hashed inline password script; `js` adds /static/app.js (same-origin)."""
     user = viewer()
@@ -581,6 +646,8 @@ def shell(body: str, title: str = "NoleCareerShield", hero: str = "", admin: boo
         tail += f"<script>{PAGE_SCRIPT}</script>"
     if js:
         tail += f'<script src="/static/app.js?v={APP_JS_VERSION}" defer></script>'
+    if scan:
+        tail += f'<script src="/static/scan.js?v={SCAN_JS_VERSION}" defer></script>'
     csrf_meta = f'<meta name="csrf" content="{user_csrf()}">' if (user and js) else ""
     head = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>{csrf_meta}
@@ -608,3 +675,4 @@ def banner(kind: str, text: str, raw: bool = False) -> str:
 # ---------- static script ----------
 
 APP_JS_VERSION = "1"
+SCAN_JS_VERSION = "1"

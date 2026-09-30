@@ -9,8 +9,9 @@ stand, what was decided and why, and what's next.
 - **Demo:** `demo/index.html` (full page) and `demo/NoleCareerShield_Demo.html` (body only, published as the Claude artifact
   "NoleCareerShield Demo (Copy)"). Rebuild with `python demo/build.py` after any site change. The demo runs the real
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
-- **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it before each commit (see the snippet in git history).
-- **Tests:** `python -m pytest -q` (135 passing at handoff).
+- **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it before each commit with `python tools/make_installer.py`
+  (it was broken in the commits before Sept 30's home page update: it stored plain text but decoded base64).
+- **Tests:** `python -m pytest -q` (140 passing).
 
 ## Rules Evan set (keep them)
 
@@ -33,6 +34,16 @@ stand, what was decided and why, and what's next.
   evidence. Visitors can name a school they want it at (only the name is stored; reviewer tab "School requests").
 - **Reviewers:** `/admin` queues for listings, employers (with trust score), feed, held messages, reports, sent-in checks
   and school requests.
+
+## Look of the public pages
+
+- The home page opens on a dark garnet "stage": a big condensed headline (Anton, self-hosted) beside a sample scam
+  listing. As you scroll, a scan line runs down the listing and each flagged phrase lights up with its flag, then the
+  verdict stamps on. The flags come from running the real detector on that sample (`showcase.py`), and
+  `tests/test_showcase.py` fails if a rule stops firing. `static/scan.js` drives it; with reduced motion or no
+  JavaScript the finished state shows instead. The demo embeds the same HTML and script.
+- Inspiration: scroll-driven "one hero object" sites (Evan's reference videos). Motion stays on public pages; the
+  signed-in app stays calm.
 
 ## Decisions and why
 

@@ -70,6 +70,7 @@ import web
 import matching
 import profiles
 import profile_page
+import showcase
 import fit
 import jobfit
 import messaging
@@ -356,7 +357,7 @@ def _job_card(j: dict) -> str:
 # ---------- public routes ----------
 
 _script_src = f"'self' '{PAGE_SCRIPT_HASH}'" + (" https://challenges.cloudflare.com" if security.turnstile_enabled() else "")
-CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; "
+CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; "
        f"script-src {_script_src}; "
        + ("frame-src https://challenges.cloudflare.com; " if security.turnstile_enabled() else "")
        + "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
@@ -426,6 +427,23 @@ def static_app_js():
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
+_STATIC = Path(__file__).resolve().parent / "static"
+_SCAN_JS = (_STATIC / "scan.js").read_bytes()
+ui.SCAN_JS_VERSION = hashlib.sha256(_SCAN_JS).hexdigest()[:10]
+_DISPLAY_FONT = (_STATIC / "fonts" / "anton-latin.woff2").read_bytes()     # Anton, SIL Open Font License (static/fonts/OFL-Anton.txt)
+
+
+@app.get("/static/scan.js")
+def static_scan_js():
+    return Response(_SCAN_JS, media_type="text/javascript; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/static/fonts/anton-latin.woff2")
+def static_display_font():
+    return Response(_DISPLAY_FONT, media_type="font/woff2", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 _ERROR_TEXT = {
     404: ("Page not found", "That page doesn't exist. It may have been removed, or the link may have a typo."),
     405: ("That link can't be opened directly", "This address only works when it is used from a button on the site."),
@@ -490,18 +508,7 @@ def landing(request: Request):
         return HTMLResponse(shell(profiles.dashboard(user), title="Home — NoleCareerShield", active="/", js=True))
     n = public_count()
     count_line = f"{n} approved listing{'s' if n != 1 else ''} live right now" if n else "Approved listings will appear here"
-    hero = f"""<section class="hero"><div class="hero-in"><div>
-<div class="eyebrow">For FSU students · Scam-checked</div>
-<h1>Student jobs, <em>checked for scams</em> before you see them.</h1>
-<p>Every listing is scanned and approved by a person. Build a profile, message verified employers, get matched by the job assistant and sharpen your resume, all in one place.</p>
-<div class="cta"><a class="primary" href="/login">Join or log in with your @fsu.edu email</a><a class="secondary" href="/check">Try the scam check</a></div>
-<div class="count">{count_line}</div></div>
-<div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
-<b style="font-family:var(--serif);font-weight:500;font-size:19px">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</b>
-<div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
-<div class="mini"><b>{ui.icon("spark", 15)} Job assistant <span class="pill accent" style="margin-left:4px">FSU students</span></b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
-</div></div></section>
-<section class="how"><div class="how-inner">
+    hero = showcase.scan_section('href="/login"', 'href="/check"', count_line) + """<section class="how"><div class="how-inner">
 <div class="how-item"><b><span class="n">01</span>Only vetted listings</b><p>Every posting is scam-scanned, then a person approves it. Employers are reviewed before they can message you.</p></div>
 <div class="how-item"><b><span class="n">02</span>Tools that work for you</b><p>A job assistant that knows your skills, a resume reviewer and tailorer, and a checker for any suspicious message.</p></div>
 <div class="how-item"><b><span class="n">03</span>An FSU-only feed</b><p>Only verified students and approved employers post, and employer posts must be opportunities or advice for FSU students.</p></div>
@@ -518,7 +525,7 @@ def landing(request: Request):
                 '<p style="margin:16px 0 40px"><a href="/login?next=/jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Log in to see all jobs →</a></p>')
     else:
         body = '<div class="empty" style="margin:32px 0 48px">No approved listings yet. <a href="/employers" style="color:var(--accent-ink);font-weight:600">Hiring? Post the first one.</a></div>'
-    return shell(body, hero=hero)
+    return shell(body, hero=hero, scan=True)
 
 
 @app.get("/jobs", response_class=HTMLResponse)

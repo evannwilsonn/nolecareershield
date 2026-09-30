@@ -25,6 +25,8 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("ENV", "development")
 
 import ui  # noqa: E402
+import showcase  # noqa: E402
+import base64  # noqa: E402
 
 TITLE = "NoleCareerShield Demo"
 
@@ -66,7 +68,9 @@ SHELL = """<title>{title}</title>
 <div class="nav-actions" id="navActions"></div></div></header>
 <div id="app"></div>
 <script>var NCS_RULEPACK = {rules};
-var NCS_SEED = {seed};</script>
+var NCS_SEED = {seed};
+var NCS_SCAN = {scan};</script>
+<script>{scanjs}</script>
 <script>{engine}</script>
 <script>{app}</script>
 """
@@ -80,7 +84,12 @@ def build() -> tuple[Path, Path]:
             j.pop(k, None)
     safe = lambda obj: json.dumps(obj, separators=(",", ":")).replace("</", "<\\/")
     body = SHELL
-    for key, val in {"title": TITLE, "css": themed_css(ui.CSS) + DEMO_CSS, "emblem": ui.EMBLEM, "rules": safe(rules), "seed": safe(seed),
+    font = base64.b64encode((ROOT / "static" / "fonts" / "anton-latin.woff2").read_bytes()).decode()
+    css = themed_css(ui.CSS).replace('url("/static/fonts/anton-latin.woff2")', f'url("data:font/woff2;base64,{font}")')
+    if font not in css:
+        raise SystemExit("display font url not found in ui.CSS")
+    for key, val in {"scan": safe(showcase.scan_template()), "scanjs": (ROOT / "static" / "scan.js").read_text(),
+                     "title": TITLE, "css": css + DEMO_CSS, "emblem": ui.EMBLEM, "rules": safe(rules), "seed": safe(seed),
                      "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text()}.items():
         body = body.replace("{" + key + "}", val)
     art = HERE / "NoleCareerShield_Demo.html"
