@@ -109,6 +109,10 @@ def test_demo_fit_and_profile_import_match_python():
     ]
     jobs = json.loads((ROOT / "demo" / "seed_listings.json").read_text())
     jobs += [{"title": r["title"], "description": r["description"], "work_type": "on-site", "location": "Tallahassee, FL"} for r in _corpus()[::6]]
+    jobs += [{"title": "Assistant", "description": "Help around the office.", "work_type": "remote", "requirements": [
+        {"kind": "skill", "label": "Excel", "must": True}, {"kind": "skill", "label": "Tableau", "must": False}, {"kind": "skill", "label": "Zendesk", "must": True},
+        {"kind": "major", "label": "Business Administration", "must": True}, {"kind": "cert", "label": "Google Analytics", "must": False},
+        {"kind": "standing", "label": "senior", "must": True}, {"kind": "gpa", "label": "3.0", "must": True}]}]
     js = r"""
 const fs = require("fs");
 globalThis.NCS_RULEPACK = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));

@@ -357,7 +357,7 @@ function jobCard(j, match) {
 }
 
 // ---------------- layout ----------------
-const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Job assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["people", "network", "Network"]]],
+const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Career assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["people", "network", "Network"]]],
   ["Career tools", [["send", "applications", "Applications"], ["file", "resume", "Resume studio"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Profile"]]]];
 const EMPLOYER_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["people", "talent", "Find students"]]],
   ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Company profile"]]]];
@@ -683,7 +683,7 @@ P.assistant = () => {
   if (!S.chat) S.chat = [{role: "bot", text: `Hi${first ? " " + first : ""}! I'm your job assistant. Ask for any kind of job, ask what fits your resume, or paste a message you got and I'll tell you if it looks like a scam.`}];
   const log = S.chat.map(t => t.role === "me" ? `<div class="say me">${esc(t.text)}</div>`
     : `<div class="say bot"><div class="who">${icon("spark", 14)} Assistant</div>${esc(t.text)}${t.jobs && t.jobs.length ? `<div class="cards">${t.jobs.map(r => jobCard(r.job, r)).join("")}</div>` : ""}${t.scam ? `<div class="row" style="margin-top:8px"><a class="b sm sec" href="#" data-go="scam?kind=message">Open Scam check</a></div>` : ""}</div>`).join("");
-  return pageHead("Job assistant", "Your scout for the NoleCareerShield board. It only suggests listings that passed the scam scan and a human review.", "Assistant") +
+  return pageHead("Career assistant", "Your scout for the NoleCareerShield board. It only suggests listings that passed the scam scan and a human review.", "Assistant") +
     `<div class="chat" id="chat"><div class="log" id="log" aria-live="polite">${log}</div>${S.chat.length === 1 ? `<div class="sugg">${SUGG.map((s, i) => `<button type="button" data-do="ask" data-i="${i}">${esc(s.length < 48 ? s : s.slice(0, 45) + "…")}</button>`).join("")}</div>` : ""}
 <form id="askForm"><label for="q" class="hp">Your question</label><textarea id="q" name="q" required maxlength="4000" placeholder="e.g. paid research assistant jobs for a psych major" rows="1"></textarea><button class="b" type="submit" aria-label="Ask">${icon("send", 16)}</button></form></div>
 <p class="aimode" style="margin-top:8px">Built-in matching · answers only from approved listings. On the live site this runs on Claude when an API key is set.</p>`;

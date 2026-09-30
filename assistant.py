@@ -285,7 +285,7 @@ def page(request: Request):
     hello = (f"Hi{(' ' + esc(first)) if first else ''}! I'm your job assistant. Ask for any kind of job, ask what fits your resume, "
              "or paste a message you got and I'll tell you if it looks like a scam.")
     setup = "" if profiles.student_ready(p) else ui.banner("info", 'Set up your profile for personal matches. <a href="/profile/setup">Set up profile</a>', raw=True)
-    body = f"""{ui.page_head("Job assistant", "Your scout for the NoleCareerShield board. It only suggests listings that passed the scam scan and a human review.", num="Assistant")}
+    body = f"""{ui.page_head("Career assistant", "Your scout for the NoleCareerShield board. It only suggests listings that passed the scam scan and a human review.", num="Assistant")}
 {setup}<div class="chat" id="chat" data-api="/api/assistant">
 <div class="log" id="log" aria-live="polite"><div class="say bot"><div class="who">{ui.icon("spark", 14)} Assistant</div>{hello}</div></div>
 <div class="sugg" id="sugg">{sugg}</div>
@@ -293,7 +293,7 @@ def page(request: Request):
 <textarea id="q" name="q" required maxlength="{MAX_TURN_CHARS}" placeholder="e.g. paid research assistant jobs for a psych major" rows="1"></textarea>
 <button class="b" type="submit" aria-label="Ask">{ui.icon("send", 16)}</button></form></div>
 <p class="aimode" style="margin-top:8px">{esc(mode)}. Conversations aren't saved.</p>"""
-    return web.page(body, "Job assistant", active="/assistant", js=True)
+    return web.page(body, "Career assistant", active="/assistant", js=True)
 
 
 @router.post("/assistant", response_class=HTMLResponse)
@@ -308,12 +308,12 @@ def page_answer(request: Request, q: str = Form(""), csrf: str = Form("")):
         return page(request)
     out = answer(user, hist)
     cards = "".join(card_html(c) for c in out["jobs"])
-    body = (ui.page_head("Job assistant", num="Assistant") +
+    body = (ui.page_head("Career assistant", num="Assistant") +
             f'<div class="chat"><div class="log"><div class="say me">{esc(hist[-1]["text"])}</div>'
             f'<div class="say bot"><div class="who">{ui.icon("spark", 14)} Assistant</div>{esc(out["reply"])}<div class="cards">{cards}</div></div></div>'
             f'<form method="post" action="/assistant">{ui.user_csrf_input()}<textarea name="q" required maxlength="{MAX_TURN_CHARS}" aria-label="Ask another question"></textarea>'
             f'<button class="b" type="submit">Ask</button></form></div>')
-    return web.page(body, "Job assistant", active="/assistant", js=True)
+    return web.page(body, "Career assistant", active="/assistant", js=True)
 
 
 @router.post("/api/assistant")

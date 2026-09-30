@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import copy
 import functools
+import quals as _quals
 import re
 import time
 
@@ -173,10 +174,43 @@ def _job_requirements(title: str, text: str) -> dict:
             "grad_years": sorted(set(gy)), "certs": certs, "kind": kind, "keywords": kws}
 
 
+def _merge_quals(req: dict, chosen: list[dict], must_of: dict) -> dict:
+    """Employer-chosen items win: skills/majors/certs are added, a chosen standing/year/GPA replaces the parsed one."""
+    req = copy.deepcopy(req)
+    for q in chosen:
+        k, l = q["kind"], q["label"]
+        must_of[l.lower()] = bool(q.get("must"))
+        if k == "skill":
+            bucket, other = ("required", "preferred") if q.get("must") else ("preferred", "required")
+            if l in req[other]:
+                req[other].remove(l)
+            if l not in req[bucket] and l not in req["required"]:
+                req[bucket].append(l)
+        elif k == "major":
+            canon = next((c for c, ws in MAJORS.items() if l.lower() == c.lower() or l.lower() in ws), l)
+            if canon not in req["majors"]:
+                req["majors"].append(canon)
+        elif k == "cert":
+            if l not in req["certs"]:
+                req["certs"].append(l)
+            req["required"] = [s for s in req["required"] if s != l]
+        elif k == "standing":
+            req["standing"] = sorted(set(req["standing"]) | {l})
+        elif k == "gradyear":
+            req["grad_years"] = sorted(set(req["grad_years"]) | {int(l)})
+        elif k == "gpa":
+            req["gpa"] = float(l)
+    return req
+
+
 def fit_score(job: dict, profile: dict | None, today: tuple[int, int] | None = None) -> dict:
     profile = profile or {}
     today = _year_month(today)
     req = job_requirements(job.get("title", ""), job.get("description", ""))
+    chosen = _quals.of(job)
+    must_of: dict[str, bool] = {}
+    if chosen:
+        req = _merge_quals(req, chosen, must_of)
     srcs = _sources(profile)
     skill_where: dict[str, list[str]] = {}
     for label, kind, text in srcs:
@@ -185,6 +219,12 @@ def fit_score(job: dict, profile: dict | None, today: tuple[int, int] | None = N
     for s in profile.get("skills") or []:
         skill_where.setdefault(s, []).insert(0, "Your skills list") if "Your skills list" not in skill_where.get(s, []) else None
     all_text = " ".join(t for _, _, t in srcs).lower()
+    for q in chosen:  # skills the employer typed that our vocabulary doesn't know: match them literally
+        if q["kind"] == "skill" and q["label"] not in skill_where:
+            rx = r"(?<![a-z0-9])" + re.escape(q["label"].lower()) + r"(?![a-z0-9])"
+            hits = [lbl for lbl, _, t in srcs if re.search(rx, t.lower())]
+            if hits:
+                skill_where[q["label"]] = hits
     parts: dict[str, dict] = {}
     checklist: list[dict] = []
 
@@ -275,7 +315,7 @@ def fit_score(job: dict, profile: dict | None, today: tuple[int, int] | None = N
 
     # 4. Certifications the job names.
     if req["certs"]:
-        have = [c for c in req["certs"] if re.search(CERTS[c], all_text, re.IGNORECASE)]
+        have = [c for c in req["certs"] if re.search(CERTS.get(c) or (r"(?<![a-z0-9])" + re.escape(c.lower()) + r"(?![a-z0-9])"), all_text, re.IGNORECASE)]
         parts["certifications"] = {"score": round(100 * len(have) / len(req["certs"])),
                                    "detail": f"{len(have)} of {len(req['certs'])}: " + ", ".join(req["certs"][:3])}
         for c in req["certs"]:
@@ -315,7 +355,17 @@ def fit_score(job: dict, profile: dict | None, today: tuple[int, int] | None = N
     return {"score": score, "label": label, "confidence": ["low", "low", "medium", "medium", "high"][completeness],
             "parts": [{"key": k, "name": NAMES[k], "weight": WEIGHTS[k], **parts[k]} for k in WEIGHTS if k in parts],
             "matched": matched, "missing": missing, "relevant": relevant[:5], "keywords_hit": kw_hit,
-            "keywords_missing": [k for k in req["keywords"] if k not in kw_hit][:8], "checklist": checklist[:16], "requirements": req}
+            "keywords_missing": [k for k in req["keywords"] if k not in kw_hit][:8], "checklist": [{**c, "must": _is_must(c["text"], must_of)} for c in checklist[:16]], "requirements": req,
+            "percent": score, "level": "high" if score >= 75 else ("medium" if score >= 50 else "low"),
+            "met": sum(1 for c in checklist if c["status"] == "met"), "total": len(checklist)}
+
+
+def _is_must(text: str, must_of: dict) -> bool:
+    t = text.lower().replace(" (preferred)", "")
+    for k in (t, t.split(":", 1)[-1].strip()):
+        if k in must_of:
+            return must_of[k]
+    return any(m and m in t for m in must_of if must_of[m])
 
 
 def _terms(text: str, n: int = 10) -> list[str]:

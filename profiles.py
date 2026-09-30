@@ -644,7 +644,7 @@ def dashboard(user: dict) -> str:
 <div class="tile w2"><h3>{ui.icon("shield")}Scam check</h3><p>Got a DM or email about a job? Paste it and get a verdict with the evidence.</p><div class="foot"><a class="b sm sec" href="/check?kind=message">Check a message</a></div></div>
 {resume_tile}
 <div class="tile w3"><h3>{ui.icon("user")}Profile</h3><div class="meter"><i style="width:{pct}%"></i></div><p>{pct}% complete{(". Add " + esc(missing[0])) if missing else ""}</p><div class="foot"><a class="b sm sec" href="/profile">View profile</a></div></div>
-<div class="tile w6"><h3>{ui.icon("feed")}From the FSU feed</h3>{feed}<div class="foot"><a class="b sm sec" href="/feed">Open the feed</a> <span class="aimode">&nbsp; Job assistant: {ai_note}</span></div></div>
+<div class="tile w6"><h3>{ui.icon("feed")}From the FSU feed</h3>{feed}<div class="foot"><a class="b sm sec" href="/feed">Open the feed</a> <span class="aimode">&nbsp; Career assistant: {ai_note}</span></div></div>
 </div>"""
     counts = {r["review_status"]: r["n"] for r in mine}
     st = p.get("status", "draft")

@@ -961,11 +961,19 @@ majoring major majors minor degree hold holds certified certification certificat
   function fitScore(job, profile, today) {
     profile = profile || {};
     if (!today) { const d = new Date(); today = [d.getUTCFullYear(), d.getUTCMonth() + 1]; }
-    const req = jobRequirements(job.title || "", job.description || ""), srcs = fitSources(profile), items = profile.items || [];
+    let req = jobRequirements(job.title || "", job.description || "");
+    const chosen = qualsOf(job), mustOf = {};
+    if (chosen.length) req = mergeQuals(req, chosen, mustOf);
+    const srcs = fitSources(profile), items = profile.items || [];
     const where = new Map();
     for (const [label, , text] of srcs) for (const s of extractSkills(text)) { if (!where.has(s)) where.set(s, []); where.get(s).push(label); }
     for (const s of profile.skills || []) { const cur = where.get(s) || []; if (!cur.includes("Your skills list")) { where.set(s, cur); cur.unshift("Your skills list"); } }
     const allText = srcs.map(x => x[2]).join(" ").toLowerCase();
+    for (const q of chosen) if (q.kind === "skill" && !where.has(q.label)) {
+      const rx = new RegExp("(?<![a-z0-9])" + q.label.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![a-z0-9])");
+      const hits = srcs.filter(x => rx.test(x[2].toLowerCase())).map(x => x[0]);
+      if (hits.length) where.set(q.label, hits);
+    }
     const parts = {}, checklist = [];
 
     const wanted = req.required.map(s => [s, 1.0, true]).concat(req.preferred.map(s => [s, 0.5, false]));
@@ -1033,7 +1041,7 @@ majoring major majors minor degree hold holds certified certification certificat
     if (eduScores.length) parts.education = {score: pyRound(100 * sum(eduScores) / eduScores.length), detail: eduNotes.slice(0, 2).join("; ")};
 
     if (req.certs.length) {
-      const have = req.certs.filter(c => CERTS_RX[c].test(allText));
+      const have = req.certs.filter(c => (CERTS_RX[c] || new RegExp("(?<![a-z0-9])" + c.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![a-z0-9])", "i")).test(allText));
       parts.certifications = {score: pyRound(100 * have.length / req.certs.length), detail: `${have.length} of ${req.certs.length}: ` + req.certs.slice(0, 3).join(", ")};
       for (const c of req.certs) checklist.push({text: c, status: have.includes(c) ? "met" : "missing", evidence: ""});
     }
@@ -1061,7 +1069,40 @@ majoring major majors minor degree hold holds certified certification certificat
     const completeness = [(profile.skills || []).length, profile.resume_text, items.some(i => i.kind === "experience" || i.kind === "project"), profile.major].filter(Boolean).length;
     return {score, label: FIT_LABELS.find(([cut]) => score >= cut)[1], confidence: ["low", "low", "medium", "medium", "high"][completeness],
             parts: keys.map(k => Object.assign({key: k, name: FIT_NAMES[k], weight: FIT_WEIGHTS[k]}, parts[k])), matched, missing, relevant: relevant.slice(0, 5),
-            keywords_hit: kwHit, keywords_missing: req.keywords.filter(k => !kwHit.includes(k)).slice(0, 8), checklist: checklist.slice(0, 16), requirements: req};
+            keywords_hit: kwHit, keywords_missing: req.keywords.filter(k => !kwHit.includes(k)).slice(0, 8), checklist: checklist.slice(0, 16).map(c => Object.assign({}, c, {must: isMust(c.text, mustOf)})), requirements: req,
+            percent: score, level: score >= 75 ? "high" : (score >= 50 ? "medium" : "low"), met: checklist.filter(c => c.status === "met").length, total: checklist.length};
+  }
+  const QUAL_KINDS = {skill: "Skill", major: "Major", cert: "Certification", standing: "Class standing", gradyear: "Graduation year", gpa: "Minimum GPA"};
+  function qualsOf(job) {
+    let raw = job.requirements;
+    if (typeof raw === "string") { try { raw = JSON.parse(raw || "[]"); } catch (e) { raw = []; } }
+    return (raw || []).filter(q => q && QUAL_KINDS[q.kind] && q.label);
+  }
+  function mergeQuals(req0, chosen, mustOf) {
+    const req = JSON.parse(JSON.stringify(req0));
+    for (const q of chosen) {
+      const k = q.kind, l = q.label;
+      mustOf[l.toLowerCase()] = !!q.must;
+      if (k === "skill") {
+        const [bucket, other] = q.must ? ["required", "preferred"] : ["preferred", "required"];
+        if (req[other].includes(l)) req[other] = req[other].filter(x => x !== l);
+        if (!req[bucket].includes(l) && !req.required.includes(l)) req[bucket].push(l);
+      } else if (k === "major") {
+        const canon = Object.keys(MAJORS).find(c => l.toLowerCase() === c.toLowerCase() || MAJORS[c].includes(l.toLowerCase())) || l;
+        if (!req.majors.includes(canon)) req.majors.push(canon);
+      } else if (k === "cert") {
+        if (!req.certs.includes(l)) req.certs.push(l);
+        req.required = req.required.filter(x => x !== l);
+      } else if (k === "standing") req.standing = [...new Set(req.standing.concat([l]))].sort();
+      else if (k === "gradyear") req.grad_years = [...new Set(req.grad_years.concat([parseInt(l, 10)]))].sort((a, b) => a - b);
+      else if (k === "gpa") req.gpa = parseFloat(l);
+    }
+    return req;
+  }
+  function isMust(text, mustOf) {
+    const t = text.toLowerCase().replace(" (preferred)", "");
+    for (const k of [t, t.split(":").slice(-1)[0].trim()]) if (k in mustOf) return mustOf[k];
+    return Object.keys(mustOf).some(m => mustOf[m] && t.includes(m));
   }
 
   // ---------- employer trust score (port of employer_page.trust_from_signals) ----------
@@ -1109,7 +1150,7 @@ majoring major majors minor degree hold holds certified certification certificat
   }
 
   const NCS = {normalize, runTextRules, scorePosting, check, linkFindings, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
-    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
+    categoriesForMajor, qualsOf, QUAL_KINDS, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;
   if (typeof module !== "undefined" && module.exports) module.exports = NCS;

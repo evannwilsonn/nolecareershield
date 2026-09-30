@@ -80,6 +80,7 @@ import feed
 import admin_extra
 import hiring
 import easyapply
+import quals
 import network
 import employer_page
 import sso
@@ -138,7 +139,8 @@ WORK_TYPES = matching.WORK_TYPES
 
 # Added after the first release; existing databases are migrated in place.
 _EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_at": "TEXT", "employer_id": "INTEGER",
-                  "easy_apply": "INTEGER NOT NULL DEFAULT 0", "questions": "TEXT NOT NULL DEFAULT '[]'"}
+                  "easy_apply": "INTEGER NOT NULL DEFAULT 0", "questions": "TEXT NOT NULL DEFAULT '[]'",
+                  "requirements": "TEXT NOT NULL DEFAULT '[]'"}
 REVIEW_REASONS = ["scam", "lead_gen", "other"]
 
 
@@ -220,8 +222,8 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             INSERT INTO jobs (title, company, category, work_type, location,
                               description, apply_url, contact, score, band,
                               scam_status, review_status, findings_json, created_at,
-                              ruleset_version, employer_id, easy_apply, questions)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                              ruleset_version, employer_id, easy_apply, questions, requirements)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data["title"], data["company"], data.get("category","Other"),
             data["work_type"], data.get("location",""), data["description"],
@@ -230,6 +232,7 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             json.dumps(findings), dt.datetime.utcnow().isoformat(),
             result.ruleset_version, employer_id,
             1 if data.get("easy_apply") else 0, json.dumps(data.get("questions") or []),
+            json.dumps(data.get("requirements") or []),
         ))
         db.commit()
         job_id = cur.lastrowid
@@ -716,6 +719,13 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
         f'<label class="sr" for="f-qkind{i}">Answer type for question {i + 1}</label><select id="f-qkind{i}" name="qkind">' + "".join(f'<option value="{k}"{" selected" if q.get("kind") == k else ""}>{esc(n)}</option>' for k, n in easyapply.KINDS) + '</select>'
         f'<label class="sr" for="f-qreq{i}">Required or optional for question {i + 1}</label><select id="f-qreq{i}" name="qreq"><option value="0">Optional</option><option value="1"{" selected" if q.get("required") else ""}>Required</option></select></div>'
         for i, q in enumerate(qv[:easyapply.MAX_QUESTIONS]))
+    rv = v.get("requirements") if isinstance(v.get("requirements"), list) else []
+    rv = list(rv) + [{}] * (quals.MAX_ITEMS - len(rv))
+    r_rows = "".join(
+        f'<div class="qrow"><label class="sr" for="f-rkind{i}">Qualification {i + 1} type</label><select id="f-rkind{i}" name="rkind">' + "".join(f'<option value="{k}"{" selected" if r.get("kind") == k else ""}>{esc(n)}</option>' for k, n in quals.KINDS.items()) + '</select>'
+        f'<label class="sr" for="f-rlabel{i}">Qualification {i + 1}</label><input id="f-rlabel{i}" name="rlabel" maxlength="{quals.LABEL_LEN}" placeholder="e.g. Excel, Marketing, 3.0" value="{esc(r.get("label", ""))}">'
+        f'<label class="sr" for="f-rmust{i}">Required or preferred for qualification {i + 1}</label><select id="f-rmust{i}" name="rmust"><option value="0">Preferred</option><option value="1"{" selected" if r.get("must") else ""}>Required</option></select></div>'
+        for i, r in enumerate(rv[:quals.MAX_ITEMS]))
     easy_on = " checked" if v.get("easy_apply") in (1, True, "1", "on") else ""
     body = f"""<a class="back" href="/">← Home</a>
 <h2 class="page">Submit a job</h2>
@@ -731,6 +741,8 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
 <div class="form-field"><label for="f-description">Description</label><p class="hint">The full posting — responsibilities, requirements, and pay if you can share it.</p><textarea id="f-description" name="description" required maxlength="8000">{val('description')}</textarea></div>
 <div class="form-field"><label for="f-apply_url">Apply URL</label><p class="hint">Where applicants should go. The scanner checks this link too.</p><input id="f-apply_url" name="apply_url" maxlength="2000" placeholder="https://..." value="{val('apply_url')}"></div>
 <div class="form-field"><label for="f-contact">Contact (optional)</label><p class="hint">Shown publicly if approved. Use a role or company address, not a personal one.</p><input id="f-contact" name="contact" maxlength="200" placeholder="careers@company.com" value="{val('contact')}"></div>
+<fieldset class="form-field easyset"><legend>Qualifications</legend>
+<p class="hint">Choose what applicants need. Students see which ones they meet, and you see the same on every applicant. Skills, majors, certifications, class standing, graduation year and GPA only. Up to {quals.MAX_ITEMS}.</p>{r_rows}</fieldset>
 <fieldset class="form-field easyset"><legend>Easy apply</legend>
 <label class="toggle" for="f-easy"><input id="f-easy" type="checkbox" name="easy_apply" value="1"{easy_on}><span><b>Collect applications on NoleCareerShield.</b> Students apply from their profile in one step, and you get their answers in your candidate tracker. Leave it off to send them to your Apply URL.</span></label>
 <p class="hint" style="margin-top:10px">Optional questions for applicants (up to {easyapply.MAX_QUESTIONS}). Nothing that asks for an SSN, bank or card details or a password.</p>{q_rows}</fieldset>
@@ -750,6 +762,13 @@ def _clean_questions(raw) -> list[dict]:
         raise ValidationError(str(e))
 
 
+def _clean_quals(raw) -> list[dict]:
+    try:
+        return quals.clean(raw)
+    except quals.QualError as e:
+        raise ValidationError(str(e))
+
+
 def _clean_listing(f: dict) -> dict:
     """Validate the fields of a listing. Raises ValidationError with a message fit to show the poster."""
     return {
@@ -763,6 +782,7 @@ def _clean_listing(f: dict) -> dict:
         "contact": clean_text(f.get("contact", ""), "contact", required=False),
         "easy_apply": 1 if f.get("easy_apply") in (1, True, "1", "on", "yes") else 0,
         "questions": _clean_questions(f.get("questions")),
+        "requirements": _clean_quals(f.get("requirements")),
     }
 
 
@@ -783,12 +803,15 @@ def post_submit(
     work_type: str = Form(...), location: str = Form(""), description: str = Form(...),
     apply_url: str = Form(""), contact: str = Form(""),
     csrf: str = Form(""), website: str = Form(""),
+    rkind: list[str] = Form([]), rlabel: list[str] = Form([]), rmust: list[str] = Form([]),
     easy_apply: str = Form(""), qtext: list[str] = Form([]), qkind: list[str] = Form([]), qreq: list[str] = Form([]),
 ):
     enforce_rate_limit(request, submit_limiter, "post_submit")
     typed = {"title": title, "company": company, "category": category, "work_type": work_type,
              "location": location, "description": description, "apply_url": apply_url, "contact": contact,
              "easy_apply": easy_apply,
+             "requirements": [{"kind": (rkind[i] if i < len(rkind) else "skill"), "label": t, "must": (rmust[i] if i < len(rmust) else "0") == "1"}
+                              for i, t in enumerate(rlabel[:quals.MAX_ITEMS])],
              "questions": [{"q": t, "kind": (qkind[i] if i < len(qkind) else "short"), "required": (qreq[i] if i < len(qreq) else "0") == "1"}
                            for i, t in enumerate(qtext[:easyapply.MAX_QUESTIONS])]}
     if not verify_csrf(csrf, "form"):

@@ -742,6 +742,9 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 """
 
+import css_assist, css_feed, css_jobs, css_resume  # noqa: E402  page-specific styles, one file per area
+CSS += css_jobs.CSS + css_feed.CSS + css_resume.CSS + css_assist.CSS
+
 # Kept for compatibility with older imports.
 BASE_CSS = CSS
 
@@ -812,7 +815,7 @@ def _nav_links(admin: bool) -> str:
 
 
 _STUDENT_NAV = [
-    ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("spark", "/assistant", "Job assistant"),
+    ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("spark", "/assistant", "Career assistant"),
           ("feed", "/feed", "Feed"), ("chat", "/messages", "Messages"), ("people", "/network", "Network")]),
     ("Career tools", [("send", "/applications", "Applications"), ("file", "/resume", "Resume studio"), ("shield", "/check", "Scam check")]),
     ("You", [("user", "/profile", "Profile")]),
