@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("ENV", "development")
 
 import ui  # noqa: E402
+import css_feed  # noqa: E402,F401  (appends the feed styles to ui.CSS)
 
 TITLE = "NoleCareerShield Demo"
 

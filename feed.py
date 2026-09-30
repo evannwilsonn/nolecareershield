@@ -15,14 +15,19 @@ Visitors who aren't signed in see an explanation, not the posts.
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
+from collections import Counter
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 import ai
+import css_feed  # noqa: F401  (appends the feed styles to ui.CSS)
 import msgcheck
+import network
 import profiles
 import security
 import store
@@ -40,6 +45,18 @@ STUDENT_KINDS = ["question", "advice", "opportunity", "event", "win"]
 EMPLOYER_KINDS = ["opportunity", "advice", "event", "info_session"]
 MAX_POST, MAX_COMMENT = 1500, 500
 HIDE_AFTER_REPORTS = 3
+MAX_SAVES = 300
+PAGE = 20
+TABS = [("feed", "Feed", "/feed"), ("foryou", "For you", "/feed?tab=foryou"), ("saved", "Saved", "/feed?tab=saved")]
+PILLS = [("all", "All"), ("major", "Your major"), ("employers", "Employers")]
+GUIDELINES = ["Be kind and specific. Help each other out.", "No ads, spam or pay-to-apply offers.",
+              "Never share passwords, SSNs or bank details.", "Report anything that feels like a scam."]
+_STOP = set("""about above after again also always another anyone around because before being between both come could does doing done down
+each even ever every from get going good great have having here hello help how into just know like look make many more most much need only
+other over please really should some someone something still such take than thank thanks that their them then there these they thing think
+this those through today want week were what when where which while will with would year your students student fsu florida state
+university apply hiring internship internships""".split())
+_SAVE_NEXT = re.compile(r"^/feed(?:/\d{1,9})?(?:\?[A-Za-z0-9_=&%.+-]{0,150})?$")
 
 FSU_SIGNALS = re.compile(
     r"\b(?:fsu|florida state|noles?|seminoles?|tallahassee|students?|interns?|internships?|new grads?|recent grads?|"
@@ -101,10 +118,27 @@ def can_post(conn, user: dict) -> tuple[bool, str]:
 
 # ---------- rendering ----------
 
+def bookmark_icon(filled: bool = False, size: int = 20) -> str:
+    return (f'<svg class="ic" viewBox="0 0 24 24" width="{size}" height="{size}" fill="{"currentColor" if filled else "none"}" stroke="currentColor" '
+            'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h12v17l-6-4.2L6 21z"/></svg>')
+
+
+def safe_next(value: str, default: str = "/feed") -> str:
+    v = (value or "").strip()
+    return v if _SAVE_NEXT.fullmatch(v) else default
+
+
+def saved_ids(conn, uid: int) -> set[int]:
+    return {r[0] for r in conn.execute("SELECT post_id FROM post_saves WHERE user_id = ?", (uid,))}
+
+
 def _author(conn, uid: int) -> str:
     name, sub, kind = web.display_name(conn, uid)
     href = f"/company/{uid}" if kind == "emp" else f"/u/{uid}"
-    return web.person(name, sub, kind, href)
+    av = f'<span class="avatar{" emp" if kind == "emp" else ""}">{ui.initials(name)}</span>'
+    badge = ' <span class="pill accent fd-tag">Employer</span>' if kind == "emp" else ""
+    return (f'<div class="person">{av}<div style="min-width:0"><div class="nm"><a href="{esc(href)}" style="text-decoration:none">{esc(name)}</a>{badge}</div>'
+            f'<div class="sub">{esc(sub)}</div></div></div>')
 
 
 def _link(link: str) -> str:
@@ -114,8 +148,11 @@ def _link(link: str) -> str:
             f'<span class="faint">(opens another site)</span></p>')
 
 
-def post_html(conn, p: dict, user: dict, *, full: bool = False) -> str:
+def post_html(conn, p: dict, user: dict, *, full: bool = False, saved: set[int] | None = None, next_: str = "/feed") -> str:
     csrf = ui.user_csrf_input()
+    if saved is None:
+        saved = saved_ids(conn, user["id"])
+    is_saved = p["id"] in saved
     kind = KINDS.get(p["kind"], p["kind"])
     kcls = {"opportunity": "accent", "event": "gold", "info_session": "gold", "question": "info", "win": "ok"}.get(p["kind"], "")
     mine = p["author_id"] == user["id"]
@@ -151,8 +188,13 @@ def post_html(conn, p: dict, user: dict, *, full: bool = False) -> str:
     if p["scan_band"] in ("review", "caution") and p["status"] == "published":
         flag = ('<div class="scanbox" style="max-width:none;margin-bottom:8px">Heads up: our scanner found something worth checking in this post. '
                 'Verify before sharing personal details.</div>')
-    return f"""<article class="post"><div class="head">{_author(conn, p["author_id"])}<div class="row" style="gap:6px">{status}<span class="pill {kcls}">{esc(kind)}</span>
-<span class="faint small">{esc(web.ago(p["created_at"]))}</span></div></div>{flag}<div class="body">{esc(p["body"])}</div>{_link(p["link"])}
+    save = ""
+    if p["status"] == "published":
+        action, label = ("unsave", "Remove from saved posts") if is_saved else ("save", "Save post")
+        save = (f'<form method="post" action="/feed/{int(p["id"])}/{action}" class="fd-save">{csrf}<input type="hidden" name="next" value="{esc(next_)}">'
+                f'<button type="submit" aria-label="{label}" title="{label}" aria-pressed="{"true" if is_saved else "false"}">{bookmark_icon(is_saved)}</button></form>')
+    return f"""<article class="post fd-post" id="post-{int(p["id"])}"><div class="fd-head">{_author(conn, p["author_id"])}<div class="fd-meta">{status}<span class="pill {kcls} fd-tag">{esc(kind)}</span>
+<span class="fd-time">{esc(web.ago(p["created_at"]))}</span>{save}</div></div>{flag}<div class="body">{esc(p["body"])}</div>{_link(p["link"])}
 <div class="acts">{acts}</div>{comments}</article>"""
 
 
@@ -172,11 +214,14 @@ def _composer(conn, user: dict, values: dict | None = None, error: str = "") -> 
             if user["role"] == "student" else
             "Employer posts must be opportunities, events or advice for FSU students. Ads and promotions are declined. A reviewer approves each post.")
     err = ui.banner("warning", error) if error else ""
-    return f"""<form method="post" action="/feed/post" class="composer-card">{ui.user_csrf_input()}{err}
+    name = web.display_name(conn, user["id"])[0]
+    av = f'<span class="avatar{" emp" if user["role"] == "employer" else ""}" aria-hidden="true">{ui.initials(name)}</span>'
+    form = f"""<form method="post" action="/feed/post" class="composer-card">{ui.user_csrf_input()}{err}
 <label for="f-body" class="hp">Post</label><textarea id="f-body" name="body" required maxlength="{MAX_POST}" data-count placeholder="{esc(rule)}">{esc(v.get('body', ''))}</textarea>
 <div class="row" style="margin-top:8px"><label for="f-kind" class="hp">Type</label><select id="f-kind" name="kind" style="width:auto">{opts}</select>
 <label for="f-link" class="hp">Link</label><input id="f-link" name="link" maxlength="300" placeholder="Link (optional)" value="{esc(v.get('link', ''))}" style="flex:1;min-width:180px">
 <button class="b" type="submit">Post</button></div>{f'<p class="small faint" style="margin-top:6px">{esc(rule)}</p>' if user["role"] == "employer" else ""}</form>"""
+    return f'<details class="fd-comp"{" open" if (error or v.get("body")) else ""}><summary>{av}<span>Share something with the community…</span></summary>{form}</details>'
 
 
 def _teaser() -> HTMLResponse:
@@ -190,36 +235,188 @@ def _teaser() -> HTMLResponse:
 
 # ---------- routes ----------
 
+# ---------- feed queries ----------
+
+_VISIBLE = "(p.status = 'published' OR (p.author_id = ? AND p.status IN ('pending','held','rejected')))"
+_WORD = re.compile(r"#?[A-Za-z][A-Za-z+#.-]{3,24}")
+
+
+def _viewer_profile(conn, user: dict) -> dict:
+    return (store.student_profile(conn, user["id"]) or {}) if user["role"] == "student" else {}
+
+
+def _filter_sql(conn, user: dict, f: str, q: str) -> tuple[str, list]:
+    """Extra WHERE clauses for the pills and the topic search."""
+    sql, params = "", []
+    if f == "employers":
+        sql += " AND p.author_id IN (SELECT id FROM users WHERE role = 'employer')"
+    elif f == "major":
+        major = (_viewer_profile(conn, user).get("major") or "").strip()
+        sql += " AND p.author_id IN (SELECT user_id FROM student_profiles WHERE LOWER(major) = LOWER(?) AND ? != '')"
+        params += [major, major]
+    if q:
+        sql += " AND LOWER(p.body) LIKE ? ESCAPE '\\'"
+        params.append("%" + q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+    return sql, params
+
+
+def _mentions(text: str, terms) -> int:
+    t = text.lower()
+    return sum(1 for w in terms if w and re.search(r"(?<![a-z0-9])" + re.escape(w.lower()) + r"(?![a-z0-9])", t))
+
+
+def for_you_score(post: dict, viewer: dict, author: dict | None, now: float | None = None) -> float:
+    """Ranks a post for one student: the author's major (+4) and skills (up to +3) that overlap with theirs, their skills
+    or major named in the post (up to +3 and +2), and recency (up to +4, halving every 3 days)."""
+    now = now or time.time()
+    pts = 0.0
+    vmajor = (viewer.get("major") or "").strip().lower()
+    vskills = [s for s in viewer.get("skills") or [] if s]
+    if author and vmajor and (author.get("major") or "").strip().lower() == vmajor:
+        pts += 4
+    if author:
+        theirs = {s.lower() for s in author.get("skills") or []}
+        pts += min(3, len(theirs & {s.lower() for s in vskills}))
+    pts += min(3, _mentions(post["body"], vskills))
+    if vmajor and vmajor in post["body"].lower():
+        pts += 2
+    age_days = max(0.0, now - post["created_at"]) / 86400
+    return pts + 4 * math.pow(0.5, age_days / 3)
+
+
+def trending(conn, limit: int = 5) -> list[tuple[str, int]]:
+    """Words and #tags that show up in at least two recent published posts."""
+    since = time.time() - 30 * 86400
+    seen: Counter = Counter()
+    for (body,) in conn.execute("SELECT body FROM posts WHERE status = 'published' AND created_at > ? ORDER BY id DESC LIMIT 300", (since,)):
+        seen.update({w.lower().lstrip("#") for w in _WORD.findall(body) if w.lower().lstrip("#") not in _STOP})
+    return [(w, n) for w, n in seen.most_common(40) if n >= 2][:limit]
+
+
+def _url(tab: str = "feed", f: str = "all", q: str = "", before: int = 0) -> str:
+    parts = []
+    if tab != "feed":
+        parts.append("tab=" + tab)
+    if f != "all":
+        parts.append("f=" + f)
+    if q:
+        parts.append("q=" + quote(q))
+    if before:
+        parts.append(f"before={int(before)}")
+    return "/feed" + ("?" + "&".join(parts) if parts else "")
+
+
+def _rail(conn, user: dict, next_: str) -> str:
+    people = ""
+    if user["role"] == "student":
+        rows = ""
+        for p, why in network.suggestions(conn, user["id"], 3):
+            sid = int(p["user_id"])
+            name, sub, kind = web.display_name(conn, sid, "student")
+            rows += (f'<div class="fd-person">{web.person(name, sub, kind, "/u/" + str(sid))}'
+                     f'{network.connect_button(sid, "none", next_)}</div>')
+        for (eid,) in conn.execute("SELECT e.user_id FROM employer_profiles e WHERE e.status = 'approved' AND e.user_id NOT IN "
+                                   "(SELECT employer_id FROM follows WHERE student_id = ?) ORDER BY e.updated_at DESC LIMIT 2", (user["id"],)):
+            name, sub, kind = web.display_name(conn, eid, "employer")
+            rows += (f'<div class="fd-person">{web.person(name, sub, kind, "/company/" + str(int(eid)))}'
+                     f'{network.follow_button(int(eid), False, next_)}</div>')
+        people = (f'<section class="fd-card" aria-label="Suggested people"><h3>People to follow</h3>{rows}'
+                  '<p style="margin:8px 0 0"><a class="small" href="/network?tab=discover">See more in your network</a></p></section>') if rows else ""
+    topics = trending(conn)
+    tcard = ""
+    if topics:
+        chips = "".join(f'<a href="{esc(_url(q=w))}">{esc(w)}<small>{n}</small></a>' for w, n in topics)
+        tcard = f'<section class="fd-card" aria-label="Trending topics"><h3>Trending topics</h3><div class="fd-topics">{chips}</div></section>'
+    rules = "".join(f"<li>{esc(g)}</li>" for g in GUIDELINES)
+    return (f'<aside class="fd-rail" aria-label="Feed sidebar">{people}{tcard}'
+            f'<section class="fd-card" aria-label="Community guidelines"><h3>Community guidelines</h3><ul class="fd-rules">{rules}</ul></section></aside>')
+
+
+def _tabs(tab: str) -> str:
+    return '<nav class="fd-tabs" aria-label="Feed sections">' + "".join(
+        f'<a href="{href}"{" aria-current=page" if k == tab else ""}>{label}</a>' for k, label, href in TABS) + "</nav>"
+
+
+def _pills(conn, user: dict, tab: str, f: str, q: str) -> str:
+    out = ""
+    for k, label in PILLS:
+        if k == "major" and user["role"] != "student":
+            continue
+        cur = " aria-current=true" if k == f else ""
+        out += f'<a class="fd-pill" href="{esc(_url(tab, k, q))}"{cur}>{ui.icon("check", 15) if k == f else ""}{esc(label)}</a>'
+    if q:
+        out += f'<a class="fd-pill" href="{esc(_url(tab, f))}">Topic: {esc(q)} ✕</a>'
+    return f'<div class="fd-pills" role="group" aria-label="Filter posts">{out}</div>'
+
+
+# ---------- routes ----------
+
 @router.get("/feed", response_class=HTMLResponse)
-def feed(request: Request, kind: str = "all", before: int = 0):
+def feed(request: Request, tab: str = "feed", f: str = "all", q: str = "", before: int = 0):
     user = web.current_user(request)
     security.enforce_rate_limit(request, security.general_limiter, "feed")
     if not user:
         return _teaser()
-    kind = kind if kind in KINDS or kind == "all" else "all"
+    tab = tab if tab in ("feed", "foryou", "saved") else "feed"
+    f = f if f in dict(PILLS) and not (f == "major" and user["role"] != "student") else "all"
+    q = q.strip()[:40]
+    q = q if re.fullmatch(r"[A-Za-z0-9+#. -]{1,40}", q) else ""
     with store.db() as conn:
         if not can_view(conn, user):
             body = ui.page_head("The FSU feed", num="Community") + ui.banner(
                 "info", "The feed opens to employers once a reviewer approves your organization.") + '<a class="b" href="/profile">Company profile</a>'
             return web.page(body, "FSU feed", active="/feed")
-        q = "SELECT * FROM posts WHERE (status = 'published' OR (author_id = ? AND status IN ('pending','held','rejected')))"
-        params: list = [user["id"]]
-        if kind != "all":
-            q += " AND kind = ?"; params.append(kind)
-        if before > 0:
-            q += " AND id < ?"; params.append(before)
-        q += " ORDER BY id DESC LIMIT 21"
-        posts = store.rows(conn, q, params)
-        more = len(posts) > 20
-        posts = posts[:20]
-        items = "".join(post_html(conn, p, user) for p in posts)
-        composer = _composer(conn, user)
-    seg = '<div class="seg" style="margin-bottom:14px">' + "".join(
-        f'<a href="/feed{"" if k == "all" else "?kind=" + k}"{" class=on" if k == kind else ""}>{label}</a>'
-        for k, label in [("all", "All")] + list(FILTER_LABELS.items())) + "</div>"
-    nxt = f'<p style="text-align:center"><a class="b sec" href="/feed?kind={esc(kind)}&before={int(posts[-1]["id"])}">Older posts</a></p>' if more else ""
-    body = (ui.page_head("The FSU feed", "Only verified FSU students and approved employers can post here. Employer posts must be opportunities or advice for FSU students.", num="Community")
-            + composer + seg + (items or '<div class="empty">Nothing here yet. Start the conversation.</div>') + nxt)
+        saved = saved_ids(conn, user["id"])
+        here = _url(tab, f, q)
+        nxt = ""
+        note = ""
+        if tab == "saved":
+            posts = store.rows(conn, "SELECT p.* FROM posts p JOIN post_saves s ON s.post_id = p.id WHERE s.user_id = ? AND p.status = 'published' "
+                                     "ORDER BY s.created_at DESC, p.id DESC LIMIT 100", (user["id"],))
+            here = "/feed?tab=saved"
+            empty = ('<div class="fd-empty">' + bookmark_icon(False, 44) + '<h2>No saved posts yet</h2>'
+                     '<p>Tap the bookmark on any post to save it here for later.</p>'
+                     f'<a class="b sec" href="/feed">Browse the feed</a></div>')
+            lead = ""
+        else:
+            fsql, fparams = _filter_sql(conn, user, f, q)
+            base = f"SELECT p.* FROM posts p WHERE {_VISIBLE}{fsql}"
+            if tab == "foryou":
+                cand = store.rows(conn, base + " ORDER BY p.id DESC LIMIT 150", [user["id"]] + fparams)
+                viewer = _viewer_profile(conn, user)
+                authors: dict = {}
+                now = time.time()
+                for p in cand:
+                    if p["author_id"] not in authors:
+                        authors[p["author_id"]] = store.student_profile(conn, p["author_id"])
+                cand.sort(key=lambda p: (for_you_score(p, viewer, authors[p["author_id"]], now), p["id"]), reverse=True)
+                posts = cand[:30]
+                note = ('<p class="fd-note">Ranked by how much each post overlaps with your major and skills, then by how recent it is.'
+                        + ("" if viewer.get("major") else " Add your major and skills to your profile to sharpen it.") + "</p>") if user["role"] == "student" else \
+                       '<p class="fd-note">Newest first. Students see posts ranked by their major and skills.</p>'
+            else:
+                params = [user["id"]] + fparams
+                sql = base
+                if before > 0:
+                    sql += " AND p.id < ?"
+                    params.append(before)
+                posts = store.rows(conn, sql + f" ORDER BY p.id DESC LIMIT {PAGE + 1}", params)
+                if len(posts) > PAGE:
+                    posts = posts[:PAGE]
+                    nxt = f'<p style="text-align:center"><a class="b sec" href="{esc(_url(tab, f, q, posts[-1]["id"]))}">Older posts</a></p>'
+            if f == "major" and user["role"] == "student" and not (_viewer_profile(conn, user).get("major") or "").strip():
+                empty = '<div class="fd-empty"><h2>Add your major</h2><p>Add your major to your profile and posts from students in it will show up here.</p><a class="b sec" href="/profile/setup">Update profile</a></div>'
+            elif f == "major":
+                empty = '<div class="fd-empty"><h2>No posts from your major yet</h2><p>When students in your major share something, it will show up here.</p></div>'
+            elif f == "employers":
+                empty = '<div class="fd-empty"><h2>No employer posts yet</h2><p>Approved employers share opportunities and advice for FSU students here.</p></div>'
+            else:
+                empty = '<div class="fd-empty"><h2>Nothing here yet</h2><p>Start the conversation.</p></div>'
+            lead = _pills(conn, user, tab, f, q) + _composer(conn, user)
+        items = "".join(post_html(conn, p, user, saved=saved, next_=here) for p in posts)
+        rail = _rail(conn, user, "/feed")
+    main = f'<div class="fd-main">{note}{lead}{items or empty}{nxt}</div>'
+    body = f'<div class="fd">{_tabs(tab)}<div class="fd-grid">{main}{rail}</div></div>'
     return web.page(body, "FSU feed", active="/feed", js=True)
 
 
@@ -230,7 +427,7 @@ def one_post(pid: int, request: Request):
         p = store.row(conn, "SELECT * FROM posts WHERE id = ?", (pid,))
         if not can_view(conn, user) or not p or (p["status"] != "published" and p["author_id"] != user["id"]):
             return web.page('<p class="empty" style="margin:40px 0">That post isn\'t available.</p>', "Post", active="/feed", status=404)
-        body = '<a class="back" href="/feed">← Feed</a>' + post_html(conn, p, user, full=True)
+        body = '<a class="back" href="/feed">← Feed</a>' + post_html(conn, p, user, full=True, next_=f"/feed/{int(pid)}")
     return web.page(body, "Post", active="/feed", js=True)
 
 
@@ -310,6 +507,25 @@ def helpful(pid: int, request: Request, csrf: str = Form("")):
         if cur.rowcount == 0:
             conn.execute("DELETE FROM post_helpful WHERE post_id = ? AND user_id = ?", (pid, user["id"]))
         conn.execute("UPDATE posts SET helpful_count = (SELECT COUNT(*) FROM post_helpful WHERE post_id = ?) WHERE id = ?", (pid, pid))
+    return _post_action(request, pid, csrf, fn)
+
+
+@router.post("/feed/{pid}/save")
+def save(pid: int, request: Request, csrf: str = Form(""), next: str = Form("")):
+    def fn(conn, p, user):
+        if p["status"] == "published":
+            have = conn.execute("SELECT COUNT(*) FROM post_saves WHERE user_id = ?", (user["id"],)).fetchone()[0]
+            if have < MAX_SAVES:
+                conn.execute("INSERT OR IGNORE INTO post_saves (user_id, post_id, created_at) VALUES (?,?,?)", (user["id"], pid, time.time()))
+        return RedirectResponse(safe_next(next), status_code=303)
+    return _post_action(request, pid, csrf, fn)
+
+
+@router.post("/feed/{pid}/unsave")
+def unsave(pid: int, request: Request, csrf: str = Form(""), next: str = Form("")):
+    def fn(conn, p, user):
+        conn.execute("DELETE FROM post_saves WHERE user_id = ? AND post_id = ?", (user["id"], pid))
+        return RedirectResponse(safe_next(next), status_code=303)
     return _post_action(request, pid, csrf, fn)
 
 

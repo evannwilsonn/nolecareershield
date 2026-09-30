@@ -178,6 +178,13 @@ CREATE TABLE IF NOT EXISTS post_helpful (
     user_id INTEGER NOT NULL,
     PRIMARY KEY (post_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS post_saves (
+    user_id INTEGER NOT NULL,
+    post_id INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (user_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_post_saves_post ON post_saves (post_id);
 CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reporter_id INTEGER NOT NULL,
@@ -304,6 +311,7 @@ def purge(conn) -> None:
     # Rejected or removed posts and removed messages keep their text for 30 days (appeals, abuse review), then go.
     conn.execute("DELETE FROM posts WHERE status IN ('rejected','removed') AND created_at < ?", (now - 30 * 86400,))
     conn.execute("DELETE FROM post_comments WHERE status = 'removed' AND created_at < ?", (now - 30 * 86400,))
+    conn.execute("DELETE FROM post_saves WHERE post_id NOT IN (SELECT id FROM posts)")
     conn.execute("UPDATE messages SET body = '' WHERE status = 'removed' AND created_at < ?", (now - 30 * 86400,))
     conn.execute("DELETE FROM submitted_checks WHERE created_at < ?", (now - 365 * 86400,))
     # Listing stats and trackers go when their listing does; view counts are kept for 180 days.
@@ -326,9 +334,11 @@ def delete_account(conn, user_id: int) -> None:
     for (pid,) in conn.execute("SELECT id FROM posts WHERE author_id = ?", (user_id,)).fetchall():
         conn.execute("DELETE FROM post_comments WHERE post_id = ?", (pid,))
         conn.execute("DELETE FROM post_helpful WHERE post_id = ?", (pid,))
+        conn.execute("DELETE FROM post_saves WHERE post_id = ?", (pid,))
     conn.execute("DELETE FROM posts WHERE author_id = ?", (user_id,))
     conn.execute("DELETE FROM post_comments WHERE author_id = ?", (user_id,))
     conn.execute("DELETE FROM post_helpful WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM post_saves WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM reports WHERE reporter_id = ?", (user_id,))
     conn.execute("DELETE FROM ai_usage WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM submitted_checks WHERE user_id = ?", (user_id,))
