@@ -331,7 +331,7 @@ def _score_pill(j: dict) -> str:
     if lead_gen and int(j["score"]) < 15:
         text = "Aggregator · flagged"
     else:
-        text = f"Scam risk {int(j['score'])} · {j['scam_status']}" + (" · aggregator" if lead_gen else "")
+        text = f"Scam risk {ui.shown_score(j['score'])} · {j['scam_status']}" + (" · aggregator" if lead_gen else "")
     return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
 
 

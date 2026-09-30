@@ -128,9 +128,10 @@ def test_signed_in_pages_carry_the_new_pieces(net):
 def test_risk_gauge_follows_the_score():
     import ui
     assert [ui.risk_position(x)[0] for x in (0, 25, 26, 50, 51, 75, 76, 100)] == [0, 0, 1, 1, 2, 2, 3, 3]
-    assert ui.risk_position(37)[1] == 37 and ui.risk_position(100, "held")[1] == 100     # the marker sits at the score
+    assert ui.risk_position(37)[1] == 37 and ui.risk_position(100, "held")[1] == 96      # the marker sits at the score, never 0 or 100
+    assert ui.risk_position(0)[1] == 4
     zone, pos, _ = ui.risk_position(0, "flagged", aggregator=True)
     assert zone == 2 and pos == 60                                                       # aggregators sit at 60
     html = ui.risk_meter(0, "flagged", aggregator=True)
-    assert "Aggregator" in html and "Scam risk 0 of 100" in html                        # the real score is still stated
+    assert "aggregator" in html and "Scam risk 60 of 100" in html and '<span class="rl">60</span>' in html
     assert '<span class="rl">93</span>' in ui.risk_meter(93, "held")

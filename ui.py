@@ -710,19 +710,16 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 .rev-card:focus{outline:none}
 .hello,.desk{box-shadow:0 0 0 1px var(--whisper) inset}
 @media (hover:none){.keys{display:none}}
-/* reviewer gauge: 0-100 in four zones (0-25 green, 26-50 yellow, 51-75 orange, 76-100 red), each shading darker toward
-   its top; the marker sits at the score (ui.risk_position) */
-.risk{--g1:#9fd4b1;--g2:#1f7a4d;--y1:#f6e39a;--y2:#c99a06;--o1:#f9c08f;--o2:#cf5a0c;--r1:#f3a69a;--r2:#a3170c;
+/* reviewer gauge: 0-100 in four zones (0-25 green, 26-50 yellow, 51-75 orange, 76-100 red), solid colours; the marker
+   sits at the score (ui.risk_position) */
+.risk{--g:#3f9e6a;--y:#c99a06;--o:#d9680f;--r:#b8281a;
   display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11.5px;font-weight:600;color:var(--muted)}
 .risk .end{font-size:10.5px;color:var(--faint);font-weight:500;font-variant-numeric:tabular-nums}
 .risk .gauge{position:relative;flex:1;max-width:360px;height:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin:0 8px}
 .risk .gauge i{border-radius:999px}
-.risk .gauge .z0{background:linear-gradient(90deg,var(--g1),var(--g2))}.risk .gauge .z1{background:linear-gradient(90deg,var(--y1),var(--y2))}
-.risk .gauge .z2{background:linear-gradient(90deg,var(--o1),var(--o2))}.risk .gauge .z3{background:linear-gradient(90deg,var(--r1),var(--r2))}
-.risk .gauge i:not(.on){opacity:.5}
+.risk .gauge .z0{background:var(--g)}.risk .gauge .z1{background:var(--y)}.risk .gauge .z2{background:var(--o)}.risk .gauge .z3{background:var(--r)}
 .risk .gauge b{position:absolute;top:50%;left:var(--pos);width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--surface);box-shadow:0 0 0 3px var(--mk),0 2px 6px rgba(0,0,0,.25)}
-.risk.z0{--mk:color-mix(in oklab,var(--g2) var(--f),var(--g1))}.risk.z1{--mk:color-mix(in oklab,var(--y2) var(--f),var(--y1))}
-.risk.z2{--mk:color-mix(in oklab,var(--o2) var(--f),var(--o1))}.risk.z3{--mk:color-mix(in oklab,var(--r2) var(--f),var(--r1))}
+.risk.z0{--mk:var(--g)}.risk.z1{--mk:var(--y)}.risk.z2{--mk:var(--o)}.risk.z3{--mk:var(--r)}
 .risk .rl{color:color-mix(in oklab,var(--mk) 80%,var(--ink));margin-left:4px;font-family:var(--display);font-weight:750;font-stretch:80%;font-size:15px;font-variant-numeric:tabular-nums;min-width:3ch}
 .risk.in .gauge b{transition:left 1s var(--ease)}
 /* profile covers use the site's own photography */
@@ -1034,11 +1031,11 @@ def cine_hero(links: dict | None = None) -> str:
 <div class="cine-copy">
 <div class="cap c0"><div class="eyebrow">For FSU students</div>
 <h1 class="display"><span class="ln"><span>Student jobs.</span></span><span class="ln"><span><em>Checked</em> for scams<span class="dot">.</span></span></span></h1>
-<p>Every listing is scanned, then approved by a person, before an FSU student ever sees it.</p>
+<p>Every listing is scanned, then approved by a professional, before an FSU student ever sees it.</p>
 <div class="cta"><a class="primary" {L["join"]}>Join with your FSU email</a><a class="secondary" {L["check"]}>Try the scam check</a></div></div>
 <div class="cap c1"><p class="display big">Scanned for<br><em>scam signals</em><span class="dot">.</span></p>
 <p class="note">Fake checks, gift-card pay, look-alike school emails: {RULE_COUNT} patterns in all.</p></div>
-<div class="cap c2"><p class="display big">Then approved<br>by a <em>person</em><span class="dot">.</span></p>
+<div class="cap c2"><p class="display big">Then approved<br>by a <em>professional</em><span class="dot">.</span></p>
 <p class="note">Nothing reaches the board on a score alone.</p></div>
 </div>
 <div class="cine-rail" aria-hidden="true"><span>Scroll</span><span class="bar"><i></i></span><span>Checked</span></div>
@@ -1063,7 +1060,7 @@ def students_chapters(links: dict | None = None) -> tuple[str, str]:
                     "Most fake jobs look almost real. The scam check reads a listing or a message the way scammers write them, line by line.",
                     f'<a class="secondary" {L["check"]}>Check one you got</a>', focus="58%")
     fair = chapter("fair", "Employers, checked first",
-                   '<span class="ln"><span>Meet employers</span></span><span class="ln"><span>a person <em>vetted</em><span class="dot">.</span></span></span>',
+                   '<span class="ln"><span>Meet employers</span></span><span class="ln"><span><em>vetted</em> by a professional<span class="dot">.</span></span></span>',
                    "Every employer is reviewed before they can post a job or message you, and every listing is reviewed again.",
                    f'<a class="primary" {L["join"]}>Join with your FSU email</a>', focus="50%")
     return night, fair
@@ -1128,12 +1125,21 @@ def desk(title: str, tabs: list[tuple[str, str, int | None, bool]]) -> str:
 RISK_BANDS = ((0, 25), (26, 50), (51, 75), (76, 100))       # green, yellow, orange, red on the reviewer's gauge
 
 
-def risk_position(score: int, status: str = "", aggregator: bool = False) -> tuple[int, float, float]:
-    """Where a listing sits on the reviewer's 0-100 gauge: (zone 0-3, percent along the track, how far into its zone
-    0-1). The marker sits at the scam score itself. An aggregator's scam score is 0 by design, so it sits at 60."""
-    sc = max(0, min(100, int(score)))
+RISK_MIN, RISK_MAX = 4, 96      # a check is never a perfect 0 or 100, so the gauge never shows one
+
+
+def shown_score(score: int, aggregator: bool = False) -> int:
+    """The number the reviewer sees: never 0 or 100, and an aggregator (scam score 0 by design) reads 60, orange."""
+    sc = int(score)
     if aggregator and sc < 15:
-        sc = 60
+        return 60
+    return max(RISK_MIN, min(RISK_MAX, sc))
+
+
+def risk_position(score: int, status: str = "", aggregator: bool = False) -> tuple[int, float, float]:
+    """Where a listing sits on the reviewer's gauge: (zone 0-3, percent along the track, how far into its zone
+    0-1). The marker sits at the shown score."""
+    sc = shown_score(score, aggregator)
     zone = next(i for i, (lo, hi) in enumerate(RISK_BANDS) if sc <= hi)
     lo, hi = RISK_BANDS[zone]
     return zone, float(sc), round((sc - lo) / (hi - lo), 2)
@@ -1142,12 +1148,10 @@ def risk_position(score: int, status: str = "", aggregator: bool = False) -> tup
 def risk_meter(score: int, status: str, aggregator: bool = False) -> str:
     zone, pos, frac = risk_position(score, status, aggregator)
     agg = aggregator and int(score) < 15
-    real = max(0, min(100, int(score)))
-    label = "Aggregator" if agg else f"{real}"
-    cells = "".join(f'<i class="z{i}{" on" if i == zone else ""}"></i>' for i in range(4))
-    return (f'<div class="risk z{zone}" style="--pos:{pos}%;--f:{int(frac * 100)}%"><span class="end">0</span><span class="gauge" role="img" '
-            f'aria-label="Scam risk {real} of 100{", aggregator" if agg else ""}">{cells}<b></b></span><span class="end">100</span>'
-            f'<span class="rl">{esc(label)}</span></div>')
+    cells = "".join(f'<i class="z{i}"></i>' for i in range(4))
+    return (f'<div class="risk z{zone}" style="--pos:{pos}%"><span class="end">0</span><span class="gauge" role="img" '
+            f'aria-label="Scam risk {int(pos)} of 100{", aggregator" if agg else ""}">{cells}<b></b></span><span class="end">100</span>'
+            f'<span class="rl">{int(pos)}</span></div>')
 
 
 # ---------- static script ----------

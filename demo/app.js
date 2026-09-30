@@ -194,13 +194,14 @@ const helloBand = (eyebrow, titleHtml, lede, kpis, photo) => `<section class="he
 const fitBadge = (score, label) => `<span class="fitb${score >= 65 ? " hi" : score < 45 ? " lo" : ""}" style="--p:${score}" title="${esc(label || "Fit score")}"><i aria-hidden="true"></i><b>Fit ${score}</b></span>`;
 // Twin of ui.risk_position / ui.risk_meter: 0-25 green, 26-50 yellow, 51-75 orange, 76-100 red; marker at the score.
 const RISK_BANDS = [[0, 25], [26, 50], [51, 75], [76, 100]];
+const RISK_MIN = 4, RISK_MAX = 96;   // never a perfect 0 or 100; an aggregator (score 0 by design) reads 60
+const shownScore = (score, agg) => agg && score < 15 ? 60 : Math.max(RISK_MIN, Math.min(RISK_MAX, score));
 function riskPosition(score, status, agg) {
-  let sc = Math.max(0, Math.min(100, score)); if (agg && sc < 15) sc = 60;
-  const zone = RISK_BANDS.findIndex(([, hi]) => sc <= hi), [lo, hi] = RISK_BANDS[zone];
+  const sc = shownScore(score, agg), zone = RISK_BANDS.findIndex(([, hi]) => sc <= hi), [lo, hi] = RISK_BANDS[zone];
   return [zone, sc, Math.round((sc - lo) / (hi - lo) * 100) / 100];
 }
-const riskMeter = (score, status, agg) => { const [zone, pos, frac] = riskPosition(score, status, agg), isAgg = agg && score < 15, real = Math.max(0, Math.min(100, score));
-  return `<div class="risk z${zone}" style="--pos:${pos}%;--f:${Math.trunc(frac * 100)}%"><span class="end">0</span><span class="gauge" role="img" aria-label="Scam risk ${real} of 100${isAgg ? ", aggregator" : ""}">${[0, 1, 2, 3].map(i => `<i class="z${i}${i === zone ? " on" : ""}"></i>`).join("")}<b></b></span><span class="end">100</span><span class="rl">${isAgg ? "Aggregator" : real}</span></div>`; };
+const riskMeter = (score, status, agg) => { const [zone, pos] = riskPosition(score, status, agg), isAgg = agg && score < 15;
+  return `<div class="risk z${zone}" style="--pos:${pos}%"><span class="end">0</span><span class="gauge" role="img" aria-label="Scam risk ${pos} of 100${isAgg ? ", aggregator" : ""}">${[0, 1, 2, 3].map(i => `<i class="z${i}"></i>`).join("")}<b></b></span><span class="end">100</span><span class="rl">${pos}</span></div>`; };
 const pageHead = (t, lede, num) => `<div class="page-head">${num ? `<div class="num">${esc(num)}</div>` : ""}<h1>${esc(t)}</h1>${lede ? `<p>${lede}</p>` : ""}</div>`;
 const takeFlash = () => { const f = S.flash; S.flash = null; return f ? banner(f.kind, f.text, f.raw) : ""; };
 const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
@@ -208,7 +209,7 @@ const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
 // The scam score only counts scam rules; a listing flagged by the separate aggregator check says so (same as app._score_pill).
 function scorePill(j) {
   const lg = j.findings.some(f => f.rule_id === "lead_gen");
-  return lg && j.score < 15 ? "Aggregator · flagged" : `Scam risk ${j.score} · ${j.scam_status}` + (lg ? " · aggregator" : "");
+  return lg && j.score < 15 ? "Aggregator · flagged" : `Scam risk ${shownScore(j.score)} · ${j.scam_status}` + (lg ? " · aggregator" : "");
 }
 
 // ---------------- job cards ----------------
