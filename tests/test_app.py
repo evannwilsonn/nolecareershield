@@ -810,3 +810,11 @@ def test_confirming_needs_the_password(client):
     r = client.post("/verify", data={"token": token, "csrf": tok, "password": ""})
     assert r.status_code == 401 and "usession" not in client.cookies
     assert client.get(link).status_code == 200                      # a wrong try does not use the link up
+
+
+def test_reviewer_pill_names_aggregators_instead_of_score_zero(client):
+    import json as _json
+    pill = client.appmod._score_pill
+    assert ">Aggregator · flagged<" in pill({"score": 0, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
+    assert ">Scam score 100 · held<" in pill({"score": 100, "scam_status": "held", "findings_json": "[]"})
+    assert ">Scam score 40 · flagged · aggregator<" in pill({"score": 40, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})

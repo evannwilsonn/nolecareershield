@@ -322,6 +322,17 @@ def pending_count() -> int:
 
 # ---------- markup (the design system lives in ui.py) ----------
 
+def _score_pill(j: dict) -> str:
+    """The reviewer's verdict pill. The scam score only counts scam rules; a listing flagged by the separate
+    aggregator/lead-gen check says so instead of showing "Score 0 · flagged"."""
+    lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
+    if lead_gen and int(j["score"]) < 15:
+        text = "Aggregator · flagged"
+    else:
+        text = f"Scam score {int(j['score'])} · {j['scam_status']}" + (" · aggregator" if lead_gen else "")
+    return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
+
+
 def _job_card(j: dict) -> str:
     badge = ('<span class="badge verified">✓ Verified</span>' if j["scam_status"]=="clear"
              else '<span class="badge warning">⚠ Check carefully</span>')
@@ -1332,7 +1343,7 @@ def admin_home(session: str | None = Cookie(default=None)):
             inner += f"""<div class="rev-card">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
 <div><div class="job-title">{esc(j['title'])}</div><div class="job-co">{esc(j['company'])}</div></div>
-<span class="rev-score {esc(j['scam_status'])}">Score {int(j['score'])} · {esc(j['scam_status'])}</span></div>
+{_score_pill(j)}</div>
 <div class="job-meta" style="margin-top:10px"><span class="chip">{esc(j['category'])}</span><span class="chip">{esc(j['work_type'].title())}</span>{f'<span class="chip">{loc}</span>' if loc else ''}</div>
 {fl_block}
 <div class="detail-desc" style="font-size:14px;max-height:140px;overflow:auto;background:var(--bg);padding:10px 12px;border-radius:6px">{esc(j['description'])}</div>
