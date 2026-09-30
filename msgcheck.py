@@ -195,6 +195,51 @@ def check(text: str, sender: str = "", *, use_ai: bool = False, platform_employe
             "ruleset": result.ruleset_version, "checked_at": time.time()}
 
 
+LISTING_LEVELS = [
+    ("ok", "No known scam signs", "Nothing in this listing matches a known scam pattern. That isn't a guarantee: find the same job on the employer's own careers page before you apply."),
+    ("caution", "Be careful", "A few things in this listing are off. Confirm it on the employer's own website before you apply or share anything."),
+    ("warn", "Likely a scam", "Several strong scam signals. Don't apply through this listing and don't send personal or bank details."),
+    ("bad", "Scam. Stop here.", "This listing matches patterns that only scams use. Don't apply, reply or send anything."),
+]
+LISTING_STEPS = {
+    0: ["Find the same job on the employer's own careers page and apply there.",
+        "Never pay for training, equipment or a background check. Real jobs don't charge you.",
+        "Don't give your SSN or bank details until you have a real offer."],
+    1: ["Look for the same listing on the company's own website before you apply.",
+        "Search the company name with the word \"scam\" and read what others found.",
+        "Don't put your SSN, bank details or a photo of your ID in an application."],
+    2: ["Don't apply through this listing or its link.",
+        "Look the company up yourself. If the job isn't on their own site, skip it.",
+        "If you found it on Handshake, LinkedIn or Indeed, report the listing there."],
+    3: ["Don't apply, reply or send anything.",
+        "If you already sent money or bank details, or deposited a check they sent, call your bank now.",
+        "Report the listing where you found it, and report fraud at reportfraud.ftc.gov."],
+}
+LEADGEN_STEP = "This looks like an aggregator or lead-generation ad. Find the employer's own posting and apply there instead of giving this site your details."
+
+
+def check_listing(title: str, description: str, company: str = "", url: str = "", contact: str = "") -> dict:
+    """A job posting someone found elsewhere, scored exactly like a listing submitted to the board. The apply link is
+    checked as text (tracking redirects, signup walls, shorteners); it is never opened."""
+    title, company, url, contact = (title or "").strip()[:200], (company or "").strip()[:200], (url or "").strip()[:2000], (contact or "").strip()[:200]
+    description = (description or "").strip()[:8000]
+    result = score_posting(title, description + ("\n" + contact if contact else ""), company, run_network=False, url_chain=[url] if url else None)
+    extra = [f for f in link_findings(description + " " + url) if f["rule_id"] not in {x["rule_id"] for x in result.findings}]
+    findings = sorted(list(result.findings) + extra, key=lambda f: ({"critical": 0, "warning": 1, "note": 2}[f["severity"]], -f["weight"]))
+    score = min(100, result.score + sum(f["weight"] for f in extra))
+    critical = any(f["severity"] == "critical" for f in findings)
+    band = "block" if critical or score >= 65 else "review" if score >= 35 else "caution" if score >= 15 else "clear"
+    level = BAND_LEVEL[band]
+    lead_gen = result.lead_gen or {}
+    if lead_gen.get("flag") and level < 1:
+        level = 1
+    key, ttl, advice = LISTING_LEVELS[level]
+    steps = ([LEADGEN_STEP] if lead_gen.get("flag") else []) + LISTING_STEPS[level]
+    return {"kind": "listing", "level": level, "key": key, "title": ttl, "advice": advice, "score": score, "band": band,
+            "findings": findings, "lead_gen": lead_gen, "ai": None, "platform_employer": None, "steps": steps,
+            "ruleset": result.ruleset_version, "checked_at": time.time()}
+
+
 NEXT_STEPS = {
     0: ["Look the company up yourself (not through links in the message) and confirm the job is on their careers page.",
         "Keep the conversation on NoleCareerShield, Handshake or the company's own email.",
@@ -256,7 +301,7 @@ def render_result(r: dict, full: bool = True) -> str:
               f'<div class="card"><p>{ui.esc(o.get("summary", ""))}</p>{f"<ul class=reasons>{flags}</ul>" if flags else ""}'
               f'{f"<p style=margin-top:10px>{greens}</p>" if greens else ""}'
               '<p class="small faint" style="margin-top:10px">The AI can make a verdict stricter, never softer. The verdict above always includes the rule check.</p></div>')
-    steps = "".join(f"<li>{ui.esc(s)}</li>" for s in NEXT_STEPS[r["level"]])
+    steps = "".join(f"<li>{ui.esc(s)}</li>" for s in r.get("steps") or NEXT_STEPS[r["level"]])
     icon = {"ok": "check", "caution": "shield", "warn": "flag", "bad": "flag"}[r["key"]]
     return f"""<section class="verdict {r['key']}" aria-live="polite">
 <div class="eyebrow" style="color:inherit">Verdict</div>
@@ -273,7 +318,7 @@ def _render_public(r: dict) -> str:
     if not items:
         items = '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns.</span></li>'
     more = len(r["findings"]) - len(shown)
-    steps = "".join(f"<li>{ui.esc(s)}</li>" for s in NEXT_STEPS[r["level"]])
+    steps = "".join(f"<li>{ui.esc(s)}</li>" for s in r.get("steps") or NEXT_STEPS[r["level"]])
     icon = {"ok": "check", "caution": "shield", "warn": "flag", "bad": "flag"}[r["key"]]
     return f"""<section class="verdict {r['key']}" aria-live="polite">
 <div class="eyebrow" style="color:inherit">Verdict</div>
@@ -310,16 +355,43 @@ def _form(text: str = "", sender: str = "", ai_on: bool = False) -> str:
 {ai_box}<button class="submit-btn" type="submit">Check this message</button></form>"""
 
 
-def _page(inner: str, status: int = 200) -> HTMLResponse:
-    head = ui.page_head("Is this message a scam?",
-                        "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.",
-                        num="Scam check")
-    return web.page(head + inner, "Scam check", active="/check", js=True, status=status)
+def _kind_tabs(kind: str) -> str:
+    return ('<div class="seg" role="tablist" style="margin-bottom:16px">'
+            f'<a href="/check"{" class=on aria-current=page" if kind == "message" else ""}>A message</a>'
+            f'<a href="/check?kind=listing"{" class=on aria-current=page" if kind == "listing" else ""}>A job listing</a></div>')
+
+
+def _page(inner: str, status: int = 200, kind: str = "message") -> HTMLResponse:
+    if kind == "listing":
+        head = ui.page_head("Is this job listing a scam?",
+                            "Found a job on Handshake, LinkedIn, Indeed, Instagram or a flyer? Paste it and get the same scam check every listing on NoleCareerShield goes through.",
+                            num="Scam check")
+    else:
+        head = ui.page_head("Is this message a scam?",
+                            "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.",
+                            num="Scam check")
+    return web.page(head + _kind_tabs(kind) + inner, "Scam check", active="/check", js=True, status=status)
+
+
+def _listing_form(v: dict | None = None) -> str:
+    v = v or {}
+    val = lambda k: ui.esc(v.get(k, ""))
+    return f"""<form method="post" action="/check/listing" class="card">
+<input type="hidden" name="csrf" value="{security.make_csrf('form')}">
+<div class="grid2"><div class="form-field"><label for="l-title">Job title</label><input id="l-title" name="title" required maxlength="200" value="{val('title')}" placeholder="Remote Administrative Assistant"></div>
+<div class="form-field"><label for="l-company">Company (optional)</label><input id="l-company" name="company" maxlength="200" value="{val('company')}" placeholder="As the listing names it"></div></div>
+<div class="form-field"><label for="l-desc">The listing</label><p class="hint">Paste the whole description: duties, pay, requirements and how to apply.</p>
+<textarea id="l-desc" name="description" required maxlength="8000" data-count placeholder="We are hiring part-time remote assistants, $500 weekly. No experience needed...">{val('description')}</textarea></div>
+<div class="grid2"><div class="form-field"><label for="l-url">Apply link (optional)</label><p class="hint">We read the link, we don't open it.</p><input id="l-url" name="url" maxlength="2000" value="{val('url')}" placeholder="https://..."></div>
+<div class="form-field"><label for="l-contact">Contact email (optional)</label><p class="hint">The address the listing says to write to.</p><input id="l-contact" name="contact" maxlength="200" value="{val('contact')}" placeholder="hr@company.com"></div></div>
+<button class="submit-btn" type="submit">Check this listing</button></form>"""
 
 
 @router.get("/check", response_class=HTMLResponse)
-def check_form(request: Request, m: int = 0):
+def check_form(request: Request, m: int = 0, kind: str = "message"):
     security.enforce_rate_limit(request, security.general_limiter, "check_page")
+    if kind == "listing":
+        return _page(_listing_form(), kind="listing")
     user = web.current_user(request)
     if m and user:
         # Check a message you received on NoleCareerShield.
@@ -376,6 +448,39 @@ def school_request(request: Request, school: str = Form(""), csrf: str = Form(""
     with store.db() as conn:
         conn.execute("INSERT INTO school_requests (school, created_at) VALUES (?, ?)", (name, time.time()))
     return _page(_school_form(done=name) + '<h3 class="sec">Check another message</h3>' + _form())
+
+
+@router.post("/check/listing", response_class=HTMLResponse)
+def check_listing_submit(request: Request, title: str = Form(""), company: str = Form(""), description: str = Form(""), url: str = Form(""),
+                         contact: str = Form(""), csrf: str = Form("")):
+    security.enforce_rate_limit(request, security.check_limiter, "check")
+    user = web.current_user(request)
+    if not user:
+        security.enforce_rate_limit(request, security.public_check_limiter, "check_public")       # shared with message checks
+    v = {k: security._CONTROL_CHARS_RE.sub("", x or "").strip() for k, x in
+         (("title", title), ("company", company), ("description", description), ("url", url), ("contact", contact))}
+    bad = lambda msg: _page(ui.banner("warning", msg) + _listing_form(v), 400, kind="listing")
+    if not security.verify_csrf(csrf, "form"):
+        return bad("That page had been open too long. Your listing is still here; press Check again.")
+    if not v["title"] or len(v["description"]) < 40:
+        return bad("Add the job title and paste the listing (at least a couple of sentences).")
+    if len(v["title"]) > 200 or len(v["company"]) > 200 or len(v["description"]) > 8000 or len(v["url"]) > 2000 or len(v["contact"]) > 200:
+        return bad("Something there is too long. Paste the main part of the listing.")
+    if v["url"] and not re.match(r"^(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/?#:][^\s<>\"']*)?$", v["url"]):
+        return bad("The apply link doesn't look like a web address. Leave it empty if there isn't one.")
+    if v["url"] and not v["url"].lower().startswith(("http://", "https://")):
+        v["url"] = "https://" + v["url"]
+    r = check_listing(v["title"], v["description"], v["company"], v["url"], v["contact"])
+    full = full_view(user)
+    body_text = f'{v["title"]}\n{v["company"]}\n\n{v["description"]}'.strip()
+    report = f"""<details class="card" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
+<p class="small muted" style="margin:8px 0 12px">Helps the detector learn. We save the listing and your answer, never your name.</p>
+<form method="post" action="/check/submit"><input type="hidden" name="csrf" value="{security.make_csrf('form')}">
+<input type="hidden" name="text" value="{ui.esc(body_text[:8000])}"><input type="hidden" name="sender" value="{ui.esc((v['url'] or v['contact'])[:200])}"><input type="hidden" name="band" value="{ui.esc(r['band'])}">
+<div class="row"><button class="b sm" name="label" value="scam">It was a scam</button><button class="b sm sec" name="label" value="unsure">Not sure</button>
+<button class="b sm ghost" name="label" value="legit">It was real</button></div></form></details>"""
+    extra = "" if user else _school_form()
+    return _page(render_result(r, full) + report + extra + '<h3 class="sec">Check another listing</h3>' + _listing_form(v), kind="listing")
 
 
 @router.post("/check/submit", response_class=HTMLResponse)

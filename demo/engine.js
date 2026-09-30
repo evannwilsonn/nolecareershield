@@ -1108,7 +1108,7 @@ majoring major majors minor degree hold holds certified certification certificat
     return {score, label, tone, new: !(s.listings || s.threads), parts: Object.keys(T_WEIGHTS).map(k => ({key: k, name: T_NAMES[k], weight: T_WEIGHTS[k], score: parts[k][0], detail: parts[k][1]})), tips: tips.slice(0, 4)};
   }
 
-  const NCS = {normalize, runTextRules, scorePosting, check, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
+  const NCS = {normalize, runTextRules, scorePosting, check, linkFindings, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
     categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;
