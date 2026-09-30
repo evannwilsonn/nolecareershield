@@ -79,6 +79,8 @@ import resume_tools
 import feed
 import admin_extra
 import hiring
+import easyapply
+import network
 import employer_page
 import sso
 import ai
@@ -135,7 +137,8 @@ WORK_TYPES = matching.WORK_TYPES
 # ---------- database ----------
 
 # Added after the first release; existing databases are migrated in place.
-_EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_at": "TEXT", "employer_id": "INTEGER"}
+_EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_at": "TEXT", "employer_id": "INTEGER",
+                  "easy_apply": "INTEGER NOT NULL DEFAULT 0", "questions": "TEXT NOT NULL DEFAULT '[]'"}
 REVIEW_REASONS = ["scam", "lead_gen", "other"]
 
 
@@ -191,7 +194,8 @@ def purge_old():
 
 def add_job(data: dict, employer_id: int | None = None) -> dict:
     result = score_posting(
-        title=data["title"], description=data["description"], company=data["company"],
+        title=data["title"], description=data["description"] + ("\n" + easyapply.questions_text(data.get("questions") or [])
+                                                                if data.get("questions") else ""), company=data["company"],
         run_network=False,
         url_chain=[data["apply_url"]] if data.get("apply_url") else None,
     )
@@ -216,8 +220,8 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             INSERT INTO jobs (title, company, category, work_type, location,
                               description, apply_url, contact, score, band,
                               scam_status, review_status, findings_json, created_at,
-                              ruleset_version, employer_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                              ruleset_version, employer_id, easy_apply, questions)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data["title"], data["company"], data.get("category","Other"),
             data["work_type"], data.get("location",""), data["description"],
@@ -225,6 +229,7 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             result.score, result.band, scam_status, "pending",
             json.dumps(findings), dt.datetime.utcnow().isoformat(),
             result.ruleset_version, employer_id,
+            1 if data.get("easy_apply") else 0, json.dumps(data.get("questions") or []),
         ))
         db.commit()
         job_id = cur.lastrowid
@@ -355,7 +360,7 @@ def _job_card(j: dict) -> str:
 <div class="job-top"><div><div class="job-title">{esc(j['title'])}</div>
 <div class="job-co">{esc(j['company'])}</div></div>{badge}</div>
 <div class="job-meta"><span class="chip">{esc(j['category'])}</span>
-<span class="chip">{esc(j['work_type'].title())}</span>{f'<span class="chip">{loc}</span>' if loc else ''}</div></a>"""
+<span class="chip">{esc(j['work_type'].title())}</span>{f'<span class="chip">{loc}</span>' if loc else ''}{'<span class="chip easy">Easy apply</span>' if easyapply.is_easy(j) else ''}</div></a>"""
 
 
 # ---------- public routes ----------
@@ -381,6 +386,8 @@ async def security_headers(request: Request, call_next):
     if user and not request.url.path.startswith(("/static/", "/api/")):
         with store.db() as conn:
             extra["unread"] = store.unread_count(conn, user["id"])
+            if user["role"] == "student":
+                extra["requests"] = network.incoming_count(conn, user["id"])
     marker = _viewer.set({"user": user, "token": raw if user else None, "extra": extra})
     try:
         response = await call_next(request)
@@ -543,7 +550,7 @@ def landing(request: Request):
 
 
 @app.get("/jobs", response_class=HTMLResponse)
-def jobs_feed(request: Request, search: str = "", category: str = "", work_type: str = ""):
+def jobs_feed(request: Request, search: str = "", category: str = "", work_type: str = "", following: int = 0):
     enforce_rate_limit(request, general_limiter, "jobs_feed")
     if not getattr(request.state, "user", None):
         return RedirectResponse("/login?next=/jobs", status_code=303)       # the board is for FSU students and employers only
@@ -553,6 +560,13 @@ def jobs_feed(request: Request, search: str = "", category: str = "", work_type:
     category = clean_choice(category, CATEGORIES, "category", default="") if category else ""
     work_type = clean_choice(work_type, WORK_TYPES, "work_type", default="") if work_type else ""
     jobs = query_public(search=search, category=category, work_type=work_type)
+    viewer = getattr(request.state, "user", None)
+    is_student = bool(viewer and viewer["role"] == "student")
+    following = 1 if (following and is_student) else 0
+    if following:
+        with store.db() as conn:
+            followed = set(network.followed_ids(conn, viewer["id"]))
+        jobs = [j for j in jobs if j.get("employer_id") in followed]
 
     def chip(name, val, cur, param):
         qs = {}
@@ -560,26 +574,35 @@ def jobs_feed(request: Request, search: str = "", category: str = "", work_type:
         if param != "category" and category: qs["category"] = category
         if param != "work_type" and work_type: qs["work_type"] = work_type
         if val: qs[param] = val
+        if following: qs["following"] = 1
         href = "/jobs" + ("?" + urlencode(qs) if qs else "")
         return f'<a class="chipf {"active" if cur==val else ""}" href="{esc(href)}">{esc(name)}</a>'
 
     cat_chips = chip("All","",category,"category") + "".join(chip(c,c,category,"category") for c in CATEGORIES)
     wt_chips = chip("Any","",work_type,"work_type") + "".join(chip(w.title(),w,work_type,"work_type") for w in WORK_TYPES)
 
+    follow_row = ""
+    if is_student:
+        base = {k: v for k, v in (("search", search), ("category", category), ("work_type", work_type)) if v}
+        follow_row = ('<div class="filter-row"><span class="label">From</span>'
+                      f'<a class="chipf {"" if following else "active"}" href="{esc("/jobs" + ("?" + urlencode(base) if base else ""))}">All companies</a>'
+                      f'<a class="chipf {"active" if following else ""}" href="{esc("/jobs?" + urlencode({**base, "following": 1}))}">Companies I follow</a></div>')
     controls = f"""<div class="controls">
 <form class="searchbar" method="get" action="/jobs">
 <input name="search" value="{esc(search)}" placeholder="Search title, company, or keyword">
 {f'<input type="hidden" name="category" value="{esc(category)}">' if category else ''}
 {f'<input type="hidden" name="work_type" value="{esc(work_type)}">' if work_type else ''}
+{'<input type="hidden" name="following" value="1">' if following else ''}
 <button type="submit">Search</button></form>
 <div class="filter-row"><span class="label">Category</span>{cat_chips}</div>
-<div class="filter-row"><span class="label">Type</span>{wt_chips}</div></div>"""
+<div class="filter-row"><span class="label">Type</span>{wt_chips}</div>{follow_row}</div>"""
 
     if jobs:
         head = f'<div class="results-head">{len(jobs)} listing{"s" if len(jobs)!=1 else ""}' + (f' for "{esc(search)}"' if search else "") + '</div>'
         body = controls + head + "".join(_job_card(j) for j in jobs)
     else:
-        body = controls + '<div class="empty">No listings match. Try clearing filters or a different search.</div>'
+        body = controls + ('<div class="empty">Nothing from companies you follow right now. <a href="/network?tab=following">Who you follow</a></div>' if following else
+                           '<div class="empty">No listings match. Try clearing filters or a different search.</div>')
     head = ui.page_head("Jobs", "Every listing here was scam-scanned and approved by a person.", num="Jobs") if getattr(request.state, "user", None) else ""
     return shell(head + body, title="Browse jobs — NoleCareerShield", active="/jobs")
 
@@ -613,6 +636,8 @@ def job_detail(job_id: int, request: Request):
         apply = (f'<a class="apply-btn" href="/login/student?next=/job/{int(j["id"])}">Log in as an FSU student to apply</a>'
                  '<p class="fine" style="text-align:left">Free, and only for @fsu.edu addresses. '
                  'Employers know their listing is only shown to students.</p>')
+    elif easyapply.is_easy(j):
+        apply = ""      # filled in below, once we know whether the employer is approved and whether the student already applied
     elif j["apply_url"]:
         # Through /job/{id}/apply so the employer's Apply-click total counts it; the student lands on the same link.
         apply = f'<a class="apply-btn" href="/job/{int(j["id"])}/apply" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a>'
@@ -629,10 +654,21 @@ def job_detail(job_id: int, request: Request):
             prof = store.student_profile(conn, viewer["id"])
             hiring.record_view(conn, int(j["id"]), viewer["id"])
             emp_ok = bool(j.get("employer_id")) and store.employer_approved(conn, j["employer_id"])
+            done = easyapply.application(conn, int(j["id"]), viewer["id"]) if easyapply.is_easy(j) else None
+            following = network.is_following(conn, viewer["id"], j["employer_id"]) if emp_ok else False
+        if easyapply.is_easy(j):
+            if done:
+                apply = (f'<div class="banner verified">✓ You applied {esc(web.ago(done["created_at"]))}. <a href="/applications">Your applications</a></div>')
+            elif emp_ok:
+                apply = (f'<a class="apply-btn" href="/job/{int(j["id"])}/easy">Easy apply →</a>'
+                         '<p class="fine" style="text-align:left">Applies from your profile without leaving the site. You choose what the employer sees.</p>')
+            elif j["contact"]:
+                apply = f'<p style="font-size:14px;color:var(--muted)">Contact: {esc(j["contact"])}</p>'
         btns = [f'<a class="b sec" href="#tailor">{ui.icon("file", 16)} Tailor my resume</a>']
         if emp_ok:
             btns.insert(0, f'<a class="b ghost" href="/messages/new?to={int(j["employer_id"])}&amp;job={int(j["id"])}">{ui.icon("chat", 16)} Message the employer</a>')
             btns.append(f'<a class="b sec" href="/company/{int(j["employer_id"])}">Company profile</a>')
+            btns.append(network.follow_button(int(j["employer_id"]), following, next_=f"/job/{int(j['id'])}", small=False))
         extras = jobfit.fit_panel(j, prof) + f'<div class="row" style="margin:14px 0">{"".join(btns)}</div>'
         after = jobfit.tailor_panel(j, prof)
     if viewer and viewer["role"] == "employer" and j.get("employer_id") == viewer["id"]:
@@ -676,6 +712,14 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
         under = f'<p class="fine" style="text-align:left">Sending as {esc(who["email"])}.</p>'
     else:
         under = '<p class="fine" style="text-align:left">You\'ll log in or sign up before it sends.</p>'
+    qv = v.get("questions") if isinstance(v.get("questions"), list) else []
+    qv = list(qv) + [{}] * (easyapply.MAX_QUESTIONS - len(qv))
+    q_rows = "".join(
+        f'<div class="qrow"><label class="sr" for="f-qtext{i}">Question {i + 1}</label><input id="f-qtext{i}" name="qtext" maxlength="{easyapply.Q_LEN}" placeholder="Question {i + 1}" value="{esc(q.get("q", ""))}">'
+        f'<label class="sr" for="f-qkind{i}">Answer type for question {i + 1}</label><select id="f-qkind{i}" name="qkind">' + "".join(f'<option value="{k}"{" selected" if q.get("kind") == k else ""}>{esc(n)}</option>' for k, n in easyapply.KINDS) + '</select>'
+        f'<label class="sr" for="f-qreq{i}">Required or optional for question {i + 1}</label><select id="f-qreq{i}" name="qreq"><option value="0">Optional</option><option value="1"{" selected" if q.get("required") else ""}>Required</option></select></div>'
+        for i, q in enumerate(qv[:easyapply.MAX_QUESTIONS]))
+    easy_on = " checked" if v.get("easy_apply") in (1, True, "1", "on") else ""
     body = f"""<a class="back" href="/">← Home</a>
 <h2 class="page">Submit a job</h2>
 <p class="lead">Submitting isn't publishing. Every listing is scam-scanned and then reviewed by a human before it appears — only vetted postings go live.</p>
@@ -690,6 +734,9 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
 <div class="form-field"><label for="f-description">Description</label><p class="hint">The full posting — responsibilities, requirements, and pay if you can share it.</p><textarea id="f-description" name="description" required maxlength="8000">{val('description')}</textarea></div>
 <div class="form-field"><label for="f-apply_url">Apply URL</label><p class="hint">Where applicants should go. The scanner checks this link too.</p><input id="f-apply_url" name="apply_url" maxlength="2000" placeholder="https://..." value="{val('apply_url')}"></div>
 <div class="form-field"><label for="f-contact">Contact (optional)</label><p class="hint">Shown publicly if approved. Use a role or company address, not a personal one.</p><input id="f-contact" name="contact" maxlength="200" placeholder="careers@company.com" value="{val('contact')}"></div>
+<fieldset class="form-field easyset"><legend>Easy apply</legend>
+<label class="toggle" for="f-easy"><input id="f-easy" type="checkbox" name="easy_apply" value="1"{easy_on}><span><b>Collect applications on NoleCareerShield.</b> Students apply from their profile in one step, and you get their answers in your candidate tracker. Leave it off to send them to your Apply URL.</span></label>
+<p class="hint" style="margin-top:10px">Optional questions for applicants (up to {easyapply.MAX_QUESTIONS}). Nothing that asks for an SSN, bank or card details or a password.</p>{q_rows}</fieldset>
 <button class="submit-btn" type="submit">Submit for review</button>{under}</form>"""
     return HTMLResponse(shell(body, title="Submit a job — NoleCareerShield", active="/post"), status_code=status)
 
@@ -697,6 +744,13 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
 @app.get("/post", response_class=HTMLResponse)
 def post_form():
     return _post_form_page()
+
+
+def _clean_questions(raw) -> list[dict]:
+    try:
+        return easyapply.clean_questions(raw)
+    except easyapply.QuestionError as e:
+        raise ValidationError(str(e))
 
 
 def _clean_listing(f: dict) -> dict:
@@ -710,6 +764,8 @@ def _clean_listing(f: dict) -> dict:
         "description": clean_text(f.get("description", ""), "description"),
         "apply_url": clean_url(f.get("apply_url", "")),
         "contact": clean_text(f.get("contact", ""), "contact", required=False),
+        "easy_apply": 1 if f.get("easy_apply") in (1, True, "1", "on", "yes") else 0,
+        "questions": _clean_questions(f.get("questions")),
     }
 
 
@@ -730,10 +786,14 @@ def post_submit(
     work_type: str = Form(...), location: str = Form(""), description: str = Form(...),
     apply_url: str = Form(""), contact: str = Form(""),
     csrf: str = Form(""), website: str = Form(""),
+    easy_apply: str = Form(""), qtext: list[str] = Form([]), qkind: list[str] = Form([]), qreq: list[str] = Form([]),
 ):
     enforce_rate_limit(request, submit_limiter, "post_submit")
     typed = {"title": title, "company": company, "category": category, "work_type": work_type,
-             "location": location, "description": description, "apply_url": apply_url, "contact": contact}
+             "location": location, "description": description, "apply_url": apply_url, "contact": contact,
+             "easy_apply": easy_apply,
+             "questions": [{"q": t, "kind": (qkind[i] if i < len(qkind) else "short"), "required": (qreq[i] if i < len(qreq) else "0") == "1"}
+                           for i, t in enumerate(qtext[:easyapply.MAX_QUESTIONS])]}
     if not verify_csrf(csrf, "form"):
         return _post_form_page(typed, "That form had been open too long. Nothing was lost: your text is still here. "
                                       "Press Submit again to send it.", status=400)
@@ -767,7 +827,7 @@ def post_submit(
 # ---------- student network ----------
 
 for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, assistant.router, resume_tools.router,
-           feed.router, admin_extra.router, hiring.router):
+           feed.router, admin_extra.router, hiring.router, easyapply.router, network.router):
     app.include_router(_r)
 
 
@@ -809,6 +869,8 @@ def about():
 <h3>Beyond the board</h3>
 <ul><li><b>Profiles</b> that students control, including whether approved employers can find them.</li>
 <li><b>Messaging</b> between students and reviewed employers, with every message scanned for scam signs.</li>
+<li><b>Easy apply</b> on listings that choose it: a short form filled from your profile, sent only to that employer.</li>
+<li><b>A network</b> where students connect with each other and follow the companies they like, with no student-to-student inbox.</li>
 <li><b>A job assistant</b> that answers in plain words and only suggests listings that passed review.</li>
 <li><b>A resume studio</b> that scores a resume, rewrites weak lines without inventing anything, and tailors it to a job.</li>
 <li><b>A scam checker</b> for any message a student receives, here or anywhere else.</li>
@@ -845,7 +907,9 @@ def privacy():
 <li>If you add a resume, we can fill your profile sections from it. You can edit or delete any entry.</li>
 <li>Each listing shows a fit score calculated from your profile when you open it. It isn't stored.</li>
 <li>We count which listings you open and whether you press Apply, so employers can see totals (for example "40 students viewed, 12 clicked Apply"). Employers never see who viewed or clicked.</li>
-<li>If you message an employer about a listing, or they invite you or save you from their matches, you appear in that employer's candidate list for it, where they can add a stage and a private note.</li></ul>
+<li>If you message an employer about a listing, or they invite you or save you from their matches, you appear in that employer's candidate list for it, where they can add a stage and a private note.</li>
+<li><b>Easy apply.</b> When you apply on a listing that collects applications here, that employer (and only that employer) sees your name, major, graduation term, profile links, your answers and note, and your resume only if you tick it. Never your email. Applying also lets that employer open your profile and message you. You can withdraw an application any time, which deletes the answers.</li>
+<li><b>Connections and follows.</b> A connection is a mutual link between two students that shows as a count and as mutual connections on profiles. It doesn't let anyone message you. You can switch off connection requests and "People you may know" in your profile settings. Following a company adds its listings to a filter for you; the company sees how many students follow it, never who.</li></ul>
 <h3>Messages</h3>
 <ul><li>Messages are only between students and employers our reviewers approved. Every message is scanned for scam signs when it is sent. Messages that match a pattern only scams use are held for a reviewer instead of being delivered; others may be delivered with a warning.</li>
 <li>Reviewers read a message only when it was held by the scanner or reported by someone in the conversation.</li>

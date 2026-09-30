@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 
 from scam_detector.rules import FREE_MAIL
 
+import network
 import store
 import ui
 import web
@@ -223,14 +224,17 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
     if owner:
         actions = '<div class="row"><a class="b sm sec" href="/profile/setup/1">Edit profile</a><a class="b sm ghost" href="/hiring">Your listings</a></div>'
     elif viewer["role"] == "student" and p.get("status") == "approved":
-        actions = f'<div class="row"><a class="b sm" href="/messages/new?to={uid}">{ui.icon("chat", 14)} Message</a></div>'
+        actions = (f'<div class="row"><a class="b sm" href="/messages/new?to={uid}">{ui.icon("chat", 14)} Message</a>'
+                   f'{network.follow_button(uid, network.is_following(conn, viewer["id"], uid), f"/company/{uid}")}</div>')
     else:
         actions = ""
     hero = (f'<section class="card phero"><div class="pbanner emp ph" aria-hidden="true" style="--ph:url({ui.media_url("arch-060.webp")})"></div><div class="pinfo"><span class="avatar xl emp">{ui.initials(p.get("company") or "?")}</span>'
             f'<div class="row between" style="align-items:flex-end;gap:14px"><div style="min-width:0"><h1>{esc(p.get("company") or "Your organization")}</h1>'
             + (f'<p class="headline">{esc(p["tagline"])}</p>' if p.get("tagline") else "")
             + f'<p class="school">{meta}</p><p class="where"><span class="plinks">{links}</span></p>'
-            f'<div class="row" style="margin-top:10px">{status_pill}{trust_pill(t, "#trust")}</div></div>{actions}</div></div></section>')
+            f'<div class="row" style="margin-top:10px">{status_pill}{trust_pill(t, "#trust")}'
+            + (f'<span class="pill">{web.plural(network.follower_count(conn, uid), "follower")}</span>' if p.get("status") == "approved" else "")
+            + f'</div></div>{actions}</div></div></section>')
     rate = f'{hs["reply_rate"]}%' if hs["reply_rate"] is not None else "—"
     since = ("New" if hs["since"] < 30 else f'{int(hs["since"] // 30)} month{"s" if hs["since"] >= 60 else ""}') if p.get("status") == "approved" else "Not yet approved"
     glance = (f'<section class="card"><div class="phead"><h2>Hiring at a glance</h2></div><div class="stats sm two">'

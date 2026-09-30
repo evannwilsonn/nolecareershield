@@ -19,6 +19,7 @@ import time
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+import easyapply
 import fit
 import security
 import store
@@ -31,7 +32,7 @@ router = APIRouter()
 STAGES = [("new", "New"), ("reviewing", "Reviewing"), ("interviewing", "Interviewing"), ("offer", "Offer"),
           ("hired", "Hired"), ("declined", "Not moving forward")]
 STAGE_NAME = dict(STAGES)
-SOURCES = {"messaged": ("Messaged you", "accent"), "invited": ("You invited", "gold"), "saved": ("Saved from matches", "")}
+SOURCES = {"applied": ("Applied", "ok"), "messaged": ("Messaged you", "accent"), "invited": ("You invited", "gold"), "saved": ("Saved from matches", "")}
 MATCH_POOL = 400          # most recently updated visible students scored per listing
 MATCH_SHOW = 40
 NOTE_MAX = 300
@@ -222,10 +223,11 @@ def _matches_html(conn, j: dict, matches: list, saved: set[int]) -> str:
 
 def _candidates_html(conn, j: dict, cands: list[dict]) -> str:
     if not cands:
-        return ('<div class="empty">No candidates yet. Students appear here when they message you about this listing, '
+        return ('<div class="empty">No candidates yet. Students appear here when they apply here, when they message you about this listing, '
                 'when you invite them, or when you save them from the ranked matches.</div>')
     csrf = ui.user_csrf_input()
     out = []
+    apps = easyapply.applications_for(conn, j["id"])
     for c in cands:
         p = store.student_profile(conn, c["student_id"])
         if not p:
@@ -237,13 +239,15 @@ def _candidates_html(conn, j: dict, cands: list[dict]) -> str:
         opts = "".join(f'<option value="{k}"{" selected" if k == c["stage"] else ""}>{esc(v)}</option>' for k, v in STAGES)
         sub = " · ".join(x for x in (p["major"], p["grad_term"] and "Graduating " + p["grad_term"]) if x)
         msg = (f'<a class="b sm ghost" href="/messages/{int(convo["id"])}">Open conversation</a>' if convo else
-               (f'<a class="b sm ghost" href="/messages/new?to={int(c["student_id"])}&amp;job={int(j["id"])}&amp;invite=1">Invite to apply</a>'
+               (f'<a class="b sm ghost" href="/messages/new?to={int(c["student_id"])}&amp;job={int(j["id"])}{"" if c["source"] == "applied" else "&amp;invite=1"}">'
+                f'{"Message" if c["source"] == "applied" else "Invite to apply"}</a>'
                 if j["review_status"] == "approved" and p["allow_messages"] else ""))
         out.append(f'<div class="card mcard" id="c{int(c["student_id"])}"><div class="row between" style="align-items:flex-start;gap:12px">'
                    f'<div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:{f["score"]}"><b>{f["score"]}</b></div>'
                    f'<div style="min-width:0">{web.person(p["display_name"], sub, "stu", "/u/" + str(int(c["student_id"])))}</div></div>'
                    f'<div class="row"><span class="pill {src_tone}">{esc(src)}</span><span class="small faint">{esc(web.ago(c["created_at"]))}</span></div></div>'
                    f'<p class="small" style="margin-top:8px">{_evidence(f)}</p>'
+                   + (easyapply.application_html(apps[c["student_id"]], p) if c["student_id"] in apps else "") +
                    f'<form method="post" action="/hiring/{int(j["id"])}/stage" class="cform">{csrf}<input type="hidden" name="student" value="{int(c["student_id"])}">'
                    f'<div class="form-field"><label for="st{int(c["student_id"])}">Stage</label><select id="st{int(c["student_id"])}" name="stage">{opts}</select></div>'
                    f'<div class="form-field"><label for="nt{int(c["student_id"])}">Private note</label><input id="nt{int(c["student_id"])}" name="note" maxlength="{NOTE_MAX}" value="{esc(c["note"])}" placeholder="Only your team sees this"></div>'

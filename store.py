@@ -240,12 +240,45 @@ CREATE TABLE IF NOT EXISTS notify_log (
     sent_at REAL NOT NULL,
     PRIMARY KEY (user_id, conversation_id)
 );
+-- Easy apply (easyapply.py): one application per student per listing, answers stored as JSON.
+CREATE TABLE IF NOT EXISTS applications (
+    job_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    employer_id INTEGER NOT NULL,
+    answers TEXT NOT NULL DEFAULT '[]',
+    note TEXT NOT NULL DEFAULT '',
+    share_resume INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (job_id, student_id)
+);
+CREATE INDEX IF NOT EXISTS idx_app_employer ON applications (employer_id, job_id);
+-- Student connections (network.py). user_a < user_b always; a declined request stays so it can't be resent.
+CREATE TABLE IF NOT EXISTS connections (
+    user_a INTEGER NOT NULL,
+    user_b INTEGER NOT NULL,
+    requested_by INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    note TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (user_a, user_b)
+);
+CREATE INDEX IF NOT EXISTS idx_conn_b ON connections (user_b, status);
+-- Students following approved employers. Employers see the total, never who.
+CREATE TABLE IF NOT EXISTS follows (
+    student_id INTEGER NOT NULL,
+    employer_id INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (student_id, employer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_follow_emp ON follows (employer_id);
 """
 
 
 # Columns added after the first release; existing databases are migrated in place.
 _STUDENT_EXTRA = {"location": "TEXT NOT NULL DEFAULT ''", "looking_roles": "TEXT NOT NULL DEFAULT '[]'",
-                  "pref_locations": "TEXT NOT NULL DEFAULT '[]'"}
+                  "pref_locations": "TEXT NOT NULL DEFAULT '[]'",
+                  "allow_connections": "INTEGER NOT NULL DEFAULT 1"}
 _EMPLOYER_EXTRA = {"tagline": "TEXT NOT NULL DEFAULT ''", "founded": "TEXT NOT NULL DEFAULT ''", "linkedin": "TEXT NOT NULL DEFAULT ''",
                    "hires_for": "TEXT NOT NULL DEFAULT '[]'", "perks": "TEXT NOT NULL DEFAULT '[]'"}
 ITEM_KINDS = ["experience", "education", "project", "certification", "organization", "course", "language"]
@@ -274,7 +307,7 @@ def purge(conn) -> None:
     conn.execute("UPDATE messages SET body = '' WHERE status = 'removed' AND created_at < ?", (now - 30 * 86400,))
     conn.execute("DELETE FROM submitted_checks WHERE created_at < ?", (now - 365 * 86400,))
     # Listing stats and trackers go when their listing does; view counts are kept for 180 days.
-    for t in ("job_views", "job_apply_clicks", "candidates"):
+    for t in ("job_views", "job_apply_clicks", "candidates", "applications"):
         conn.execute(f"DELETE FROM {t} WHERE job_id NOT IN (SELECT id FROM jobs)")
     conn.execute("DELETE FROM job_views WHERE day < ?", (time.strftime("%Y-%m-%d", time.gmtime(now - 180 * 86400)),))
     conn.commit()
@@ -303,6 +336,9 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM job_views WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM job_apply_clicks WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM candidates WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
+    conn.execute("DELETE FROM applications WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
+    conn.execute("DELETE FROM connections WHERE user_a = ? OR user_b = ?", (user_id, user_id))
+    conn.execute("DELETE FROM follows WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
     conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_tokens WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE jobs SET employer_id = NULL WHERE employer_id = ?", (user_id,))
@@ -343,6 +379,12 @@ def employer_profile(conn, user_id: int) -> dict | None:
 def employer_approved(conn, user_id: int) -> bool:
     r = conn.execute("SELECT status FROM employer_profiles WHERE user_id = ?", (user_id,)).fetchone()
     return bool(r and r[0] == "approved")
+
+
+def applied_to(conn, student_id: int, employer_id: int) -> dict | None:
+    """The student's latest easy-apply application to any of this employer's listings, if there is one."""
+    return row(conn, "SELECT job_id, share_resume FROM applications WHERE student_id = ? AND employer_id = ? "
+                     "ORDER BY created_at DESC LIMIT 1", (student_id, employer_id))
 
 
 def unread_count(conn, user_id: int) -> int:

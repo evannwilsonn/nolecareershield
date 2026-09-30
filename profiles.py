@@ -25,6 +25,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import accounts
 import ai
 import matching
+import network
 import employer_page
 import profile_page
 import resume_engine
@@ -217,6 +218,7 @@ def _student_step(p: dict, step: int, error: str = "", status: int = 200) -> HTM
 <label class="toggle"><input type="checkbox" name="visible" value="1"{" checked" if p.get("visible_to_employers") or (p.get("setup_step") or 0) < 3 else ""}><span><b>Let approved employers find me.</b> Your profile appears in the student directory and in employers' ranked matches for their listings, with your fit score. Only employers our reviewers approved can see it.</span></label>
 <label class="toggle"><input type="checkbox" name="share_resume" value="1"{" checked" if p.get("share_resume") else ""}><span><b>Share my resume with approved employers</b> who can see my profile.</span></label>
 <label class="toggle"><input type="checkbox" name="allow_messages" value="1"{" checked" if p.get("allow_messages", 1) else ""}><span><b>Allow approved employers to message me.</b> Every message is scanned for scam signs, and you can block anyone.</span></label>
+<label class="toggle"><input type="checkbox" name="allow_connections" value="1"{" checked" if p.get("allow_connections", 1) else ""}><span><b>Let other students connect with me.</b> You show up in "People you may know" and can get connection requests. Nobody can message you through the network.</span></label>
 <div class="row"><a class="b sec" href="/profile/setup/2">Back</a><button class="submit-btn" type="submit">Finish</button></div></form>"""
     return _setup_page(body, "Resume and privacy", error, status)
 
@@ -325,6 +327,7 @@ async def setup_save(step: int, request: Request):
                     links = {"linkedin": _url(g("linkedin"), "LinkedIn", "linkedin.com"), "website": _url(g("website"), "Website")}
                     fields = dict(links=links, visible_to_employers=1 if g("visible") else 0,
                                   share_resume=1 if g("share_resume") else 0, allow_messages=1 if g("allow_messages") else 0,
+                                  allow_connections=1 if g("allow_connections") else 0,
                                   setup_step=3)
                     upload = form.get("resume")
                     fname, data = await _read_upload(upload if hasattr(upload, "read") else None)
@@ -468,8 +471,9 @@ def can_view_student(conn, viewer: dict, student_id: int) -> tuple[bool, bool, b
         return False, False, False
     talking = conn.execute("SELECT 1 FROM conversations WHERE student_id = ? AND employer_id = ? AND blocked_by IS NULL",
                            (student_id, viewer["id"])).fetchone()
-    if p["visible_to_employers"] or talking:
-        return True, True, bool(p["share_resume"])
+    applied = store.applied_to(conn, student_id, viewer["id"])           # they chose to apply to this employer
+    if p["visible_to_employers"] or talking or applied:
+        return True, True, bool(p["share_resume"] or (applied and applied["share_resume"]))
     return False, False, False
 
 
@@ -485,6 +489,8 @@ def student_page(uid: int, request: Request):
         msg = ""
         if user["role"] == "employer" and p["allow_messages"]:
             msg = f'<a class="b" href="/messages/new?to={uid}">{ui.icon("chat", 16)} Message</a>'
+        elif user["role"] == "student" and user["id"] != uid:
+            msg = network.profile_strip(conn, user["id"], uid, f"/u/{uid}")
     body = (f'<a class="back" href="{"/talent" if user["role"] == "employer" else "/feed"}">← Back</a>' +
             profile_page.profile_html(p, owner=user["id"] == uid, show_links=links, show_resume=resume, message_btn=msg,
                                       show_sections=user["id"] == uid or user["role"] == "employer"))
@@ -555,6 +561,9 @@ def export(request: Request):
                 "messages_sent": store.rows(conn, "SELECT conversation_id, body, created_at, status FROM messages WHERE sender_id = ?", (user["id"],)),
                 "feed_posts": store.rows(conn, "SELECT kind, body, link, status, created_at FROM posts WHERE author_id = ?", (user["id"],)),
                 "comments": store.rows(conn, "SELECT post_id, body, created_at FROM post_comments WHERE author_id = ?", (user["id"],)),
+                "applications": store.rows(conn, "SELECT job_id, answers, note, share_resume, created_at FROM applications WHERE student_id = ?", (user["id"],)),
+                "connections": store.rows(conn, "SELECT user_a, user_b, requested_by, status, created_at FROM connections WHERE user_a = ? OR user_b = ?", (user["id"], user["id"])),
+                "follows": store.rows(conn, "SELECT employer_id, created_at FROM follows WHERE student_id = ?", (user["id"],)),
                 "job_listings": store.rows(conn, "SELECT title, company, description, review_status, created_at FROM jobs WHERE employer_id = ?", (user["id"],))}
     return Response(json.dumps(data, indent=2, default=str), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="nolecareershield-my-data.json"', "Cache-Control": "no-store"})

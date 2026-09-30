@@ -93,7 +93,7 @@ def student(n, email="jordan@fsu.edu", name="Jordan R.", visible=True, resume=RE
                                             "grad_term": "Spring 2027", "headline": "Stats student looking for data internships"}).status_code == 303
     assert c.post("/profile/setup/2", data={"csrf": t, "skills": ["Python", "SQL", "Excel"], "more_skills": "Tableau, R",
                                             "interests": ["Data & Analytics"], "work_types": ["remote"], "job_kinds": ["internship"]}).status_code == 303
-    data = {"csrf": t, "allow_messages": "1", "linkedin": "linkedin.com/in/jordanrivera"}
+    data = {"csrf": t, "allow_messages": "1", "allow_connections": "1", "linkedin": "linkedin.com/in/jordanrivera"}
     if visible:
         data["visible"] = "1"
     files = {"resume": ("resume.txt", resume.encode(), "text/plain")} if resume else None

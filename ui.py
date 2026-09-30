@@ -722,6 +722,20 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 .risk.z0{--mk:var(--g)}.risk.z1{--mk:var(--y)}.risk.z2{--mk:var(--o)}.risk.z3{--mk:var(--r)}
 .risk .rl{color:color-mix(in oklab,var(--mk) 80%,var(--ink));margin-left:4px;font-family:var(--display);font-weight:750;font-stretch:80%;font-size:15px;font-variant-numeric:tabular-nums;min-width:3ch}
 .risk.in .gauge b{transition:left 1s var(--ease)}
+/* easy apply, connections and follows */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.chip.easy{background:var(--accent-tint);color:var(--accent-ink);font-weight:600}
+.appl{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.appl summary{cursor:pointer;font-size:14px}
+.appl .qa{margin-top:10px}.appl .q{font-size:12.5px;color:var(--muted);font-weight:600}.appl .a{font-size:14px;white-space:pre-wrap;margin-top:2px}
+.appl .a.resume{font-family:var(--serif);font-size:13px;max-height:260px;overflow:auto;padding:10px 12px;border-radius:10px;background:var(--sunk)}
+.easy .pick{display:inline-flex;gap:6px;align-items:center;margin-right:16px;font-size:14px}
+.easy fieldset,.easyset{border:0;padding:0;margin:0 0 16px}.easy legend,.easyset legend{font-size:14px;font-weight:600;margin-bottom:6px}
+.qrow{display:grid;grid-template-columns:1fr 158px 120px;gap:8px;margin-top:8px}
+@media (max-width:640px){.qrow{grid-template-columns:1fr 1fr}.qrow input{grid-column:1/-1}}
+.netstrip{gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.ncard{padding:14px 16px;margin-bottom:10px}.rnote{margin:-4px 0 12px 8px}
+.cform2{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.cnote{max-width:260px;min-height:0;padding:7px 10px;font-size:13px}
 /* profile covers use the site's own photography */
 .pbanner.ph{height:150px;background:var(--ph) 50% 60%/cover no-repeat}
 .pbanner.ph::after{background:linear-gradient(180deg,rgba(18,13,12,0) 40%,rgba(18,13,12,.35));opacity:1}
@@ -799,8 +813,8 @@ def _nav_links(admin: bool) -> str:
 
 _STUDENT_NAV = [
     ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("spark", "/assistant", "Job assistant"),
-          ("feed", "/feed", "Feed"), ("chat", "/messages", "Messages")]),
-    ("Career tools", [("file", "/resume", "Resume studio"), ("shield", "/check", "Scam check")]),
+          ("feed", "/feed", "Feed"), ("chat", "/messages", "Messages"), ("people", "/network", "Network")]),
+    ("Career tools", [("send", "/applications", "Applications"), ("file", "/resume", "Resume studio"), ("shield", "/check", "Scam check")]),
     ("You", [("user", "/profile", "Profile")]),
 ]
 _EMPLOYER_NAV = [
@@ -815,13 +829,15 @@ def _sidebar(active: str) -> str:
     user = viewer()
     groups = _STUDENT_NAV if user["role"] == "student" else _EMPLOYER_NAV
     unread = viewer_extra().get("unread", 0)
+    reqs = viewer_extra().get("requests", 0)
     out = []
     for grp, items in groups:
         if grp:
             out.append(f'<div class="grp">{esc(grp)}</div>')
         for ic, href, label in items:
             on = ' class="on" aria-current="page"' if href == active else ""
-            count = f'<span class="count" aria-label="{unread} unread">{unread}</span>' if href == "/messages" and unread else ""
+            count = (f'<span class="count" aria-label="{unread} unread">{unread}</span>' if href == "/messages" and unread else
+                     f'<span class="count" aria-label="{reqs} connection requests">{reqs}</span>' if href == "/network" and reqs else "")
             out.append(f'<a href="{href}"{on}>{icon(ic)}<span>{esc(label)}</span>{count}</a>')
     tip = ('<div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. '
            '<a href="/check?kind=message">Check a message</a>.</div>')

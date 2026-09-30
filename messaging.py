@@ -63,7 +63,7 @@ def can_start(conn, sender: dict, to_id: int) -> tuple[bool, str]:
     if not p or not profiles.student_ready(p) or not p["allow_messages"]:
         return False, "That student isn't accepting messages from employers."
     talking = conn.execute("SELECT 1 FROM conversations WHERE student_id = ? AND employer_id = ?", (to_id, sender["id"])).fetchone()
-    if not (p["visible_to_employers"] or talking):
+    if not (p["visible_to_employers"] or talking or store.applied_to(conn, to_id, sender["id"])):
         return False, "That student isn't accepting messages from employers."
     return True, ""
 
