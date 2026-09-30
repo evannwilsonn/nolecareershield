@@ -80,6 +80,7 @@ import msgcheck
 import learning
 import defense
 import defense_web
+import cases
 import assistant
 import resume_tools
 import feed
@@ -126,6 +127,11 @@ def daily_maintenance():
         log.exception("database backup failed")
     learning.maybe_retrain()               # retrains the scam model in the background when a month and enough labels have passed
     defense.daily_jobs()                   # certificate-log watch, peer school feeds, scam archives (each only when configured)
+    try:
+        with store.db() as conn:
+            cases.sync(conn)                   # every drift alert becomes an investigation case
+    except Exception:                      # noqa: BLE001
+        log.exception("case sync failed")
 
 
 async def _maintenance_loop():
@@ -179,6 +185,9 @@ def init_db():
     learning.configure()                   # the detector uses the model retrained on this board, when there is one
     with store.db() as conn:
         defense.ensure_schema(conn)            # hashed identifiers, intel cache, drift counters, campus calendar
+        cases.ensure_schema(conn)              # investigation cases opened from drift alerts
+        import release
+        release.ensure_schema(conn)            # staged model releases, background comparisons, rollback
     with closing(sqlite3.connect(DB_PATH)) as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
@@ -1023,7 +1032,7 @@ mailer.copy_hook = emails.keep
 # ---------- student network ----------
 
 for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, learning.router, assistant.router, resume_tools.router,
-           feed.router, admin_extra.router, defense_web.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router,
+           feed.router, admin_extra.router, defense_web.router, cases.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router,
            events.router, teams.router):
     app.include_router(_r)
 
@@ -1117,7 +1126,9 @@ def privacy():
 <ul><li>Only signed-in FSU students and approved employers can read or post. Employer posts are reviewed before they appear and must be relevant to FSU students.</li>
 <li>Anyone can report a post; reported posts are checked by a reviewer. Rejected and removed posts are deleted after 30 days.</li></ul>
 <h3>Scam checker</h3>
-<ul><li>Messages and listings you paste into the scam checker are not saved, unless you press "Send this to our reviewers" to help improve the detector. Those are kept for up to a year, without your name. When a reviewer confirms whether one was a scam, that text (with email addresses and phone numbers masked) can be used to retrain the detector.</li>
+<ul><li>Messages and listings you paste into the scam checker are not saved, unless you press "Send this to our reviewers" to help improve the detector.</li>
+<li>The exception: a small random share (about 3%) of checks that come out "no known scam signs" or "be careful" is kept so a reviewer can double-check that the detector didn't miss a scam. It's kept without your name, with email addresses and phone numbers masked, for up to a year.</li>
+<li>Checks you send to reviewers are kept for up to a year, without your name. When a reviewer confirms whether one was a scam, that text (with email addresses and phone numbers masked) can be used to retrain the detector.</li>
 <li>Files you attach to a check (an offer letter, a photo of a check, a screenshot) are read once to check them and never stored.</li>
 <li>If you forward an email to our check address, we reply to you with the verdict. We keep the forwarded message for our reviewers, but not your email address.</li>
 <li>Contact details in scam reports and listings (phone numbers, emails, web domains, chat handles, crypto wallets) are kept as one-way keyed codes, so we can spot a scammer who comes back with new wording. When a reviewer confirms a scam, those codes may be shared with partner schools; the codes can't be turned back into the details.</li>

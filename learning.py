@@ -46,7 +46,11 @@ LABELS = ("scam", "legit", "lead_gen")
 NEAR_COPY = 0.6                  # word-trigram overlap that counts as the same template (same as train_model)
 WAVE_DAYS = 30
 RETRAIN_DAYS = float(os.environ.get("RETRAIN_DAYS", "30"))
-RETRAIN_MIN_NEW = int(os.environ.get("RETRAIN_MIN_NEW", "20"))
+RETRAIN_MIN_NEW = int(os.environ.get("RETRAIN_MIN_NEW", "20"))      # distinct new labels for the monthly fallback
+EVIDENCE_MIN_NEW = int(os.environ.get("RETRAIN_EVIDENCE_MIN", "30"))  # distinct new labels that trigger a retrain early
+CAMPAIGN_MIN = int(os.environ.get("RETRAIN_CAMPAIGN_MIN", "3"))      # labeled reports behind a confirmed new campaign
+MIN_GAP_DAYS = float(os.environ.get("RETRAIN_MIN_GAP_DAYS", "3"))    # never retrain more often than this
+WAVE_CAP = int(os.environ.get("RETRAIN_WAVE_CAP", "3"))              # most rows one scam wave may contribute to training
 HOLDOUT_EVERY = 3                # about 1 in 3 new labels is held out
 _lock = threading.Lock()
 
@@ -62,6 +66,8 @@ def model_path() -> Path:
 def configure() -> None:
     """Point the detector at the live model (called at startup)."""
     os.environ["SCAM_MODEL_PATH"] = str(model_path())
+    import release
+    release.configure()
 
 
 # ---------- scam waves ----------
@@ -121,38 +127,80 @@ def _assign_splits(conn) -> None:
 def labeled_rows(conn) -> list[dict]:
     """Every confirmed label from the live board, masked, in the detector's corpus format."""
     out = []
+    import defense
     for r in store.rows(conn, "SELECT * FROM jobs WHERE review_label IN ('scam','legit','lead_gen') ORDER BY id"):
         out.append({"id": f"live-j{r['id']}", "label": r["review_label"], "kind": "listing", "title": mask(r["title"]),
                     "company": mask(r["company"]), "description": mask(r["description"]), "url": r["apply_url"] or "",
-                    "split": r["learn_split"], "context_flags": [],
-                    "notes": f"board listing, reviewer label; detector band={r['band']} score={r['score']}"})
+                    "split": r["learn_split"], "context_flags": [], "reviewed_at": defense._ts(r["reviewed_at"]), "campaign": None,
+                    "notes": f"board listing, reviewer label{' by ' + r['reviewer'] if r.get('reviewer') else ''}; "
+                             f"detector band={r['band']} score={r['score']}"})
     for r in store.rows(conn, "SELECT * FROM submitted_checks WHERE review_label IN ('scam','legit','lead_gen') ORDER BY id"):
         desc = r["body"] if r["kind"] == "listing" else r["body"] + (f"\n{r['sender']}" if r["sender"] else "")
         out.append({"id": f"live-c{r['id']}", "label": r["review_label"], "kind": r["kind"], "title": mask(r["title"]),
                     "company": mask(r["company"]), "description": mask(desc), "url": r["url"] or "", "split": r["learn_split"],
-                    "context_flags": [], "notes": f"sent in from the scam check ({r['source']}), reviewer label; "
-                                                  f"student said {r['user_label'] or '-'}; detector band={r['band']}"})
+                    "context_flags": [], "reviewed_at": r["reviewed_at"] or 0, "campaign": r["campaign"] or r["id"],
+                    "notes": f"sent in from the scam check ({r['source']}), reviewer label"
+                             f"{' by ' + r['reviewer'] if r['reviewer'] else ''}{' (' + r['review_reason'] + ')' if r['review_reason'] else ''}; "
+                             f"student said {r['user_label'] or '-'}; detector band={r['band']}"})
     return out
 
 
 # ---------- the monthly retrain ----------
 
 def _since(conn, t: float) -> int:
+    """Distinct new labels since t: a scam wave labeled all at once counts once, so one campaign can't trigger a retrain."""
     iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t))
-    return (conn.execute("SELECT COUNT(*) FROM submitted_checks WHERE review_label IN ('scam','legit','lead_gen') AND reviewed_at > ?", (t,)).fetchone()[0]
+    return (conn.execute("SELECT COUNT(DISTINCT COALESCE(campaign, id)) FROM submitted_checks WHERE review_label IN ('scam','legit','lead_gen') "
+                         "AND reviewed_at > ?", (t,)).fetchone()[0]
             + conn.execute("SELECT COUNT(*) FROM jobs WHERE review_label IN ('scam','legit','lead_gen') AND reviewed_at > ?", (iso,)).fetchone()[0])
 
 
-def due(conn) -> tuple[bool, str]:
-    last = store.row(conn, "SELECT * FROM model_runs WHERE status IN ('shipped','refused') ORDER BY started_at DESC LIMIT 1")
+def due_detail(conn) -> tuple[bool, str, str]:
+    """(due, why, trigger). Monthly when enough distinct labels exist; earlier when a lot of new evidence arrives or a reviewer
+    confirms a new scam campaign; never more often than MIN_GAP_DAYS, and not while a release is being rolled out."""
+    import release
+    st = release.state(conn)
+    if st["stage"] in ("rollout", "watch"):
+        return False, f"a model release is in progress ({st['stage']}); retraining waits until it settles", ""
+    last = store.row(conn, "SELECT * FROM model_runs WHERE status IN ('shipped','refused','candidate','rolled_back') ORDER BY started_at DESC LIMIT 1")
     since = last["started_at"] if last else 0.0
-    if last and time.time() - since < RETRAIN_DAYS * 86400:
-        days = int((since + RETRAIN_DAYS * 86400 - time.time()) // 86400) + 1
-        return False, f"next scheduled retrain in about {days} day{'s' if days != 1 else ''}"
+    elapsed = (time.time() - since) / 86400 if last else 1e9
     new = _since(conn, since)
+    if elapsed >= MIN_GAP_DAYS:
+        import cases
+        camp = [c for c in cases.confirmed_since(conn, since) if json.loads(c["summary"] or "{}").get("distinct", 0) >= CAMPAIGN_MIN]
+        if camp:
+            return True, f"reviewer confirmed a new scam campaign (case #{camp[0]['id']}); {new} new distinct labels", "new_campaign"
+        if new >= EVIDENCE_MIN_NEW:
+            return True, f"{new} new distinct labels (early retrain at {EVIDENCE_MIN_NEW})", "evidence"
+    if elapsed < RETRAIN_DAYS:
+        days = int((since + RETRAIN_DAYS * 86400 - time.time()) // 86400) + 1
+        return False, (f"next scheduled retrain in about {days} day{'s' if days != 1 else ''} "
+                       f"(sooner at {EVIDENCE_MIN_NEW} distinct new labels or a confirmed new campaign; {new} so far)"), ""
     if new < RETRAIN_MIN_NEW:
-        return False, f"waiting for labels: {new} new of the {RETRAIN_MIN_NEW} needed"
-    return True, f"{new} new labels"
+        return False, f"waiting for labels: {new} new of the {RETRAIN_MIN_NEW} needed", ""
+    return True, f"{new} new distinct labels", "schedule"
+
+
+def due(conn) -> tuple[bool, str]:
+    ok, why, _ = due_detail(conn)
+    return ok, why
+
+
+def cap_waves(rows: list[dict], cap: int = WAVE_CAP) -> list[dict]:
+    """At most `cap` training rows per scam wave (the earliest, the latest and ones between), so a template that was sent
+    in or labeled hundreds of times counts like a few examples."""
+    by: dict = {}
+    for r in rows:
+        by.setdefault(r.get("campaign") or r["id"], []).append(r)
+    out = []
+    for rs in by.values():
+        if len(rs) <= cap:
+            out += rs
+        else:
+            step = (len(rs) - 1) / (cap - 1) if cap > 1 else 0
+            out += [rs[round(i * step)] for i in range(cap)]
+    return out
 
 
 def run_retrain(trigger: str = "schedule", force: bool = False) -> dict:
@@ -160,11 +208,14 @@ def run_retrain(trigger: str = "schedule", force: bool = False) -> dict:
     if not _lock.acquire(blocking=False):
         return {"status": "busy"}
     try:
+        import release
         with store.db() as conn:
             if not force:
                 ok, why = due(conn)
                 if not ok:
                     return {"status": "skipped", "why": why}
+            elif release.state(conn)["stage"] in ("rollout", "watch"):
+                return {"status": "skipped", "why": "a model release is in progress"}
             _assign_splits(conn)
             rows = labeled_rows(conn)
             run_id = conn.execute("INSERT INTO model_runs (started_at, trigger, live_labels) VALUES (?,?,?)",
@@ -177,10 +228,14 @@ def run_retrain(trigger: str = "schedule", force: bool = False) -> dict:
         d = learn_dir()
         (d / "models").mkdir(parents=True, exist_ok=True)
         train_f, hold_f = d / "live_train.jsonl", d / "live_holdout.jsonl"
-        train_f.write_text("".join(json.dumps(r) + "\n" for r in rows if r["split"] == "train"))
+        train_rows = cap_waves([r for r in rows if r["split"] == "train"])
+        train_f.write_text("".join(json.dumps(r) + "\n" for r in train_rows))
         held = [r for r in rows if r["split"] == "holdout"]
         hold_f.write_text("".join(json.dumps(r) + "\n" for r in held))
-        argv = ["--extra", str(train_f), "--out", str(model_path()), "--current", str(ml.active_path()), "--report-dir", str(d / "models")]
+        cand = release.candidate_path()
+        if cand.exists():
+            cand.unlink()
+        argv = ["--extra", str(train_f), "--out", str(cand), "--current", str(ml.active_path()), "--report-dir", str(d / "models")]
         if held:
             argv[2:2] = ["--holdout-extra", str(hold_f)]
         try:
@@ -189,8 +244,20 @@ def run_retrain(trigger: str = "schedule", force: bool = False) -> dict:
             log.exception("retrain failed")
             return _finish(run_id, "error", report=f"Training failed: {type(e).__name__}: {e}")
         res = train_model.LAST_RESULT
-        return _finish(run_id, "shipped" if res.get("written") else "refused", version=res.get("version"),
-                       train_rows=res.get("rows", 0), report=res.get("report", ""))
+        report = res.get("report", "")
+        if not res.get("written") or not cand.exists():
+            return _finish(run_id, "refused", version=res.get("version"), train_rows=res.get("rows", 0), report=report)
+        with store.db() as conn:                        # the expanded gate: against the ACTIVE model, on what the site cares about
+            candidate, active = ml.Model(json.loads(cand.read_text())), ml.load(ml.active_path())
+            passed, checks = release.gate(candidate, active, conn)
+            report += "\n\n## Release gate (candidate vs the active model)\n\n| Check | Result | Detail |\n|---|---|---|\n" + "".join(
+                f"| {c['name']} | {'pass' if c['passed'] else 'FAIL'} | {c['detail']} |\n" for c in checks)
+            if not passed:
+                cand.unlink()
+                return _finish(run_id, "refused", version=res.get("version"), train_rows=res.get("rows", 0), report=report)
+            release.begin_shadow(conn, candidate.version, run_id, "passed the release gate")
+        return _finish(run_id, "candidate", version=res.get("version"), train_rows=res.get("rows", 0),
+                       report=report + "\nPassed. It now scores alongside the active model before any student sees it.")
     finally:
         _lock.release()
 
@@ -204,15 +271,21 @@ def _finish(run_id: int, status: str, version=None, train_rows: int = 0, report:
 
 
 def maybe_retrain() -> None:
-    """Called by the site's maintenance loop. Retrains in the background when due, so startup never waits."""
+    """Called by the site's maintenance loop: moves any release along (or rolls it back), then retrains in the background
+    when due, so startup never waits."""
+    import release
+    try:
+        release.tick()
+    except Exception:                                   # noqa: BLE001
+        log.exception("release step failed")
     try:
         with store.db() as conn:
-            ok, _ = due(conn)
+            ok, _, trigger = due_detail(conn)
     except Exception:                                   # noqa: BLE001
         log.exception("retrain check failed")
         return
     if ok:
-        threading.Thread(target=run_retrain, kwargs={"trigger": "schedule"}, daemon=True).start()
+        threading.Thread(target=run_retrain, kwargs={"trigger": trigger or "schedule"}, daemon=True).start()
 
 
 # ---------- reviewer pages ----------
@@ -242,6 +315,9 @@ def prioritize(groups: dict, rings: dict, scam_styles: list) -> list:
             why.append("Student and detector disagree")
         if any(x["source"] == "ai_novel" for x in rs):
             score += 1
+        if any(x["source"] == "sample" for x in rs):
+            score += 0.7                                  # the only way to find confident misses nobody reported
+            why.append("Random check of a safe result")
         if len(rs) == 1 and not rings.get(k):
             score += 0.5
         if rings.get(k) and rings[k]["labels"].get("scam"):
@@ -398,6 +474,8 @@ def model_page(session: str | None = Cookie(default=None), started: int = 0):
             "SELECT learn_split, COUNT(*) FROM (SELECT learn_split FROM jobs WHERE review_label IN ('scam','legit','lead_gen') "
             "UNION ALL SELECT learn_split FROM submitted_checks WHERE review_label IN ('scam','legit','lead_gen')) GROUP BY learn_split")}
         pending = pending_count(conn)
+        import release
+        rel = release_html(conn, csrf)
     if m:
         h = m.spec.get("holdout", {})
         hr, hm = h.get("rules"), h.get("with_model")
@@ -413,18 +491,74 @@ def model_page(session: str | None = Cookie(default=None), started: int = 0):
     label_line = (f'<p>Live labels: <b>{sum(splits.values())}</b> confirmed ({splits.get("train", 0)} training, '
                   f'{splits.get("holdout", 0)} frozen holdout, {splits.get("unused", 0)} not used yet). '
                   f'{pending} waiting in the <a href="/admin/checks">label queue</a>.</p>')
-    sched = (f'<p class="small muted">Automatic retrain: {"due now" if ok else esc(why)}. It runs at most every '
-             f'{RETRAIN_DAYS:g} days, once {RETRAIN_MIN_NEW} new labels exist, and ships only if it beats the current model '
-             f'on every frozen holdout with no new false alarm.</p>')
+    sched = (f'<p class="small muted">Automatic retrain: {"due now" if ok else esc(why)}. Monthly once {RETRAIN_MIN_NEW} distinct new '
+             f'labels exist; sooner at {EVIDENCE_MIN_NEW} distinct new labels or when a reviewer confirms a new scam campaign, never more '
+             f'often than every {MIN_GAP_DAYS:g} days. A scam wave counts once and adds at most {WAVE_CAP} training rows. A new model '
+             f'must pass the release gate, then scores alongside the active one before any student sees it.</p>')
     button = (f'<form method="post" action="/admin/model/retrain">{csrf}<button class="b" type="submit">Retrain now</button> '
               '<span class="small muted">Same gate as the monthly run.</span></form>')
     rows = "".join(f'<details class="card" style="margin-top:8px"><summary><b>{esc(time.strftime("%Y-%m-%d %H:%M", time.gmtime(r["started_at"])))}</b> · '
-                   f'{esc(r["trigger"])} · <span class="pill {"ok" if r["status"] == "shipped" else "bad" if r["status"] == "error" else ""}">{esc(r["status"])}</span>'
+                   f'{esc(r["trigger"])} · <span class="pill {"ok" if r["status"] in ("shipped", "candidate") else "bad" if r["status"] in ("error", "rolled_back") else ""}">{esc(r["status"])}</span>'
                    f'{" · " + esc(r["version"]) if r["version"] else ""} · {int(r["train_rows"])} rows</summary>'
                    f'<pre style="white-space:pre-wrap;font-size:12px">{esc(r["report"])}</pre></details>' for r in runs)
-    body = (cur + f'<div class="card" style="margin-top:12px;display:grid;gap:10px">{label_line}{sched}{button}</div>'
+    body = (cur + rel + f'<div class="card" style="margin-top:12px;display:grid;gap:10px">{label_line}{sched}{button}</div>'
             + '<h3 class="sec">Training runs</h3>' + (rows or '<div class="empty">No runs yet.</div>'))
     return admin_extra._page(notice + body, "Model", "/admin/model")
+
+
+STAGE_NAMES = {"none": "No release in progress", "shadow": "Scoring alongside the active model (students don't see it)",
+               "rollout": "Serving part of the listings", "watch": "Released; watching against the previous model"}
+
+
+def release_html(conn, csrf: str) -> str:
+    import release
+    st = release.state(conn)
+    logs = store.rows(conn, "SELECT * FROM release_log ORDER BY id DESC LIMIT 12")
+    tr = release._cand_vs_active_traffic(conn, st) if st["stage"] in ("shadow", "rollout") else None
+    lines = "".join(f'<li>{esc(time.strftime("%Y-%m-%d %H:%M", time.gmtime(l["at"])))} · <b>{esc(l["event"])}</b>'
+                    f'{" · " + esc(l["version"]) if l["version"] else ""}{" · " + esc(l["detail"][:300]) if l["detail"] else ""}</li>' for l in logs)
+    btns = ""
+    if st["stage"] == "shadow":
+        btns += f'<button class="b sm" name="action" value="next">Start serving {release.STAGES[0]}%</button>'
+    if st["stage"] == "rollout":
+        btns += '<button class="b sm" name="action" value="next">Next step</button>'
+    if st["stage"] in ("shadow", "rollout"):
+        btns += '<button class="b sm ghost" name="action" value="stop">Stop and discard the candidate</button>'
+    if st["stage"] == "watch" or (st["stage"] == "none" and release.previous_path().exists()):
+        btns += '<button class="b sm ghost" name="action" value="rollback">Restore the previous model</button>'
+    traffic = (f'<p class="small">Compared on {tr[0]} real listing checks: candidate flags {tr[1]:.0%}, active {tr[2]:.0%}.</p>' if tr else "")
+    return (f'<div class="card" style="margin-top:12px"><b>Release</b> <span class="pill">{esc(st["stage"])}</span>'
+            f'{" " + ("<span class=pill>" + esc(st["candidate_version"]) + "</span>") if st["candidate_version"] and st["stage"] != "none" else ""}'
+            f'<p class="small">{esc(STAGE_NAMES.get(st["stage"], st["stage"]))}{" (" + str(st["pct"]) + "%)" if st["stage"] == "rollout" else ""}. '
+            f'{esc(st["note"] or "")}</p>{traffic}'
+            f'<p class="small muted">Automatic release is {"on" if release.auto() else "off (MODEL_AUTO_RELEASE=0)"}: shadow {release.SHADOW_DAYS:g} days, then '
+            f'{", ".join(str(p) + "%" for p in release.STAGES)} of listings, {release.STAGE_DAYS:g} days each, each step only with at least '
+            f'{release.FRESH_MIN} labels the candidate never saw showing it isn\'t worse. Rollback is always automatic.</p>'
+            f'{f"<form method=post action=/admin/model/release class=row>{csrf}{btns}</form>" if btns else ""}'
+            f'{f"<ul class=small>{lines}</ul>" if lines else ""}</div>')
+
+
+@router.post("/admin/model/release")
+def release_action(action: str = Form(""), session: str | None = Cookie(default=None), csrf: str = Form("")):
+    if not admin_extra._gate(session, csrf):
+        return RedirectResponse("/admin", status_code=303)
+    import defense, release
+    who = defense.reviewer_name(session)
+    with store.db() as conn:
+        st = release.state(conn)
+        if action == "next" and st["stage"] == "shadow":
+            release.start_rollout(conn, who=who or "a reviewer")
+        elif action == "next" and st["stage"] == "rollout":
+            nxt = [p for p in release.STAGES if p > int(st["pct"])]
+            if not nxt or nxt[0] >= 100:
+                release._promote(conn, st)
+            else:
+                release.start_rollout(conn, nxt[0], who=who or "a reviewer")
+        elif action == "stop" and st["stage"] in ("shadow", "rollout"):
+            release.rollback(conn, f"stopped by {who or 'a reviewer'}")
+        elif action == "rollback":
+            release.rollback(conn, f"restored by {who or 'a reviewer'}")
+    return RedirectResponse("/admin/model", status_code=303)
 
 
 @router.post("/admin/model/retrain")

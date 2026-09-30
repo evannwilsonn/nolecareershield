@@ -14,7 +14,8 @@ stand, what was decided and why, and what's next.
   one incoming request for Jordan), mirrored from `easyapply.py` and `network.py`; change both sides together.
 - **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
   commit; `tests/test_installer.py` fails if it's out of date.
-- **Tests:** `python -m pytest -q` (143 passing at handoff).
+- **Tests:** `python -m pytest -q` (547 passing on Sept 30). Passing tests say the code does what it's meant to; real-world
+  detection rates are on `/admin/intel` under "How the detector is doing".
 
 ## Rules Evan set (keep them)
 
@@ -147,7 +148,8 @@ stand, what was decided and why, and what's next.
 
 ## Scam detector: beyond wording (Sept 30)
 
-Scammers rewrite their messages; these catch what they can't easily change. Everything only makes a verdict stricter.
+Scammers rewrite their messages; these catch what they can't easily change. New evidence can only make a verdict
+stricter, but evidence itself can be corrected, and corrections re-score in both directions (see the next section).
 - **Contact-detail memory (`defense.py`):** phones, emails, domains, Telegram handles, Cash App tags and crypto wallets
   from every sent-in check and board listing are stored as keyed hashes (`INDICATOR_KEY`, else derived from
   `SECRET_KEY`). Once a reviewer confirms a scam, any check reusing one of those details gets "Uses contact details
@@ -180,6 +182,38 @@ Scammers rewrite their messages; these catch what they can't easily change. Ever
 - **Model uncertainty:** the model now carries class-conditional conformal values; "uncertain" cases go first in
   the label queue.
 
+## Scam detector: correction, cases, releases, measurement (Sept 30, later)
+
+Built around "emerging scam → verified evidence → candidate update → evaluation → controlled release".
+- **Corrections (`defense.py`):** every label records who (the "Reviewing as" name) and why; every decision and undo goes to
+  `label_log`. A contact detail counts as scam evidence only while it's backed by a recent confirmed scam (phones 180 days,
+  emails and domains 365, wallets 730; `INDICATOR_TTL_<KIND>` overrides), has never appeared in a confirmed real report
+  ("disputed") and hasn't been revoked. `/admin/intel` lists every detail with its reports, reviewers, reasons and expiry,
+  with Revoke/Restore. Labels, undos and revocations re-score the waiting listings that contain the detail (both
+  directions). Live listings keep the verdict their reviewer approved, but the ones that now match confirmed scams are
+  listed at the top of `/admin/intel`. Partner feeds are replaced on every pull, so a partner's revocation reaches us.
+- **Cases (`cases.py`, `/admin/cases`):** every drift alert opens a case with representative examples, shared contact
+  details, what the detector says about each report today, how many distinct reports (near-copies count once), and a
+  proposed rule: phrases common to the case that no rule covers, each with every legitimate item it would also hit.
+  Collateral-free phrases download as an inert rulepack fragment for `tools/regress.py`. Reviewers confirm, dismiss or
+  resolve (with a note), and can label a case's reports in one go.
+- **Retraining (`learning.py`):** monthly fallback (20 distinct new labels), early when 30 distinct new labels arrive or a
+  reviewer confirms a case with at least 3 distinct reports, never more often than every 3 days, and not during a
+  release. A wave counts once and adds at most 3 training rows.
+- **Releases (`release.py`):** training produces a candidate; the active model keeps serving. The candidate must pass the
+  release gate against the active model (recent held-out scams, false alarms at most 2% and none new, older techniques,
+  unusual real employers, held-out campaigns, red-team regression variants). Then it scores alongside the active model
+  for 7 days, then serves 10% and 50% of listings for 3 days each, then 100%. Each step needs at least 5 labels it
+  never saw showing it's no worse and a flag rate near the active model's. Otherwise it's rolled back automatically.
+  After release the old model is kept for 14 days and restored automatically if the new one does worse on fresh labels.
+  `MODEL_AUTO_RELEASE=0` makes each step wait for a reviewer's button on `/admin/model`; rollback stays automatic.
+- **Measurement (`metrics.py`):** about 3% of checks that come out safe (max 8 a day) go to the label queue as "Random
+  check of a safe result", masked, unlabeled until a reviewer decides. `/admin/intel` shows confirmed misses, false
+  alarms, what the sample found (with a 95% range for the share of "safe" results that are scams), reviewer workload,
+  first report to detection for resolved cases, and what the model served.
+- **Red team:** every run uses a new seed. `--save-regression` adds the variants a fix was made for to
+  `data/redteam_regression.jsonl`, which the release gate checks; they're never reported as new again.
+
 ## Next / waiting on someone
 
 1. **FSU single sign-on:** ask FSU ITS to register NoleCareerShield in FSU's Microsoft Entra tenant with redirect URI
@@ -191,7 +225,8 @@ Scammers rewrite their messages; these catch what they can't easily change. Ever
    duplicate student accounts).
 
 ## Round: Handshake/LinkedIn/Indeed-style redesign (Sep 30)
-- **Gauge:** every card shows "Scam risk N · status" (aggregators show 60, no "aggregator" label). Muted palette in ui.py `.risk`.
+- **Gauge:** every card shows "Scam risk N · status". Aggregator/lead-gen listings show their real scam score plus a separate
+  "Aggregator" tag (changed Sept 30: they used to read a fixed 60, which mixed a business classification into scam evidence). Muted palette in ui.py `.risk`.
 - **Qualifications + % match:** `quals.py` (employer-chosen skill/major/cert/standing/gradyear/gpa, required or preferred, max 10, protected-term blocklist) stored in `jobs.requirements`; merged into `fit.fit_score`, which now also returns `percent`, `level` (high ≥75 / medium ≥50 / low), `met`, `total`, and `must` on checklist items. Ported in demo/engine.js (parity test covers a job with requirements). No "top applicant" wording anywhere; numbers only.
 - **Job board:** `jobboard.py` — two-pane list/detail (`/jobs?job=ID`), tabs Jobs/Saved/Resume optimizer, search + chips (incl. Quick apply filter), `saved_jobs` table, match panel, "What they're looking for", "Meet the poster" block. Styles in `css_jobs.py`.
 - **Feed:** tabs Feed/For you/Saved, pills All/Your major/Employers, bookmarks (`post_saves`), right rail. Styles in `css_feed.py`.

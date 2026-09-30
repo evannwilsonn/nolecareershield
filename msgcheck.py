@@ -36,6 +36,7 @@ from scam_detector.scorer import score_posting
 from scam_detector import ml
 import learning
 import defense
+import metrics
 
 router = APIRouter()
 
@@ -360,7 +361,7 @@ def _form(text: str = "", sender: str = "", ai_on: bool = False) -> str:
     return f"""<form method="post" action="/check" class="card" enctype="multipart/form-data">
 <input type="hidden" name="csrf" value="{security.make_csrf('form')}">
 <div class="form-field"><label for="c-text">The message</label>
-<p class="hint">Paste the whole thing: text, email, LinkedIn or Handshake DM. Nothing is saved unless you choose to send it to reviewers.</p>
+<p class="hint">Paste the whole thing: text, email, LinkedIn or Handshake DM. It isn't saved unless you send it to reviewers, except a small random share of results we call safe, which a reviewer double-checks (no name; emails and phone numbers masked).</p>
 <textarea id="c-text" name="text" required maxlength="8000" data-count placeholder="Hi! I'm Dr. Smith from the Psychology Department. I'm looking for a personal assistant, $400 weekly...">{ui.esc(text)}</textarea></div>
 <div class="form-field"><label for="c-sender">Who sent it (optional)</label>
 <p class="hint">The email address or name it came from. It helps spot fake FSU and company addresses.</p>
@@ -466,6 +467,7 @@ async def check_submit(request: Request, text: str = Form(""), sender: str = For
         defense.bump("ai_only_scam")
     enrich(r, text=text + ("\n" + art["text"][:8000] if art and art.get("text") and art["text"][:200] not in text else ""), sender=sender,
            extra=(art or {}).get("findings") or [], url=" ".join((art or {}).get("urls") or []))
+    metrics.maybe_sample(r, kind="message", text=text, sender=sender)
     lead = ('<div class="banner warning" style="margin:0 0 10px"><b>This may be a new kind of scam.</b> The AI flagged it, but none of our '
             'rules caught it. Sending it to our reviewers is how the detector learns to catch the next one.</div>' if novel else "")
     report = f"""<details class="card" style="margin-top:22px"{" open" if novel else ""}><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
@@ -498,6 +500,7 @@ def check_thread(request: Request, text: str = Form(""), me: str = Form(""), csr
     theirs = "\n".join(t["text"] for t in a.get("turns", []) if t.get("speaker") != "me") or text
     r = check(theirs[:8000], "")
     enrich(r, text=theirs, extra=a.get("findings") or [])
+    metrics.maybe_sample(r, kind="message", text=theirs[:8000])
     full = full_view(user)
     return _page(render_result(r, full) + thread_html(a) + asks_html(r) + report_html(r)
                  + '<h3 class="sec">Check another conversation</h3>' + _thread_form(text, me), kind="thread")
@@ -536,6 +539,7 @@ def check_listing_submit(request: Request, title: str = Form(""), company: str =
         v["url"] = "https://" + v["url"]
     r = check_listing(v["title"], v["description"], v["company"], v["url"], v["contact"])
     enrich(r, text=v["description"] + ("\n" + v["contact"] if v["contact"] else ""), title=v["title"], company=v["company"], url=v["url"], listing=True)
+    metrics.maybe_sample(r, kind="listing", text=v["description"], title=v["title"], company=v["company"], url=v["url"], sender=v["contact"])
     full = full_view(user)
     report = f"""<details class="card" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
 <p class="small muted" style="margin:8px 0 12px">Helps the detector learn. We save the listing and your answer, never your name.</p>
@@ -649,7 +653,7 @@ def _thread_form(text: str = "", me: str = "") -> str:
     return f"""<form method="post" action="/check/thread" class="card">
 <input type="hidden" name="csrf" value="{security.make_csrf('form')}">
 <div class="form-field"><label for="t-text">The whole conversation</label>
-<p class="hint">Paste every message in order: an email chain, a text or WhatsApp export, LinkedIn or Handshake DMs. Scams follow a script over several messages, so the whole thread shows where you are in it and what usually comes next. Nothing is saved unless you send it to reviewers.</p>
+<p class="hint">Paste every message in order: an email chain, a text or WhatsApp export, LinkedIn or Handshake DMs. Scams follow a script over several messages, so the whole thread shows where you are in it and what usually comes next. It isn't saved unless you send it to reviewers, except a small random share of results we call safe, which a reviewer double-checks (no name; emails and phone numbers masked).</p>
 <textarea id="t-text" name="text" required maxlength="20000" data-count style="min-height:260px" placeholder="Recruiter: Hi! You've been selected for a remote assistant role...&#10;Me: Thanks, what are the next steps?&#10;Recruiter: Please text our hiring manager on Telegram...">{ui.esc(text)}</textarea></div>
 <div class="form-field"><label for="t-me">Your name or email in the thread (optional)</label>
 <input id="t-me" name="me" maxlength="120" value="{ui.esc(me)}" placeholder="So we can tell your messages from theirs"></div>

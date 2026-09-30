@@ -636,31 +636,34 @@ def alerts(conn) -> list[dict]:
         out.append({"level": "bad", "title": f"{len(missed)} confirmed scams got past the rules in the last two weeks",
                     "detail": "That's usually a new tactic. Read them together and draft a rule "
                               "(python -m scam_detector.tools.mine_candidates), then run the regression gate.",
-                    "ids": [m["id"] for m in missed[:10]]})
+                    "ids": [m["id"] for m in missed[:40]], "kind": "missed"})
     waves = store.rows(conn, """SELECT COALESCE(campaign, id) AS w, COUNT(*) AS n, MIN(title) AS title, MIN(body) AS body
                                 FROM submitted_checks WHERE created_at > ? AND band IN ('clear','caution','')
                                 GROUP BY COALESCE(campaign, id) HAVING n >= 3 ORDER BY n DESC""", (time.time() - 30 * 86400,))
     for w in waves[:3]:
         out.append({"level": "warn", "title": f"A wave of {w['n']} near-copies that the rules call safe or only 'careful'",
-                    "detail": (w["title"] or w["body"] or "")[:160], "ids": []})
+                    "detail": (w["title"] or w["body"] or "")[:160], "ids": [], "kind": "wave", "wave": w["w"]})
     for metric, label in (("ai_only_scam", "the AI called a scam but no rule did"),
                           ("ask_only_scam", "a money ask was found but no rule fired"),
                           ("known_identifier", "reused a confirmed scammer's contact details")):
         recent, base = _stat(conn, metric, 7), _stat(conn, metric, 35, 7) / 4
         if recent >= 3 and recent >= 2 * max(base, 1):
             out.append({"level": "warn", "title": f"{recent} checks this week where {label} (usual: about {base:.0f} a week)",
-                        "detail": "Rising counts here mean scammers are using wording the rules don't know yet.", "ids": []})
+                        "detail": "Rising counts here mean scammers are using wording the rules don't know yet.", "ids": [],
+                        "kind": "spike", "metric": metric})
     unc_recent, checks_recent = _stat(conn, "model_uncertain", 7), _stat(conn, "listing_checks", 7)
     unc_base, checks_base = _stat(conn, "model_uncertain", 35, 7), _stat(conn, "listing_checks", 35, 7)
     if checks_recent >= 20 and checks_base >= 40:
         r1, r0 = unc_recent / checks_recent, unc_base / checks_base
         if r1 >= 0.15 and r1 >= 2 * r0:
             out.append({"level": "warn", "title": f"The model is unsure about {r1:.0%} of listings this week (usual {r0:.0%})",
-                        "detail": "More uncertain cases usually means the kind of listings being checked has changed.", "ids": []})
+                        "detail": "More uncertain cases usually means the kind of listings being checked has changed.", "ids": [],
+                        "kind": "uncertain"})
     ct = store.rows(conn, "SELECT domain, brand FROM ct_lookalikes WHERE found_at > ? ORDER BY found_at DESC LIMIT 5", (time.time() - 7 * 86400,))
-    if ct:
-        out.append({"level": "bad", "title": f"{len(ct)} new look-alike domain{'s' if len(ct) != 1 else ''} in certificate logs",
-                    "detail": ", ".join(f"{c['domain']} ({c['brand']})" for c in ct), "ids": []})
+    for c in ct:
+        out.append({"level": "bad", "title": f"New look-alike domain in certificate logs: {c['domain']}",
+                    "detail": f"Imitates {c['brand']}. Check whether it's live and hosting a fake job or login page.", "ids": [],
+                    "kind": "ct", "domain": c["domain"]})
     for w in active_windows(conn):
         out.append({"level": "info", "title": f"Scam season: {w['name']}", "detail": w["note"], "ids": []})
     return out

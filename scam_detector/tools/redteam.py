@@ -28,6 +28,9 @@ from scam_detector.scorer import score_posting  # noqa: E402
 DATA = PKG / "data"
 SEED_FILES = ["field_2026_09_holdout.jsonl", "field_2026_10_holdout.jsonl", "external_scams.jsonl"]
 OUT = DATA / "redteam_eval.jsonl"
+# Variants that a fix was based on become permanent regression tests (the release gate checks them); every new run
+# generates fresh variants for evaluation, so the evaluation set is never the one the fixes were tuned on.
+REGRESSION = DATA / "redteam_regression.jsonl"
 REPORT = PKG / "models" / "REDTEAM_REPORT.md"
 
 # Swaps a scammer makes to dodge keyword filters, grouped so the report can say which trick worked.
@@ -121,11 +124,17 @@ def main(argv=None) -> dict:
     a.add_argument("--ai", action="store_true", help="also ask the AI for paraphrases")
     a.add_argument("--per-seed", type=int, default=2)
     a.add_argument("--limit", type=int, default=60, help="max scam seeds")
-    a.add_argument("--seed", type=int, default=7)
+    a.add_argument("--seed", type=int, default=None, help="default: a new one every run, so each evaluation is fresh")
+    a.add_argument("--save-regression", action="store_true",
+                   help="add this run's slipped variants to redteam_regression.jsonl once you've fixed them (the release gate checks them)")
+    a.add_argument("--regression", default=str(REGRESSION))
     a.add_argument("--out", default=str(OUT))
     a.add_argument("--report", default=str(REPORT))
     args = a.parse_args(argv)
-    rng = random.Random(args.seed)
+    seed = args.seed if args.seed is not None else random.SystemRandom().randrange(1 << 30)
+    rng = random.Random(seed)
+    regression = load(Path(args.regression))
+    reg_texts = {r["description"] for r in regression}
     seeds = [r for f in SEED_FILES for r in load(DATA / f) if r.get("label") == "scam" and r.get("description")]
     rng.shuffle(seeds)
     seeds = seeds[:args.limit]
@@ -145,23 +154,33 @@ def main(argv=None) -> dict:
             row = {"id": f"{s.get('id', 'seed')}-{v['trick']}", "seed": s.get("id"), "label": "scam", "trick": v["trick"],
                    "title": v["title"], "company": s.get("company", ""), "description": v["description"], "caught_by": how if ok else None}
             rows.append(row)
-            if not ok and ok0:
+            if not ok and ok0 and v["description"] not in reg_texts:
                 slipped.append(row)
     Path(args.out).write_text("".join(json.dumps(r) + "\n" for r in rows))
     lines = ["# Red-team report", "",
              f"{len(seeds)} scam seeds from the holdouts and archives; the originals are caught {base_caught}/{len(seeds)}.",
-             "Each seed is rewritten with the tricks below. A variant counts as caught when the rules send it to a person, the model "
-             "flags it, or the model is unsure (which also sends it to a person).", "",
+             "Each seed is rewritten with the tricks below. A variant counts as caught when the rules send it to a person or the "
+             f"model flags it. Run seed {seed}: every run makes new variants, so fixes are never graded on the variants they were "
+             "built from.", "",
              "| Trick | Variants caught |", "|---|---|"]
     lines += [f"| {k} | {v[0]}/{v[1]} |" for k, v in sorted(by_trick.items())]
     lines += ["", f"## Slipped through ({len(slipped)}): the original was caught, the rewrite wasn't", ""]
     for r in slipped[:25]:
         lines.append(f"- **{r['trick']}** (seed {r['seed']}): {r['description'][:220]}")
-    lines += ["", "These are for a person to read and turn into rules or normalization. They are never trained on."]
+    reg_caught = sum(caught(r.get("title", ""), r["description"], r.get("company", ""))[0] for r in regression)
+    lines += ["", f"## Regression set: {reg_caught}/{len(regression)} still caught",
+              "Variants saved after a fix was made for them (`--save-regression`). The release gate requires every new model to "
+              "catch at least as many as the active one.", "",
+              "These are for a person to read and turn into rules or normalization. They are never trained on."]
+    if args.save_regression and slipped:
+        with Path(args.regression).open("a", encoding="utf-8") as fh:
+            for r in slipped:
+                fh.write(json.dumps({k: r[k] for k in ("id", "seed", "label", "trick", "title", "company", "description")}) + "\n")
+        lines.append(f"Saved {len(slipped)} slipped variants to the regression set.")
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     Path(args.report).write_text("\n".join(lines) + "\n")
     print("\n".join(lines[:12 + len(by_trick)]))
-    return {"seeds": len(seeds), "by_trick": by_trick, "slipped": len(slipped)}
+    return {"seeds": len(seeds), "by_trick": by_trick, "slipped": len(slipped), "seed": seed, "regression": [reg_caught, len(regression)]}
 
 
 if __name__ == "__main__":

@@ -186,6 +186,8 @@ def intel_page(session: str | None = Cookie(default=None), rechecked: int = -1, 
         peers = conn.execute("SELECT COUNT(*) FROM peer_indicators").fetchone()[0]
         evid = evidence_html(conn, csrf)
         live_risky = live_risky_html(conn)
+        import metrics
+        health = metrics.health_html(conn)
     lv = {"bad": "warning", "warn": "warning", "info": "info"}
     al = "".join(f'<div class="banner {lv.get(a["level"], "info")}" style="margin-bottom:8px"><b>{esc(a["title"])}</b>'
                  f'<div class="small">{esc(a["detail"])}</div></div>' for a in alerts) or '<p class="muted">Nothing unusual this week.</p>'
@@ -201,7 +203,8 @@ def intel_page(session: str | None = Cookie(default=None), rechecked: int = -1, 
                  for r in runs) or "<li class=muted>No scheduled checks have run yet.</li>"
     done = (f'<div class="banner info" style="margin-bottom:10px">Re-scored {rechecked} listing{"s" if rechecked != 1 else ""} '
             f'containing that detail; {changed} changed verdict.</div>' if rechecked >= 0 else "")
-    body = f"""{whoami_form(session, "/admin/intel")}{done}{live_risky}<section class="card"><h2>Alerts</h2>{al}</section>
+    body = f"""{whoami_form(session, "/admin/intel")}{done}{live_risky}<section class="card"><h2>How the detector is doing</h2>{health}</section>
+<section class="card"><h2>Alerts</h2>{al}<p class="small"><a href="/admin/cases">Every alert opens an investigation case →</a></p></section>
 <section class="card" id="evidence"><h2>Contact details used as scam evidence</h2>
 <p class="small muted">A detail counts only while it's backed by a reviewer-confirmed scam, has never appeared in a confirmed real report, hasn't
 been revoked and was confirmed recently enough (phones {defense.ttl_days("phone")} days, emails and domains {defense.ttl_days("email")}, wallets

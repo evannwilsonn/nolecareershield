@@ -37,7 +37,8 @@ labels like "From:" and "Subject:", and URL schemes. Otherwise it learns "archiv
 
 ## When a model ships
 
-`train_model` writes the model only if all of these hold:
+A model now reaches students in stages (`release.py`, see "Releases" below). The first stage is `train_model`'s own gate:
+it writes a candidate only if all of these hold:
 
 1. On the frozen holdouts (`data/field_2026_09_holdout.jsonl` and `field_2026_10_holdout.jsonl`, never trained on), rules + model catch more
    scams than the rules alone, and no fewer than the model currently shipped.
@@ -66,15 +67,39 @@ The loop runs on the live site. Nobody has to remember to retrain.
    waves together) and the rest to training. A label never moves after that. Every retrain is tested on
    the repo holdouts and on this live holdout, so a model has to handle this month's scams, not only
    September's.
-5. **Monthly retrain:** the daily maintenance loop retrains in the background once it's been `RETRAIN_DAYS`
-   (30) since the last run and `RETRAIN_MIN_NEW` (20) new labels exist. The new model replaces the active one
-   only through the gate above; otherwise nothing changes.
-   - The live model is written to `learning/models/scam_model.json` next to the database and takes over
-     from the repo model.
+5. **Retrain triggers:** monthly once `RETRAIN_MIN_NEW` (20) distinct new labels exist; early when
+   `RETRAIN_EVIDENCE_MIN` (30) distinct new labels arrive or a reviewer confirms an investigation case with at
+   least 3 distinct reports; never more often than `RETRAIN_MIN_GAP_DAYS` (3), and not while a release is in
+   progress. "Distinct" means a scam wave counts once, and a wave adds at most `RETRAIN_WAVE_CAP` (3) training rows,
+   so label-all on a big wave can't dominate. Exported rows carry who labeled them and why.
+   - A retrain produces a candidate (`learning/models/candidate.json`); the active model keeps serving.
+   - The active model is `learning/models/scam_model.json` next to the database; it takes over from the repo model
+     once a candidate completes a release.
    - Every run, with its full report, is on `/admin/model`, which also has a "Retrain now" button.
    - A full retrain takes about 20 seconds.
 
 `export_labeled.py` includes confirmed label-queue items, with email addresses and phone numbers masked.
+
+## Releases (release.py)
+
+1. **Release gate**, against the active model, on data the candidate never trained on:
+   - recent confirmed scams (the live holdout, last 120 days): catches more, or all of them if the active model does;
+   - false alarms over every legitimate item: at most `RELEASE_FP_MAX_RATE` (2%) and none the active model doesn't make;
+   - older techniques (the frozen holdouts): loses nothing;
+   - legitimate but unusual employers (`stress_legit.jsonl`): no new flags;
+   - held-out scam campaigns (whole waves are held out together): loses no campaign the active model catches;
+   - red-team regression variants (`redteam_regression.jsonl`): catches at least as many.
+2. **Shadow** (`RELEASE_SHADOW_DAYS`, 7): scores every listing check alongside the active model; nothing it says is shown.
+3. **Rollout** (`RELEASE_STAGES` 10,50,100 percent, `RELEASE_STAGE_DAYS` 3 each): a stable slice of listings (by text hash)
+   is served by the candidate.
+4. **Watch** (`RELEASE_WATCH_DAYS`, 14): the old model is kept and restored automatically if the new one does worse.
+
+Every step needs at least `RELEASE_FRESH_MIN` (5) labels confirmed after the candidate was built (so it never saw
+them) showing it isn't worse, and in shadow at least `RELEASE_TRAFFIC_MIN` (30) listing checks compared. It stops
+and rolls back as soon as it catches fewer fresh confirmed scams, flags more fresh confirmed-real items, or flags
+real traffic far more often than the active model (over twice its rate and 5 points above it).
+`MODEL_AUTO_RELEASE=0` makes each step wait for a reviewer; rollback is always automatic. Every step is in
+`release_log` and on `/admin/model`.
 
 ## Uncertainty (conformal prediction)
 
