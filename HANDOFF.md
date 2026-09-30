@@ -12,7 +12,7 @@ stand, what was decided and why, and what's next.
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
 - **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
   commit; `tests/test_installer.py` fails if it's out of date.
-- **Tests:** `python -m pytest -q` (142 passing at handoff).
+- **Tests:** `python -m pytest -q` (143 passing at handoff).
 
 ## Rules Evan set (keep them)
 
@@ -80,7 +80,10 @@ stand, what was decided and why, and what's next.
     a funnel (a bar under each shows it as a share of students who viewed); a stage pipeline on the Candidates
     tab. The Messages tile on employer home was dropped since the band shows unread.
   - Reviewers: a "desk" header with every queue as a big count (replaces the small tabs), a scam-risk meter on
-    each listing card, and J / K to move between cards.
+    each listing card, and J / K to move between cards. The meter is a four-zone gauge (Clear, Caution, Review, Scam,
+    the detector's bands) with a marker kept off the ends, so 0 sits inside green and 100 inside red; the number in
+    the pill stays the real score. Aggregators (scam score 0 by design) sit mid-Review, labelled "Aggregator".
+    `ui.risk_position` decides the spot; `demo/app.js` has a twin.
   - Everywhere: "/" jumps to the page's search box. Reduced motion turns all of it off.
 - **Other effects:** a light that follows the cursor around card borders, a slight cursor parallax on the hero
   footage, and one marquee of scam patterns.

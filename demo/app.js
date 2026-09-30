@@ -192,7 +192,17 @@ const MEDIA = u => u === "arch-074.webp" ? NCS_FRAMES[74] : u === "arch-060.webp
 const kpi = (n, l, go, hot) => go ? `<a class="kpi${hot ? " hot" : ""}" href="#" data-go="${go}"><span class="n">${n}</span><span class="l">${esc(l)}</span></a>` : `<div class="kpi${hot ? " hot" : ""}"><span class="n">${n}</span><span class="l">${esc(l)}</span></div>`;
 const helloBand = (eyebrow, titleHtml, lede, kpis, photo) => `<section class="hello">${photo ? `<div class="ph" aria-hidden="true" style="--ph:url(${MEDIA(photo)})"></div>` : ""}<div class="eyebrow">${esc(eyebrow)}</div><h1>${titleHtml}</h1><p>${esc(lede)}</p>${kpis ? `<div class="kpis">${kpis}</div>` : ""}</section>`;
 const fitBadge = (score, label) => `<span class="fitb${score >= 65 ? " hi" : score < 45 ? " lo" : ""}" style="--p:${score}" title="${esc(label || "Fit score")}"><i aria-hidden="true"></i><b>Fit ${score}</b></span>`;
-const riskMeter = (score, status) => { const r = Math.max(0, Math.min(100, score)); return `<div class="risk ${esc(status)}" style="--r:${r}"><span class="bar" role="img" aria-label="Scam risk ${r} of 100"><i></i></span><span aria-hidden="true">0</span><span class="bar-end" aria-hidden="true">100</span></div>`; };
+// Twin of ui.risk_position / ui.risk_meter: four zones, marker kept off the edges, aggregators mid-Review.
+const RISK_ZONES = ["Clear", "Caution", "Review", "Scam"], RISK_BANDS = [[0, 14], [15, 34], [35, 64], [65, 100]];
+function riskPosition(score, status, agg) {
+  const sc = Math.max(0, Math.min(100, score));
+  if (agg && sc < 15) return [2, 62.5];
+  let zone = RISK_BANDS.findIndex(([, hi]) => sc <= hi); if (status === "held") zone = 3;
+  const [lo, hi] = RISK_BANDS[zone], frac = (Math.min(Math.max(sc, lo), hi) - lo) / (hi - lo);
+  return [zone, Math.round((zone * 25 + 7 + frac * 11) * 10) / 10];
+}
+const riskMeter = (score, status, agg) => { const [zone, pos] = riskPosition(score, status, agg), label = agg && score < 15 ? "Aggregator" : RISK_ZONES[zone];
+  return `<div class="risk z${zone}" style="--pos:${pos}%"><span class="gauge" role="img" aria-label="${label}: scam risk ${Math.max(0, Math.min(100, score))} of 100">${[0, 1, 2, 3].map(i => `<i class="z${i}${i === zone ? " on" : ""}"></i>`).join("")}<b></b></span><span class="rl">${label}</span></div>`; };
 const pageHead = (t, lede, num) => `<div class="page-head">${num ? `<div class="num">${esc(num)}</div>` : ""}<h1>${esc(t)}</h1>${lede ? `<p>${lede}</p>` : ""}</div>`;
 const takeFlash = () => { const f = S.flash; S.flash = null; return f ? banner(f.kind, f.text, f.raw) : ""; };
 const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
@@ -1228,7 +1238,7 @@ P.admin = () => {
   let agree = 0, missed = 0, fa = 0; rows.forEach(j => { const flagged = j.scam_status !== "clear", bad = j.review_label !== "legit"; if (flagged === bad) agree++; else if (bad) missed++; else fa++; });
   const stats = rows.length ? `<p class="lead" style="font-size:13px">Detector vs your decisions: ${rows.length} labeled${rows.length < 10 ? " so far. Too few to judge; every decision is training data for the next rule update." : `, agreed on ${Math.round(100 * agree / rows.length)}%. Missed ${missed}; flagged ${fa} you approved.`}</p>` : "";
   return adminPage("Review queue", "admin", `${stats}<p class="lead">${plural(list.length, "submission")} waiting. The scam score is advisory; you decide what publishes.</p>` + (list.map(j => `<div class="rev-card"><div class="row between" style="align-items:flex-start"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span></div>
-${riskMeter(j.score, j.scam_status)}
+${riskMeter(j.score, j.scam_status, j.findings.some(f => f.rule_id === "lead_gen"))}
 <div class="job-meta" style="margin-top:10px"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>
 ${findingsHtml(j.findings) ? `<div style="margin:12px 0">${findingsHtml(j.findings)}</div>` : '<p class="small muted" style="margin:10px 0">No scam signals fired.</p>'}
 <div class="detail-desc" style="font-size:14px;max-height:140px;overflow:auto;background:var(--sunk);padding:10px 12px;border-radius:8px">${esc(j.description)}</div>${j.apply_url ? `<p class="small muted" style="word-break:break-all">Apply: ${esc(j.apply_url)}</p>` : ""}

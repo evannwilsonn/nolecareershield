@@ -336,7 +336,8 @@ def _score_pill(j: dict) -> str:
 
 
 def _risk(j: dict) -> str:
-    return ui.risk_meter(int(j["score"]), j["scam_status"])
+    lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
+    return ui.risk_meter(int(j["score"]), j["scam_status"], aggregator=lead_gen)
 
 
 def _teaser_card(j: dict) -> str:

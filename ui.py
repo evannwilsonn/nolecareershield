@@ -664,7 +664,8 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .ring.in,.fitb.in i{transition:--ringp 1.2s var(--ease)}
 .meter i{transform-origin:left}.meter.in i{transition:transform 1.1s var(--ease)}
 html.fx .ring:not(.in),html.fx .fitb:not(.in) i{--ringp:0}
-html.fx .meter:not(.in) i,html.fx .funnel:not(.in) .fb,html.fx .risk:not(.in) i{transform:scaleX(0)}
+html.fx .meter:not(.in) i,html.fx .funnel:not(.in) .fb{transform:scaleX(0)}
+html.fx .risk:not(.in) .gauge b{left:0}
 @media (prefers-reduced-motion:no-preference){
   html.fx .checklist.in li{animation:fade-up .45s var(--ease) both}
   html.fx .checklist:not(.in) li{opacity:0}
@@ -727,12 +728,16 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 .rev-card:focus{outline:none}
 .hello,.desk{box-shadow:0 0 0 1px var(--whisper) inset}
 @media (hover:none){.keys{display:none}}
-/* scam-risk meter on review cards */
-.risk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
-.risk>span:nth-child(2){order:-1}
-.risk .bar{flex:1;height:6px;border-radius:999px;background:var(--sand);overflow:hidden;max-width:360px}
-.risk .bar i{display:block;height:100%;width:max(5px,calc(var(--r) * 1%));background:var(--ok);border-radius:999px;transform-origin:left}.risk.in .bar i{transition:transform 1.1s var(--ease)}
-.risk.flagged .bar i{background:var(--warn)}.risk.held .bar i{background:var(--bad)}
+/* reviewer gauge: four zones, a marker at the listing's place (ui.risk_position) */
+.risk{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:11.5px;font-weight:600;color:var(--muted)}
+.risk .gauge{position:relative;flex:1;max-width:360px;height:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.risk .gauge i{border-radius:999px;opacity:.45}.risk .gauge i.on{opacity:1}
+.risk .z0{background:var(--ok)}.risk .z1{background:var(--info)}.risk .z2{background:var(--warn)}.risk .z3{background:var(--bad)}
+.risk .gauge i:not(.on){background:var(--sand);opacity:1}
+.risk .gauge b{position:absolute;top:50%;left:var(--pos);width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--surface);box-shadow:0 0 0 3px currentColor,0 2px 6px rgba(0,0,0,.25)}
+.risk.z0 .gauge b{color:var(--ok)}.risk.z1 .gauge b{color:var(--info)}.risk.z2 .gauge b{color:var(--warn)}.risk.z3 .gauge b{color:var(--bad)}
+.risk.z0 .rl{color:var(--ok)}.risk.z1 .rl{color:var(--info)}.risk.z2 .rl{color:var(--warn)}.risk.z3 .rl{color:var(--bad)}
+.risk.in .gauge b{transition:left 1s var(--ease)}
 /* profile covers use the site's own photography */
 .pbanner.ph{height:150px;background:var(--ph) 50% 60%/cover no-repeat}
 .pbanner.ph::after{background:linear-gradient(180deg,rgba(18,13,12,0) 40%,rgba(18,13,12,.35));opacity:1}
@@ -1149,10 +1154,32 @@ def desk(title: str, tabs: list[tuple[str, str, int | None, bool]]) -> str:
             f'<nav class="qtabs" aria-label="Review queues">{cells}</nav></section>')
 
 
-def risk_meter(score: int, status: str) -> str:
-    s = max(0, min(100, int(score)))
-    return (f'<div class="risk {esc(status)}" style="--r:{s}"><span class="bar" role="img" aria-label="Scam risk {s} of 100"><i></i></span>'
-            f'<span aria-hidden="true">0</span><span class="bar-end" aria-hidden="true">100</span></div>')
+RISK_ZONES = ("Clear", "Caution", "Review", "Scam")
+_RISK_BANDS = ((0, 14), (15, 34), (35, 64), (65, 100))       # the detector's bands (scam_detector.scorer._band)
+
+
+def risk_position(score: int, status: str = "", aggregator: bool = False) -> tuple[int, float]:
+    """Where a listing sits on the reviewer's gauge: (zone 0-3, percent along the track). Four equal zones; inside its
+    zone the marker is placed by score but kept off the edges, so 0 still reads as inside Clear and 100 inside Scam.
+    An aggregator's scam score is 0 by design; it sits mid-Review, which is how the public check treats one."""
+    sc = max(0, min(100, int(score)))
+    if aggregator and sc < 15:
+        return 2, 62.5
+    zone = next(i for i, (lo, hi) in enumerate(_RISK_BANDS) if sc <= hi)
+    if status == "held":
+        zone = 3                      # a critical finding blocks whatever the total
+    lo, hi = _RISK_BANDS[zone]
+    frac = (min(max(sc, lo), hi) - lo) / (hi - lo)
+    return zone, round(zone * 25 + 7 + frac * 11, 1)
+
+
+def risk_meter(score: int, status: str, aggregator: bool = False) -> str:
+    zone, pos = risk_position(score, status, aggregator)
+    label = "Aggregator" if aggregator and int(score) < 15 else RISK_ZONES[zone]
+    cells = "".join(f'<i class="z{i}{" on" if i == zone else ""}"></i>' for i in range(4))
+    return (f'<div class="risk z{zone}" style="--pos:{pos}%"><span class="gauge" role="img" '
+            f'aria-label="{esc(label)}: scam risk {max(0, min(100, int(score)))} of 100">{cells}<b></b></span>'
+            f'<span class="rl">{esc(label)}</span></div>')
 
 
 # ---------- static script ----------
