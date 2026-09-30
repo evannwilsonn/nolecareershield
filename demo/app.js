@@ -1328,7 +1328,8 @@ document.addEventListener("click", e => {
       const email = S.startEmail; let u = findUser(email, "student");
       if (!u) { u = {id: S.nextId++, email, role: "student", pw: null, verified: true}; S.users.push(u); }
       u.verified = true; S.session = u; S.chat = null; const nx = okNext(S.route.q.next); S.startEmail = ""; afterLogin(nx); },
-    "as-employer": () => { signIn("pat@garnetanalytics.example", "employer"); go("home"); },
+    "as-student": () => { S.admin = false; signIn("jordan@fsu.edu", "student"); go("home"); },
+    "as-employer": () => { S.admin = false; signIn("pat@garnetanalytics.example", "employer"); go("home"); },
     "as-reviewer": () => { S.admin = true; go("admin"); },
     logout: () => { S.session = null; go("home"); },
     "admin-out": () => { S.admin = false; go("home"); },

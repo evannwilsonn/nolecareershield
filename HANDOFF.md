@@ -6,7 +6,7 @@ stand, what was decided and why, and what's next.
 ## Where everything lives
 
 - **Code:** github.com/evannwilsonn/nolecareershield (branch `main`). Python / FastAPI / SQLite, deployed on Render (`render.yaml`, `DEPLOY.md`).
-- **Demo:** `python demo/build.py` writes `demo/index.html` (full page) and `demo/NoleCareerShield_Demo.html` (body only,
+- **Demo:** the bar at the top has Explore as Student / Employer / Reviewer. `python demo/build.py` writes `demo/index.html` (full page) and `demo/NoleCareerShield_Demo.html` (body only,
   published as the Claude artifact "NoleCareerShield Demo (Copy)"). Rebuild after any site change. Both embed the
   footage (about 7 MB), so they are not kept in git. The demo runs the real
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
@@ -43,7 +43,7 @@ stand, what was decided and why, and what's next.
   - **Student home:** a camera move along a brick walk, through a gothic arch under live oaks, into a sunlit quad.
     It is pinned and scrubbed by scroll (75 frames in `static/media/arch-*.webp`, drawn on a canvas by
     `static/fx.js`), with three captions that cross-fade: "Student jobs. Checked for scams." then "Scanned for scam
-    signals." then "Then approved by a person." Then a photo chapter ("Offers come at night. So do scams."), the
+    signals." then "Then approved by a person." Then a photo chapter ("Looks like an offer. It's a scam."), the
     listing scanner, and a second photo chapter before the listings.
   - **Employer page:** a full-bleed office photo as the hero, three "what you get" tiles, the how-it-works bento, and a
     career-fair photo chapter.
