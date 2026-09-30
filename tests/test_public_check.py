@@ -81,7 +81,7 @@ REAL = {"title": "Data Analyst Intern", "company": "Garnet Analytics", "contact"
 
 def _listing(c, data):
     page = c.get("/check?kind=listing").text
-    assert "Is this job listing a scam?" in page and 'href="/check?kind=listing"' in page and 'action="/check/listing"' in page
+    assert "Is this job listing a scam?" in page and 'href="/check?kind=message"' in page and 'action="/check/listing"' in page
     return c.post("/check/listing", data={"csrf": csrf_from(page), **data})
 
 
@@ -111,3 +111,9 @@ def test_listing_check_validation_and_shared_limit(client):
     for _ in range(5):
         assert _check(client).status_code == 200
     assert _listing(client, REAL).status_code == 429                                  # 10 a day across messages and listings
+
+
+def test_job_listing_is_the_default_tab(client):
+    page = client.get("/check").text
+    assert "Is this job listing a scam?" in page and page.index("A job listing") < page.index("A message")
+    assert "Is this message a scam?" in client.get("/check?kind=message").text

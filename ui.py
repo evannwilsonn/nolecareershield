@@ -559,7 +559,7 @@ def _sidebar(active: str) -> str:
             count = f'<span class="count" aria-label="{unread} unread">{unread}</span>' if href == "/messages" and unread else ""
             out.append(f'<a href="{href}"{on}>{icon(ic)}<span>{esc(label)}</span>{count}</a>')
     tip = ('<div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. '
-           '<a href="/check">Check a message</a>.</div>')
+           '<a href="/check?kind=message">Check a message</a>.</div>')
     return f'<aside class="side"><nav aria-label="Main">{"".join(out)}</nav>{tip}</aside>'
 
 
