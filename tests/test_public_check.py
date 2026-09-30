@@ -67,3 +67,47 @@ def test_school_requests_keep_only_the_name(client):
     a.post("/admin/login", data={"password": "correct-horse-battery", "csrf": tok})
     page = a.get("/admin/schools").text
     assert re.search(r"University of Florida</b></td><td>2<", page) and "FAMU" in page
+
+
+SCAM_LISTING = {"title": "Remote Admin Assistant", "company": "QuickCash Staffing",
+                "description": "Part-time remote assistant, $500 weekly, no experience needed. We will send you a check to buy office equipment "
+                               "from our vendor. Deposit it and send the rest by Zelle.", "url": "", "contact": "quickcash.hiring@gmail.com"}
+LEADGEN = {"title": "Sales Lead Specialist", "company": "JobMatch Network", "contact": "",
+           "description": "Create a free profile to see the employer and apply to hundreds of similar openings. Sign up to unlock full job details. "
+                          "Our partners will contact you about matching roles.", "url": "example.com/jobmatch/signup?ref=track123&utm_source=feed"}
+REAL = {"title": "Data Analyst Intern", "company": "Garnet Analytics", "contact": "", "url": "https://garnetanalytics.example/careers",
+        "description": "Summer internship building SQL dashboards for city clients. $18/hour, 20 hours a week, hybrid in Tallahassee. Apply on our careers page."}
+
+
+def _listing(c, data):
+    page = c.get("/check?kind=listing").text
+    assert "Is this job listing a scam?" in page and 'href="/check?kind=listing"' in page and 'action="/check/listing"' in page
+    return c.post("/check/listing", data={"csrf": csrf_from(page), **data})
+
+
+def test_listing_check_for_visitors_and_students(client):
+    r = _listing(client, SCAM_LISTING)
+    assert r.status_code == 200 and "Scam. Stop here." in r.text and "Don&#x27;t apply, reply or send anything." in r.text.replace("'", "&#x27;")
+    assert "FSU students see" in r.text and "Found:" not in r.text and "Want NoleCareerShield at your school?" in r.text
+    assert 'value="Remote Admin Assistant"' in r.text                                 # the form keeps the listing for another try
+    lg = _listing(client, LEADGEN)
+    assert "Be careful" in lg.text and "aggregator or lead-generation ad" in lg.text
+    ok = _listing(client, REAL)
+    assert "No known scam signs" in ok.text and "careers page" in ok.text
+    make_verified(client, "student", "jane@fsu.edu"); user_login(client, "student", "jane@fsu.edu")
+    full = _listing(client, SCAM_LISTING)
+    assert "Found:" in full.text and "FSU students see" not in full.text
+
+
+def test_listing_check_validation_and_shared_limit(client):
+    page = client.get("/check?kind=listing").text
+    tok = csrf_from(page)
+    assert client.post("/check/listing", data={"csrf": tok, "title": "", "description": "short"}).status_code == 400
+    assert client.post("/check/listing", data={"csrf": tok, **REAL, "url": "not a link at all"}).status_code == 400
+    assert client.post("/check/listing", data={"csrf": "x", **REAL}).status_code == 400
+    client.security.public_check_limiter.reset_all()
+    for _ in range(5):
+        assert _listing(client, REAL).status_code == 200
+    for _ in range(5):
+        assert _check(client).status_code == 200
+    assert _listing(client, REAL).status_code == 429                                  # 10 a day across messages and listings

@@ -356,7 +356,7 @@ function publicVerdictHtml(r) {
   const items = shown.map(f => `<li><b>${esc(f.title)}</b><span class="ev">${esc(f.why)}</span></li>`).join("") || '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns.</span></li>';
   return `<section class="verdict ${r.key}" aria-live="polite"><div class="eyebrow" style="color:inherit">Verdict</div><h2>${icon("shield", 22)}${esc(r.title)}</h2><p>${esc(r.advice)}</p><ul class="reasons">${items}</ul></section>
 <div class="banner info" style="margin-top:12px">FSU students see ${more > 0 ? `${more} more signal${more !== 1 ? "s" : ""}, ` : ""}the exact words each signal caught and the link and sender checks, and can check messages straight from their inbox. <a href="#" data-go="start">Log in with your @fsu.edu email</a></div>
-<h3 class="sec">What to do next</h3><ol class="next">${N.NEXT_STEPS[r.level].map(s => `<li>${esc(s)}</li>`).join("")}</ol>`;
+<h3 class="sec">What to do next</h3><ol class="next">${(r.steps || N.NEXT_STEPS[r.level]).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`;
 }
 function schoolForm() {
   if (me()) return "";
@@ -370,14 +370,57 @@ function verdictHtml(r, from) {
     || '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns, the sender and every link.</span></li>';
   const plat = from ? `<p class="small" style="margin-top:8px">Sent through NoleCareerShield by <b>${esc(who(from)[0])}</b>, ${approvedEmp(from) ? "an employer our reviewers approved" : "an employer our reviewers have not approved"}.</p>` : "";
   return `<section class="verdict ${r.key}" aria-live="polite"><div class="eyebrow" style="color:inherit">Verdict</div><h2>${icon("shield", 22)}${esc(r.title)}</h2><p>${esc(r.advice)}</p>${plat}<ul class="reasons">${items}</ul></section>
-<h3 class="sec">What to do next</h3><ol class="next">${N.NEXT_STEPS[r.level].map(s => `<li>${esc(s)}</li>`).join("")}</ol>`;
+<h3 class="sec">What to do next</h3><ol class="next">${(r.steps || N.NEXT_STEPS[r.level]).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`;
 }
+
+// ---- checking a job listing found elsewhere (same as msgcheck.check_listing) ----
+const LISTING_LEVELS = [
+  ["ok", "No known scam signs", "Nothing in this listing matches a known scam pattern. That isn't a guarantee: find the same job on the employer's own careers page before you apply."],
+  ["caution", "Be careful", "A few things in this listing are off. Confirm it on the employer's own website before you apply or share anything."],
+  ["warn", "Likely a scam", "Several strong scam signals. Don't apply through this listing and don't send personal or bank details."],
+  ["bad", "Scam. Stop here.", "This listing matches patterns that only scams use. Don't apply, reply or send anything."]];
+const LISTING_STEPS = {
+  0: ["Find the same job on the employer's own careers page and apply there.", "Never pay for training, equipment or a background check. Real jobs don't charge you.", "Don't give your SSN or bank details until you have a real offer."],
+  1: ["Look for the same listing on the company's own website before you apply.", 'Search the company name with the word "scam" and read what others found.', "Don't put your SSN, bank details or a photo of your ID in an application."],
+  2: ["Don't apply through this listing or its link.", "Look the company up yourself. If the job isn't on their own site, skip it.", "If you found it on Handshake, LinkedIn or Indeed, report the listing there."],
+  3: ["Don't apply, reply or send anything.", "If you already sent money or bank details, or deposited a check they sent, call your bank now.", "Report the listing where you found it, and report fraud at reportfraud.ftc.gov."]};
+const LEADGEN_STEP = "This looks like an aggregator or lead-generation ad. Find the employer's own posting and apply there instead of giving this site your details.";
+function checkListing(v) {
+  const res = N.scorePosting(v.title, v.description + (v.contact ? "\n" + v.contact : ""), v.company, v.url ? [v.url] : null);
+  const have = new Set(res.findings.map(f => f.rule_id)), extra = N.linkFindings(v.description + " " + v.url).filter(f => !have.has(f.rule_id));
+  const findings = res.findings.concat(extra).sort((a, b) => ({critical: 0, warning: 1, note: 2}[a.severity] - {critical: 0, warning: 1, note: 2}[b.severity]) || b.weight - a.weight);
+  const score = Math.min(100, res.score + extra.reduce((n, f) => n + f.weight, 0)), critical = findings.some(f => f.severity === "critical");
+  const band = critical || score >= 65 ? "block" : score >= 35 ? "review" : score >= 15 ? "caution" : "clear";
+  let level = {clear: 0, caution: 1, review: 2, block: 3}[band]; if (res.lead_gen.flag && level < 1) level = 1;
+  const [key, title, advice] = LISTING_LEVELS[level];
+  return {kind: "listing", level, key, title, advice, score, band, findings, lead_gen: res.lead_gen, steps: (res.lead_gen.flag ? [LEADGEN_STEP] : []).concat(LISTING_STEPS[level])};
+}
+const LISTING_SAMPLES = [
+  ["Check-cashing gig", {title: "Remote Admin Assistant", company: "QuickCash Staffing", description: "Part-time remote assistant, $500 weekly, no experience needed. We will send you a check to buy office equipment from our vendor. Deposit it and send the rest by Zelle.", url: "", contact: "quickcash.hiring@gmail.com"}],
+  ["Aggregator ad", {title: "Sales Lead Specialist", company: "JobMatch Network", description: "Create a free profile to see the employer and apply to hundreds of similar openings. Sign up to unlock full job details. Our partners will contact you about matching roles.", url: "https://example.com/jobmatch/signup?ref=track123&utm_source=feed", contact: ""}],
+  ["Real internship", {title: "Data Analyst Intern", company: "Garnet Analytics", description: "Summer internship building SQL dashboards for city clients. $18/hour, 20 hours a week, hybrid in Tallahassee. Apply on our careers page.", url: "https://garnetanalytics.example/careers", contact: ""}]];
+function listingForm(v) {
+  v = v || {}; const val = k => esc(v[k] || "");
+  return `<form id="listingForm" class="card"><div class="grid2"><div class="form-field"><label for="l-title">Job title</label><input id="l-title" name="title" required maxlength="200" value="${val("title")}" placeholder="Remote Administrative Assistant"></div>
+<div class="form-field"><label for="l-company">Company (optional)</label><input id="l-company" name="company" maxlength="200" value="${val("company")}" placeholder="As the listing names it"></div></div>
+<div class="form-field"><label for="l-desc">The listing</label><p class="hint">Paste the whole description: duties, pay, requirements and how to apply.</p><textarea id="l-desc" name="description" required maxlength="8000" placeholder="We are hiring part-time remote assistants, $500 weekly. No experience needed...">${val("description")}</textarea></div>
+<div class="grid2"><div class="form-field"><label for="l-url">Apply link (optional)</label><p class="hint">We read the link, we don't open it.</p><input id="l-url" name="url" maxlength="2000" value="${val("url")}" placeholder="https://..."></div>
+<div class="form-field"><label for="l-contact">Contact email (optional)</label><p class="hint">The address the listing says to write to.</p><input id="l-contact" name="contact" maxlength="200" value="${val("contact")}" placeholder="hr@company.com"></div></div>
+<div class="row"><button class="b" type="submit">${icon("shield", 16)} Check this listing</button><span class="small faint">Or try a sample:</span>${LISTING_SAMPLES.map((s, i) => `<button class="b sm sec" type="button" data-do="lsample" data-i="${i}">${esc(s[0])}</button>`).join("")}</div></form>`;
+}
+const kindTabs = kind => `<div class="seg" role="tablist" style="margin-bottom:16px"><a href="#" data-go="scam"${kind === "message" ? ' class="on" aria-current="page"' : ""}>A message</a><a href="#" data-go="scam?kind=listing"${kind === "listing" ? ' class="on" aria-current="page"' : ""}>A job listing</a></div>`;
 const SAMPLES = [
   ["Fake professor", "Hi! I'm Dr. Carter from the Biology department. I need a personal assistant for $400 weekly, only a few hours. Text me at 850-555-0199 from your personal email, not your fsu.edu account.", "dr.carter.fsu@gmail.com"],
   ["Check scam", "Congratulations! You've been approved for a remote data entry role. We will mail you a check to purchase your equipment from our vendor. Deposit it and send the rest via Zelle.", ""],
   ["Real recruiter", "Hi Jordan, thanks for applying to the Marketing Data Analyst role at Garnet Analytics. Are you free for a 30-minute video interview next Tuesday or Wednesday afternoon? - Pat Lee, Campus Recruiter", "pat.lee@garnetanalytics.example"],
 ];
 P.scam = () => {
+  if (S.route.q.kind === "listing") {
+    const v = S.listingIn, r = S.route.q.run && v ? checkListing(v) : null;
+    const top = r ? (fullView() ? verdictHtml(r) : publicVerdictHtml(r) + schoolForm()) : "";
+    return pageHead("Is this job listing a scam?", "Found a job on Handshake, LinkedIn, Indeed, Instagram or a flyer? Paste it and get the same scam check every listing on NoleCareerShield goes through.", "Scam check")
+      + kindTabs("listing") + takeFlash() + top + (top ? '<h3 class="sec">Check another listing</h3>' : "") + listingForm(v);
+  }
   const q = S.route.q; let top = "", text = q.text || "", sender = q.sender || "";
   if (q.m && me()) {
     const c = S.convos.find(c => c.messages.some(m => m.id === q.m)), m = c && c.messages.find(x => x.id === q.m);
@@ -389,7 +432,7 @@ P.scam = () => {
 <div class="form-field"><label for="c-sender">Who sent it (optional)</label><p class="hint">The email address or name it came from. It helps spot fake FSU and company addresses.</p><input id="c-sender" name="sender" maxlength="200" value="${esc(sender)}" placeholder="e.g. careers.fsu.edu@gmail.com"></div>
 <div class="row"><button class="b" type="submit">${icon("shield", 16)} Check it</button><span class="small faint">Or try a sample:</span>${SAMPLES.map((s, i) => `<button class="b sm sec" type="button" data-do="sample" data-i="${i}">${esc(s[0])}</button>`).join("")}</div></form>
 <p class="aimode" style="margin-top:8px">Rule set ${esc(N.ruleset)}. The same text always gets the same verdict. On the live site, an optional AI second opinion can add caution but never lower it.</p>`;
-  return pageHead("Is this message a scam?", "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.", "Scam check") + takeFlash() + top + (top ? '<h3 class="sec">Check another message</h3>' : "") + form;
+  return pageHead("Is this message a scam?", "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.", "Scam check") + kindTabs("message") + takeFlash() + top + (top ? '<h3 class="sec">Check another message</h3>' : "") + form;
 };
 
 // ---- assistant ----
@@ -1296,6 +1339,8 @@ document.addEventListener("click", e => {
     "admin-out": () => { S.admin = false; go("home"); },
     reset: () => { S.timers.forEach(clearTimeout); reset(); render(); },
     show: () => { const i = d.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; d.textContent = i.type === "password" ? "Show" : "Hide"; },
+    lsample: () => { if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam?kind=listing"); }
+      S.listingIn = Object.assign({}, LISTING_SAMPLES[Number(d.dataset.i)][1]); go("scam?kind=listing&run=1"); },
     sample: () => { if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam"); }
       const s = SAMPLES[Number(d.dataset.i)]; go(`scam?run=1&text=${encodeURIComponent(s[1])}&sender=${encodeURIComponent(s[2])}`); },
     ask: () => ask(SUGG[Number(d.dataset.i)]),
@@ -1347,6 +1392,15 @@ document.addEventListener("submit", e => {
   if (id === "scamForm") { if (!g("text")) return;
     if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam"); }
     return go(`scam?run=1&text=${encodeURIComponent(g("text").slice(0, 8000))}&sender=${encodeURIComponent(g("sender"))}`); }
+  if (id === "listingForm") {
+    const v = {}; for (const k of ["title", "company", "description", "url", "contact"]) v[k] = g(k);
+    S.listingIn = v;
+    if (!v.title || v.description.length < 40) { flash("warning", "Add the job title and paste the listing (at least a couple of sentences)."); return go("scam?kind=listing"); }
+    if (v.url && !/^(?:https?:\/\/)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[\/?#:][^\s<>"']*)?$/.test(v.url)) { flash("warning", "The apply link doesn't look like a web address. Leave it empty if there isn't one."); return go("scam?kind=listing"); }
+    if (v.url && !/^https?:\/\//i.test(v.url)) v.url = "https://" + v.url;
+    if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam?kind=listing"); }
+    return go("scam?kind=listing&run=1");
+  }
   if (id === "schoolForm") { const name = g("school").replace(/\s+/g, " ").slice(0, 80);
     if (name.length < 3 || !/[A-Za-z]{2}/.test(name) || /[<>{}@]|https?:|www\./.test(name)) { flash("warning", "Type your school's name, like University of Florida."); return render(true); }
     S.schoolRequests.push({school: name, at: NOW()}); S.schoolDone = name; return render(true); }
