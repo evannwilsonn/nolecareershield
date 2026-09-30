@@ -71,7 +71,7 @@ stand, what was decided and why, and what's next.
     about 9.7 of Evan's 10 free credits). They show no real FSU buildings, people, logos or marks.
   - Reduced motion, Save-Data, slow connections and no-JS all get a still photo with the first caption and nothing
     pinned. Photos are served from `/static/media/` with a year-long cache; the page policy needed no change.
-- **Theme (Oct 2026, "elite"):** dark everywhere: midnight navy, gold foil, garnet. Fonts are self-hosted in `static/fonts/` (OFL): Playfair Display (headings, brand, big numbers), Inter (body), JetBrains Mono (small-caps labels). Tokens are in `ui.CSS`; shared components and overrides of older page styles are in `ui.THEME_CSS` (rendered after everything). Helpers: `ui.crest(size)` (the gold shield, also the favicon), `ui.verified_badge()`, `ui.scan_chip(state, score, label)`, `ui.stat_row()`, `ui.page_head(..., em=)`; each has a twin in `demo/app.js`.
+- **Theme (Oct 2026, "elite"):** dark everywhere: midnight navy, gold foil, garnet. Fonts are self-hosted in `static/fonts/` (OFL): Playfair Display (headings, brand, big numbers), Inter (body), JetBrains Mono (small-caps labels). Tokens are in `ui.CSS`; shared components and overrides of older page styles are in `ui.THEME_CSS` (rendered after everything). Helpers: `ui.crest(size)` (the original garnet shield with a gold-foil star, also the favicon; the wordmark `ui.brand_mark()` is "NoleCareer" in ivory + "Shield" in gold foil), `ui.verified_badge()`, `ui.scan_chip(state, score, label)`, `ui.stat_row()`, `ui.page_head(..., em=)`; each has a twin in `demo/app.js`.
   (`.display`), normal width for body.
 - **The listing scanner** (one effect, merging this chat's teardown with the `scan-hero` branch from another chat,
   commit 583902f): a fake listing on the student home ("Know it's real before you apply"). As you scroll, a gold
@@ -100,8 +100,9 @@ stand, what was decided and why, and what's next.
   - Reviewers: a "desk" header with every queue as a big count (replaces the small tabs), a scam-risk meter on
     each listing card, and J / K to move between cards. The meter is a 0-100 gauge in four
     sections, Evan's cutoffs: green 0-25, yellow 26-50, orange 51-75, red 76-100, each shading darker toward its top.
-    The marker sits at the listing's scam score and the score shows beside it. Aggregators (scam score 0 by design)
-    sit at 60, labelled "Aggregator". `ui.risk_position` decides the spot; `demo/app.js` has a twin.
+    The marker sits at the listing's scam score and the score shows beside it. The marker never sits below the band its status
+    belongs to (flagged at least 26, held at least 76), and aggregator/lead-gen listings show at least 40 (mid-yellow)
+    with a separate "Aggregator" tag (`ui.STATUS_FLOOR`, `ui.AGG_SCORE`; Evan's call, Sept 30). `ui.risk_position` decides the spot; `demo/app.js` has a twin.
   - Everywhere: "/" jumps to the page's search box. Reduced motion turns all of it off.
 - **Other effects:** a light that follows the cursor around card borders, a slight cursor parallax on the hero
   footage, and one marquee of scam patterns.
@@ -225,8 +226,9 @@ Built around "emerging scam → verified evidence → candidate update → evalu
    duplicate student accounts).
 
 ## Round: Handshake/LinkedIn/Indeed-style redesign (Sep 30)
-- **Gauge:** every card shows "Scam risk N · status". Aggregator/lead-gen listings show their real scam score plus a separate
-  "Aggregator" tag (changed Sept 30: they used to read a fixed 60, which mixed a business classification into scam evidence). Muted palette in ui.py `.risk`.
+- **Gauge:** every card shows "Scam risk N · status". A flagged listing never reads below 26 and a held one never below 76;
+  aggregator/lead-gen listings read at least 40 plus a separate "Aggregator" tag (Evan asked for the marker to sit in the
+  band that matches the status; the underlying scam score is stored unchanged).
 - **Qualifications + % match:** `quals.py` (employer-chosen skill/major/cert/standing/gradyear/gpa, required or preferred, max 10, protected-term blocklist) stored in `jobs.requirements`; merged into `fit.fit_score`, which now also returns `percent`, `level` (high ≥75 / medium ≥50 / low), `met`, `total`, and `must` on checklist items. Ported in demo/engine.js (parity test covers a job with requirements). No "top applicant" wording anywhere; numbers only.
 - **Job board:** `jobboard.py` — two-pane list/detail (`/jobs?job=ID`), tabs Jobs/Saved/Resume optimizer, search + chips (incl. Quick apply filter), `saved_jobs` table, match panel, "What they're looking for", "Meet the poster" block. Styles in `css_jobs.py`.
 - **Feed:** tabs Feed/For you/Saved, pills All/Your major/Employers, bookmarks (`post_saves`), right rail. Styles in `css_feed.py`.
