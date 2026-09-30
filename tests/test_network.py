@@ -79,7 +79,10 @@ def login(c, role, email):
 
 def ucsrf(c, path="/jobs"):
     """The signed-in user's CSRF token (from the log-out form in the header)."""
-    return re.search(r'action="/logout"><input type="hidden" name="csrf" value="([^"]+)"', c.get(path).text).group(1)
+    r = c.get(path)
+    if r.status_code in (301, 302, 303, 307) and r.headers.get("location", "").startswith("/"):
+        r = c.get(r.headers["location"])                                 # e.g. employers' /jobs goes to /hiring
+    return re.search(r'action="/logout"><input type="hidden" name="csrf" value="([^"]+)"', r.text).group(1)
 
 
 def student(n, email="jordan@fsu.edu", name="Jordan R.", visible=True, resume=RESUME):
@@ -545,9 +548,10 @@ def test_every_page_renders(net):
         r = s.get(path)
         assert r.status_code == 200, (path, r.status_code, r.text[:300])
         assert "Traceback" not in r.text
-    for path in ["/", "/jobs", "/feed", "/messages", "/talent", "/check", "/profile", "/post", f"/u/{sid}", f"/messages/new?to={sid}"]:
+    for path in ["/", "/hiring", "/feed", "/messages", "/talent", "/check", "/profile", "/post", f"/u/{sid}", f"/messages/new?to={sid}"]:
         r = emp.get(path)
         assert r.status_code == 200, (path, r.status_code, r.text[:300])
+    assert emp.get("/jobs").headers["location"] == "/hiring"
     a = admin(net)
     for path in ["/admin", "/admin/employers", "/admin/posts", "/admin/messages", "/admin/reports", "/admin/checks", "/admin/live", "/admin/schools"]:
         assert a.get(path).status_code == 200, path

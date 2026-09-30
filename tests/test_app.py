@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 LOCAL_MODULES = ("security", "app", "ui", "web", "store", "accounts", "mailer", "ai", "matching", "resume_engine",
                  "profiles", "messaging", "msgcheck", "assistant", "resume_tools", "feed", "admin_extra", "profile_page", "hiring",
                  "employer_page", "sso", "fit", "jobfit", "easyapply", "network", "quals", "emails", "jobboard", "css_feed", "css_jobs", "css_resume", "css_assist",
-                 "scheduling", "msg_templates", "css_msg")
+                 "scheduling", "msg_templates", "css_msg", "employer_dash", "css_employer")
 
 
 @pytest.fixture()
@@ -83,6 +83,12 @@ def submit(client, **over):
                 contact="", csrf=tok, website="", direct="1")
     data.update(over)
     return client.post("/post", data=data)
+
+
+def as_student(client, email="viewer@fsu.edu"):
+    """Switch the client's site session to a verified student (employers don't browse the board; /jobs sends them to /hiring)."""
+    make_verified(client, "student", email)
+    assert user_login(client, "student", email).status_code == 303
 
 
 def login(client, pw="correct-horse-battery"):
@@ -192,6 +198,8 @@ def test_takedown_removes_listing(client):
     submit(client); login(client)
     csrf = csrf_from(client.get("/admin").text)
     client.post("/admin/approve/1", data={"csrf": csrf})
+    assert client.get("/jobs").headers["location"] == "/hiring"          # the employer who posted it goes to their listings
+    as_student(client)
     assert "Data Analyst" in client.get("/jobs").text
     csrf = csrf_from(client.get("/admin/live").text)
     client.post("/admin/remove/1", data={"csrf": csrf})
@@ -220,6 +228,7 @@ def test_search_wildcards_are_literal(client):
     submit(client, title="100% Remote"); login(client)
     csrf = csrf_from(client.get("/admin").text)
     client.post("/admin/approve/1", data={"csrf": csrf})
+    as_student(client)
     assert "100%" in client.get("/jobs?search=100%25").text
     assert "No listings match" in client.get("/jobs?search=%25%25zzz").text
 

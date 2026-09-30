@@ -843,9 +843,9 @@ _STUDENT_NAV = [
     ("You", [("user", "/profile", "Profile")]),
 ]
 _EMPLOYER_NAV = [
-    ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("feed", "/feed", "Feed"),
+    ("", [("home", "/", "Home"), ("feed", "/feed", "Feed"),
           ("chat", "/messages", "Messages"), ("mail", "/emails", "Emails"), ("people", "/talent", "Find students")]),
-    ("Hiring", [("jobs", "/hiring", "Your listings"), ("plus", "/post", "Post a job"), ("shield", "/check", "Scam check")]),
+    ("Hiring", [("jobs", "/hiring", "Your listings"), ("plus", "/post", "Post a job")]),
     ("You", [("user", "/profile", "Company profile")]),
 ]
 
@@ -866,8 +866,12 @@ def _sidebar(active: str) -> str:
                      f'<span class="count" aria-label="{reqs} connection requests">{reqs}</span>' if href == "/network" and reqs else
                      f'<span class="count" aria-label="{mails} unread emails">{mails}</span>' if href == "/emails" and mails else "")
             out.append(f'<a href="{href}"{on}>{icon(ic)}<span>{esc(label)}</span>{count}</a>')
-    tip = ('<div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. '
-           '<a href="/check?kind=message">Check a message</a>.</div>')
+    if user["role"] == "student":
+        tip = ('<div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. '
+               '<a href="/check?kind=message">Check a message</a>.</div>')
+    else:
+        tip = ('<div class="tip"><b>Tip:</b> listings with pay, hours and a named contact get more applicants. '
+               '<a href="/profile">Your company page</a>.</div>')
     return f'<aside class="side"><nav aria-label="Main">{"".join(out)}</nav>{tip}</aside>'
 
 
@@ -1199,4 +1203,4 @@ def risk_meter(score: int, status: str, aggregator: bool = False) -> str:
 # ---------- static script ----------
 
 APP_JS_VERSION = "1"
-FX_JS_VERSION = "1"
+FX_JS_VERSION = "2"
