@@ -135,3 +135,35 @@ process.stdout.write(JSON.stringify({parsed: inp.texts.map(t => NCS.toProfile(t)
                 k = next((k for k in want if want[k] != g.get(k)), None)
                 diffs.append((j["title"][:40], k, want.get(k), g.get(k)))
     assert len(jobs) > 50 and not diffs, f"{len(diffs)} differences, first ones: {diffs[:3]}"
+
+
+def test_demo_employer_trust_matches_python():
+    import itertools, employer_page as ep
+    prof_full = {k: "x" * 50 for k, _ in ep.PROFILE_FIELDS} | {"hires_for": ["Data & Analytics"], "perks": ["Paid"]}
+    prof_thin = {"website": "https://a.example", "about": "short", "hires_for": [], "perks": []}
+    sigs = []
+    for status, domain, days, (listings, approved, clear, scam, lg), (held, flagged, reports, blocks), (threads, replied, hours), prof in itertools.product(
+            ["approved", "pending", "rejected"], ["match", "other", "free"], [0, 45, 400],
+            [(0, 0, 0, 0, 0), (4, 4, 3, 0, 0), (5, 2, 1, 1, 1), (3, 2, 2, 0, 1)],
+            [(0, 0, 0, 0), (1, 2, 1, 1), (0, 1, 0, 0)],
+            [(0, 0, []), (4, 4, [0.5, 3, 20, 30]), (5, 2, [100, 250]), (3, 3, [1, 2, 3])], [prof_full, prof_thin]):
+        sigs.append({"status": status, "domain": domain, "days_approved": days, "listings": listings, "approved": approved, "clear": clear,
+                     "scam_rejections": scam, "leadgen_rejections": lg, "sent": held + flagged + 3, "held": held, "flagged": flagged, "cautioned": flagged, "reports": reports,
+                     "blocks": blocks, "threads": threads, "replied": replied, "reply_hours": hours, "profile": prof})
+    js = r"""
+const fs = require("fs");
+globalThis.NCS_RULEPACK = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const NCS = require(process.argv[3]);
+process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync(0, "utf8")).map(s => NCS.trustFromSignals(s))));
+"""
+    script = ROOT / "demo" / "_parity_trust.js"
+    script.write_text(js)
+    try:
+        res = subprocess.run([NODE, str(script), str(ROOT / "scam_detector" / "rulepack" / "core.json"), str(ROOT / "demo" / "engine.js")],
+                             input=json.dumps(sigs), capture_output=True, text=True, timeout=60)
+    finally:
+        script.unlink(missing_ok=True)
+    assert res.returncode == 0, res.stderr[-2000:]
+    got = json.loads(res.stdout)
+    diffs = [(s, want, g) for s, g in zip(sigs, got) if (want := json.loads(json.dumps(ep.trust_from_signals(s)))) != g]
+    assert len(sigs) > 1000 and not diffs, f"{len(diffs)} differences, first: {diffs[:1]}"

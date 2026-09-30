@@ -25,6 +25,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import accounts
 import ai
 import matching
+import employer_page
 import profile_page
 import resume_engine
 import security
@@ -112,6 +113,9 @@ def save_student(conn, uid: int, **fields) -> None:
 
 def save_employer(conn, uid: int, **fields) -> None:
     ensure_employer(conn, uid)
+    for k in ("hires_for", "perks"):
+        if k in fields:
+            fields[k] = json.dumps(fields[k])
     fields["updated_at"] = time.time()
     cols = ", ".join(f"{k} = ?" for k in fields)
     conn.execute(f"UPDATE employer_profiles SET {cols} WHERE user_id = ?", (*fields.values(), uid))
@@ -228,7 +232,10 @@ def _employer_step(p: dict, step: int, error: str = "", status: int = 200) -> HT
 <input id="e-web" name="website" required maxlength="300" value="{esc(p.get('website'))}" placeholder="https://acme.com"></div>
 <div class="grid2"><div class="form-field"><label for="e-ind">Industry</label><select id="e-ind" name="industry">{_opts(INDUSTRIES, p.get('industry', ''))}</select></div>
 <div class="form-field"><label for="e-size">Size</label><select id="e-size" name="size">{_opts(SIZES, p.get('size', ''))}</select></div></div>
-<div class="form-field"><label for="e-loc">Location</label><input id="e-loc" name="location" maxlength="120" value="{esc(p.get('location'))}" placeholder="Tallahassee, FL"></div>
+<div class="form-field"><label for="e-tag">Tagline (optional)</label><p class="hint">One line students see under your name.</p><input id="e-tag" name="tagline" maxlength="120" value="{esc(p.get('tagline'))}" placeholder="Dashboards for Florida nonprofits and city agencies"></div>
+<div class="grid2"><div class="form-field"><label for="e-loc">Location</label><input id="e-loc" name="location" maxlength="120" value="{esc(p.get('location'))}" placeholder="Tallahassee, FL"></div>
+<div class="form-field"><label for="e-founded">Founded (optional)</label><input id="e-founded" name="founded" maxlength="4" inputmode="numeric" value="{esc(p.get('founded'))}" placeholder="2015"></div></div>
+<div class="form-field"><label for="e-li">LinkedIn page (optional)</label><p class="hint">Helps students and reviewers check you out, and raises your trust score.</p><input id="e-li" name="linkedin" maxlength="300" value="{esc(p.get('linkedin'))}" placeholder="linkedin.com/company/acme"></div>
 <div class="form-field"><label for="e-about">About</label><p class="hint">What you do, in plain words. At least a couple of sentences.</p>
 <textarea id="e-about" name="about" required maxlength="1500" data-count>{esc(p.get('about'))}</textarea></div>
 <button class="submit-btn" type="submit">Continue</button></form>"""
@@ -239,6 +246,8 @@ def _employer_step(p: dict, step: int, error: str = "", status: int = 200) -> HT
 <div class="form-field"><label for="e-ct">Your title</label><input id="e-ct" name="contact_title" required maxlength="80" value="{esc(p.get('contact_title'))}" placeholder="Campus Recruiter"></div></div>
 <div class="form-field"><label for="e-fsu">How do you work with FSU students?</label><p class="hint">Internships, part-time roles, career fair, alumni, Tallahassee office... Your feed posts must be opportunities or advice for FSU students.</p>
 <textarea id="e-fsu" name="fsu_connection" required maxlength="800" data-count style="min-height:100px">{esc(p.get('fsu_connection'))}</textarea></div>
+<div class="form-field"><label>Kinds of roles you hire students for</label>{_checks("hires_for", CATEGORIES[:-1], store.jload(p.get("hires_for"), []) if isinstance(p.get("hires_for"), str) else (p.get("hires_for") or []))}</div>
+<div class="form-field"><label>Perks for student hires</label>{_checks("perks", employer_page.PERKS, store.jload(p.get("perks"), []) if isinstance(p.get("perks"), str) else (p.get("perks") or []))}</div>
 <div class="row"><a class="b sec" href="/profile/setup/1">Back</a><button class="submit-btn" type="submit">{"Save" if p.get("status") in ("pending", "approved") else "Send for review"}</button></div></form>"""
     return _setup_page(body, "Contact and FSU connection", error, status)
 
@@ -353,16 +362,21 @@ async def setup_save(step: int, request: Request):
                 about = _t(g("about"), 1500, "About", True, multiline=True)
                 if len(about) < 40:
                     raise ProfileError("Write at least a couple of sentences about the organization.")
+                founded = _t(g("founded"), 4, "Founded")
+                if founded and not (re.fullmatch(r"(?:18|19|20)\d{2}", founded) and int(founded) <= time.gmtime().tm_year):
+                    raise ProfileError("Founded should be a year, like 2015.")
                 save_employer(conn, user["id"], company=_t(g("company"), 120, "Organization name", True), website=website,
                               industry=g("industry") if g("industry") in INDUSTRIES else "",
-                              size=g("size") if g("size") in SIZES else "", location=_t(g("location"), 120, "Location"), about=about)
+                              size=g("size") if g("size") in SIZES else "", location=_t(g("location"), 120, "Location"), about=about,
+                              tagline=_t(g("tagline"), 120, "Tagline"), founded=founded, linkedin=_url(g("linkedin"), "LinkedIn", "linkedin.com"))
                 return RedirectResponse("/profile/setup/2", status_code=303)
             if step == 2:
                 if not p.get("company"):
                     return RedirectResponse("/profile/setup/1", status_code=303)
                 fields = dict(contact_name=_t(g("contact_name"), 80, "Your name", True),
                               contact_title=_t(g("contact_title"), 80, "Your title", True),
-                              fsu_connection=_t(g("fsu_connection"), 800, "FSU connection", True, multiline=True))
+                              fsu_connection=_t(g("fsu_connection"), 800, "FSU connection", True, multiline=True),
+                              hires_for=_pick(form.getlist("hires_for"), CATEGORIES), perks=_pick(form.getlist("perks"), employer_page.PERKS))
                 if p.get("status") in ("draft", "rejected"):
                     fields["status"] = "pending"
                 save_employer(conn, user["id"], **fields)
@@ -404,23 +418,6 @@ def _student_card(p: dict, *, show_links: bool, show_resume: bool, owner: bool =
 {f'<h3 class="sec" style="font-size:16px">Interested in</h3><div>{interests}</div>' if interests else ""}</div>{resume}"""
 
 
-def _employer_card(p: dict) -> str:
-    st = p.get("status", "draft")
-    pill = {"approved": '<span class="pill ok">✓ Approved employer</span>', "pending": '<span class="pill warn">Waiting for review</span>',
-            "rejected": '<span class="pill bad">Not approved</span>', "suspended": '<span class="pill bad">Suspended</span>',
-            "draft": '<span class="pill">Profile not finished</span>'}[st]
-    meta = " · ".join(esc(x) for x in (p.get("industry"), p.get("size") and f"{p['size']} people", p.get("location")) if x)
-    site = (f'<a class="b sm ghost" href="{esc(p["website"])}" target="_blank" rel="noopener noreferrer nofollow">Website ↗</a>'
-            if p.get("website") else "")
-    return f"""<div class="card"><div class="row" style="gap:16px;align-items:flex-start">
-<span class="avatar lg emp">{ui.initials(p.get("company") or "?")}</span><div style="flex:1;min-width:0">
-<h2 style="font-family:var(--serif);font-weight:500;font-size:26px;line-height:1.2">{esc(p.get("company") or "Your organization")}</h2>
-<p class="muted">{meta}</p><div class="row" style="margin-top:10px">{pill}{site}</div></div></div>
-{f'<p style="margin-top:14px;white-space:pre-wrap">{esc(p["about"])}</p>' if p.get("about") else ""}
-{f'<h3 class="sec" style="font-size:16px">Working with FSU students</h3><p style="white-space:pre-wrap">{esc(p["fsu_connection"])}</p>' if p.get("fsu_connection") else ""}
-{f'<p class="small muted" style="margin-top:12px">Contact: {esc(p["contact_name"])}, {esc(p["contact_title"])}</p>' if p.get("contact_name") else ""}</div>"""
-
-
 @router.get("/profile", response_class=HTMLResponse)
 def my_profile(request: Request, welcome: int = 0, imported: int = 0):
     user = web.require_user(request)
@@ -447,8 +444,7 @@ def my_profile(request: Request, welcome: int = 0, imported: int = 0):
                 top = ui.banner("info", "Thanks. A reviewer will check your organization, usually within a business day. You can post jobs meanwhile; each one is reviewed too.")
             if p["status"] == "rejected" and p.get("status_note"):
                 top += ui.banner("warning", "Not approved: " + p["status_note"] + " Update your profile and send it again.")
-            body = top + ui.page_head("Company profile", num="Profile") + _employer_card(p) + \
-                '<div class="row" style="margin-top:12px"><a class="b sec" href="/profile/setup/1">Edit profile</a></div>'
+            body = employer_page.company_html(conn, p, user["id"], user, notice=top)
     body += f"""<div class="pdata"><h3 class="sec">Your data</h3><div class="card"><div class="row between"><div><b>Download your data</b>
 <p class="small muted">Everything we store about your account, as a JSON file.</p></div><a class="b sm sec" href="/profile/export">Download</a></div></div>
 <details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;color:var(--bad)">Delete my account</summary>
@@ -503,14 +499,7 @@ def company_page(uid: int, request: Request):
         p = store.employer_profile(conn, uid)
         if not p or (p["status"] != "approved" and user["id"] != uid):
             return web.page('<p class="empty" style="margin:40px 0">That organization isn\'t available.</p>', "Company", active="", status=404)
-        jobs = store.rows(conn, "SELECT id, title, category, work_type, location, scam_status, company FROM jobs "
-                                "WHERE employer_id = ? AND review_status = 'approved' ORDER BY created_at DESC LIMIT 20", (uid,))
-    cards = "".join(f'<a class="job" href="/job/{int(j["id"])}"><div class="job-title">{esc(j["title"])}</div>'
-                    f'<div class="job-meta"><span class="chip">{esc(j["category"])}</span><span class="chip">{esc(j["work_type"].title())}</span></div></a>'
-                    for j in jobs) or '<div class="empty">No open listings right now.</div>'
-    msg = (f'<div class="row" style="margin-top:12px"><a class="b" href="/messages/new?to={uid}">{ui.icon("chat", 16)} Message {esc(p["company"])}</a></div>'
-           if user["role"] == "student" and p["status"] == "approved" else "")
-    body = '<a class="back" href="/jobs">← Jobs</a>' + _employer_card(p) + msg + f'<h3 class="sec">Open listings</h3>{cards}'
+        body = '<a class="back" href="/jobs">← Jobs</a>' + employer_page.company_html(conn, p, uid, user)
     return web.page(body, p["company"], active="")
 
 

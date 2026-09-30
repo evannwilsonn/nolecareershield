@@ -390,6 +390,7 @@ table.t td{padding:10px;border-bottom:1px solid var(--whisper);vertical-align:to
 /* ---------- profile (LinkedIn header + sections, Handshake side column) ---------- */
 .phero{padding:0;overflow:hidden}
 .pbanner{height:118px;background:linear-gradient(120deg,var(--accent-tint),var(--gold-tint));position:relative}
+.pbanner.emp{background:linear-gradient(120deg,var(--gold-tint),var(--sunk))}
 .pbanner::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(135deg,transparent 0 22px,var(--whisper) 22px 23px);opacity:.7}
 .pinfo{padding:0 24px 20px}
 .avatar.xl{width:108px;height:108px;font-size:38px;margin-top:-54px;border:4px solid var(--surface);position:relative;z-index:1}
@@ -441,6 +442,8 @@ table.t td{padding:10px;border-bottom:1px solid var(--whisper);vertical-align:to
 .stat{background:var(--surface);border-radius:12px;box-shadow:0 0 0 1px var(--whisper) inset;padding:12px 14px}
 .stat .n{font-family:var(--serif);font-size:28px;font-weight:500;line-height:1.1;font-variant-numeric:tabular-nums}
 .stat .l{font-size:13px;color:var(--ink-2)}.stat .s{font-size:12px;color:var(--faint);margin-top:2px}
+.stats.two{grid-template-columns:repeat(2,minmax(0,1fr))}.stats.two .l{font-size:12px}
+.pside .fitparts .cat{grid-template-columns:minmax(0,1fr) 64px 30px}
 .stats.sm{margin:12px 0 0}.stats.sm .stat{padding:8px 10px;background:var(--sunk)}.stats.sm .n{font-size:20px}
 a.hjob{display:block;text-decoration:none;color:inherit;margin-bottom:10px}
 .mcard{margin-bottom:10px}.mcard .chips .chip{font-size:12px}
