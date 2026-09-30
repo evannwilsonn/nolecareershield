@@ -226,7 +226,7 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
         actions = f'<div class="row"><a class="b sm" href="/messages/new?to={uid}">{ui.icon("chat", 14)} Message</a></div>'
     else:
         actions = ""
-    hero = (f'<section class="card phero"><div class="pbanner emp" aria-hidden="true"></div><div class="pinfo"><span class="avatar xl emp">{ui.initials(p.get("company") or "?")}</span>'
+    hero = (f'<section class="card phero"><div class="pbanner emp ph" aria-hidden="true" style="--ph:url({ui.media_url("arch-060.webp")})"></div><div class="pinfo"><span class="avatar xl emp">{ui.initials(p.get("company") or "?")}</span>'
             f'<div class="row between" style="align-items:flex-end;gap:14px"><div style="min-width:0"><h1>{esc(p.get("company") or "Your organization")}</h1>'
             + (f'<p class="headline">{esc(p["tagline"])}</p>' if p.get("tagline") else "")
             + f'<p class="school">{meta}</p><p class="where"><span class="plinks">{links}</span></p>'

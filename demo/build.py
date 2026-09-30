@@ -70,7 +70,8 @@ SHELL = """<title>{title}</title>
 <script>var NCS_RULEPACK = {rules};
 var NCS_SEED = {seed};
 var NCS_BLOCKS = {blocks};
-var NCS_FRAMES = {frames};</script>
+var NCS_FRAMES = {frames};
+var NCS_MEDIA = {media};</script>
 <script>{engine}</script>
 <script>{app}</script>
 <script>{fx}</script>
@@ -89,7 +90,7 @@ def build() -> tuple[Path, Path]:
          "emp_signup": 'href="#" data-go="signup?role=employer"', "emp_login": 'href="#" data-go="login?role=employer"'}
     night, fair = ui.students_chapters(L)
     blocks = {"marquee": ui.marquee_block(),
-              "teardown": ui.teardown_block('<a href="#" data-go="scam?kind=message">Check a message you got →</a>'),
+              "scan": ui.scan_block('<a href="#" data-go="scam">Check one you found →</a>'),
               "howStudents": ui.how_students(), "howEmployers": ui.how_employers(),
               "cineHero": ui.cine_hero(L), "nightCh": night, "fairCh": fair,
               "empHero": ui.employer_hero(L), "empGets": ui.employer_gets(), "empCh": ui.employer_chapter(L)}
@@ -100,6 +101,7 @@ def build() -> tuple[Path, Path]:
               else re.sub(r"/static/media/(?!arch-\{n\})([a-z0-9-]+\.webp)\?v=\w+", lambda m: uri(m.group(1)), v)
               for k, v in blocks.items()}
     frames = [uri(f"arch-{i:03d}.webp") for i in range(ui.CINE_FRAMES)]
+    extra_media = {"office-960.webp": uri("office-960.webp")}      # the employer home's photo
     if "/static/media/" in "".join(v for v in blocks.values()).replace("/static/media/arch-{n}", ""):
         raise SystemExit("a media link in the landing blocks was not embedded")
     # The font is embedded, since the demo is one self-contained file.
@@ -110,7 +112,7 @@ def build() -> tuple[Path, Path]:
         raise SystemExit("font-face not found in ui.CSS")
     body = SHELL
     for key, val in {"title": TITLE, "css": css + DEMO_CSS, "emblem": ui.EMBLEM, "rules": safe(rules), "seed": safe(seed),
-                     "blocks": safe(blocks), "frames": safe(frames), "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text(),
+                     "blocks": safe(blocks), "frames": safe(frames), "media": safe(extra_media), "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text(),
                      "fx": (ROOT / "static" / "fx.js").read_text()}.items():
         body = body.replace("{" + key + "}", val)
     art = HERE / "NoleCareerShield_Demo.html"

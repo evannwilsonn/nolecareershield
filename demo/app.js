@@ -187,6 +187,12 @@ function ago(ts) { const d = Math.max(0, (NOW() - ts) / 1000); if (d < 60) retur
 function myConvos() { const u = me(); if (!u) return []; return S.convos.filter(c => (c.student === u.id || c.employer === u.id) && !c.hidden[u.id] && c.messages.some(m => m.status === "delivered" || m.from === u.id)).sort((a, b) => b.last - a.last); }
 function unread(uid) { return S.convos.filter(c => (c.student === uid || c.employer === uid) && !c.blocked_by && !c.hidden[uid]).reduce((n, c) => n + c.messages.filter(m => m.from !== uid && !m.read && m.status === "delivered").length, 0); }
 const banner = (kind, text, raw) => `<div class="banner ${kind}" role="${kind === "warning" ? "alert" : "status"}">${raw ? text : esc(text)}</div>`;
+// Twins of ui.kpi, ui.hello_band, ui.fit_badge, ui.desk and ui.risk_meter (the site's Python), same markup.
+const MEDIA = u => u === "arch-074.webp" ? NCS_FRAMES[74] : u === "arch-060.webp" ? NCS_FRAMES[60] : (NCS_MEDIA[u] || "");
+const kpi = (n, l, go, hot) => go ? `<a class="kpi${hot ? " hot" : ""}" href="#" data-go="${go}"><span class="n">${n}</span><span class="l">${esc(l)}</span></a>` : `<div class="kpi${hot ? " hot" : ""}"><span class="n">${n}</span><span class="l">${esc(l)}</span></div>`;
+const helloBand = (eyebrow, titleHtml, lede, kpis, photo) => `<section class="hello">${photo ? `<div class="ph" aria-hidden="true" style="--ph:url(${MEDIA(photo)})"></div>` : ""}<div class="eyebrow">${esc(eyebrow)}</div><h1>${titleHtml}</h1><p>${esc(lede)}</p>${kpis ? `<div class="kpis">${kpis}</div>` : ""}</section>`;
+const fitBadge = (score, label) => `<span class="fitb${score >= 65 ? " hi" : score < 45 ? " lo" : ""}" style="--p:${score}" title="${esc(label || "Fit score")}"><i aria-hidden="true"></i><b>Fit ${score}</b></span>`;
+const riskMeter = (score, status) => { const r = Math.max(0, Math.min(100, score)); return `<div class="risk ${esc(status)}" style="--r:${r}"><span class="bar" role="img" aria-label="Scam risk ${r} of 100"><i></i></span><span aria-hidden="true">0</span><span class="bar-end" aria-hidden="true">100</span></div>`; };
 const pageHead = (t, lede, num) => `<div class="page-head">${num ? `<div class="num">${esc(num)}</div>` : ""}<h1>${esc(t)}</h1>${lede ? `<p>${lede}</p>` : ""}</div>`;
 const takeFlash = () => { const f = S.flash; S.flash = null; return f ? banner(f.kind, f.text, f.raw) : ""; };
 const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
@@ -200,7 +206,7 @@ function scorePill(j) {
 // ---------------- job cards ----------------
 function jobCard(j, match) {
   const badge = j.scam_status === "clear" ? '<span class="badge verified">✓ Verified</span>' : '<span class="badge warning">⚠ Check carefully</span>';
-  const pill = match ? (match.fit ? `<span class="pill accent" title="${esc(match.fit.label)}">Fit ${match.fit.score}</span>` : `<span class="pill accent">${match.score}% match</span>`) : "";
+  const pill = match ? (match.fit ? fitBadge(match.fit.score, match.fit.label) : `<span class="pill accent">${match.score}% match</span>`) : "";
   const why = match && match.reasons.length ? `<div class="why">${esc(match.reasons[0])}</div>` : "";
   return `<a class="job" href="#" data-go="job?id=${j.id}"><div class="job-top"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><div class="row" style="gap:6px">${pill}${badge}</div></div>
 <div class="job-meta"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>${why}</a>`;
@@ -232,7 +238,7 @@ const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs",
 const P = {};
 P.home = () => {
   if (me()) return me().role === "student" ? studentHome() : employerHome();
-  const hero = NCS_BLOCKS.cineHero + NCS_BLOCKS.marquee + NCS_BLOCKS.nightCh + NCS_BLOCKS.teardown + NCS_BLOCKS.howStudents + NCS_BLOCKS.fairCh;
+  const hero = NCS_BLOCKS.cineHero + NCS_BLOCKS.marquee + NCS_BLOCKS.nightCh + NCS_BLOCKS.scan + NCS_BLOCKS.howStudents + NCS_BLOCKS.fairCh;
   // Visitors see a teaser only: title, company, category. Listings are for signed-in FSU students and employers.
   const all = approvedJobs(), list = all.slice().reverse().slice(0, 3), emps = Object.values(S.employers).filter(p => p.status === "approved").length;
   const teaser = j => `<a class="job teaser" href="#" data-go="start?next=job-${j.id}"><div class="job-top"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="pill">${icon("shield", 13)} Log in to view</span></div><div class="job-meta"><span class="chip">${esc(j.category)}</span></div></a>`;
@@ -242,14 +248,16 @@ function studentHome() {
   const p = SP(me().id); if (!p || !p.setup_step) { go("setup?step=1"); return null; }
   const h = new Date().getHours(), hello = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
   const recs = N.rankJobs(approvedJobs(), p, "", 3), n = unread(me().id), [pct, missing] = completion(p);
-  const recHtml = recs.map(r => `<a class="job" href="#" data-go="job?id=${r.job.id}" style="margin:0 0 8px"><div class="job-top"><div><div class="job-title" style="font-size:16px">${esc(r.job.title)}</div><div class="job-co">${esc(r.job.company)}</div></div><span class="pill accent"${r.fit ? ` title="${esc(r.fit.label)}"` : ""}>${r.fit ? "Fit " + r.fit.score : r.score + "% match"}</span></div>${r.reasons.length ? `<div class="why">${esc(r.reasons[0])}</div>` : ""}</a>`).join("") || "<p>No listings yet.</p>";
+  const recHtml = recs.map(r => `<a class="job" href="#" data-go="job?id=${r.job.id}" style="margin:0 0 8px"><div class="job-top"><div><div class="job-title" style="font-size:16px">${esc(r.job.title)}</div><div class="job-co">${esc(r.job.company)}</div></div>${r.fit ? fitBadge(r.fit.score, r.fit.label) : `<span class="pill accent">${r.score}% match</span>`}</div>${r.reasons.length ? `<div class="why">${esc(r.reasons[0])}</div>` : ""}</a>`).join("") || "<p>No listings yet.</p>";
   let resumeTile;
   if (p.resume_text) { const rv = N.review(p.resume_text);
     resumeTile = `<div class="tile w3"><h3>${icon("file")}Resume</h3><div class="score"><div class="ring" style="--p:${rv.score}"><b>${rv.score}</b></div><p>${esc(rv.grade)}. ${esc(rv.findings[0] ? rv.findings[0].message : "Looking good.")}</p></div><div class="foot"><a class="b sm sec" href="#" data-go="resume">Open resume studio</a></div></div>`; }
   else resumeTile = `<div class="tile w3"><h3>${icon("file")}Resume</h3><p>Add it for a score, line-by-line fixes, and a version tailored to any job.</p><div class="foot"><a class="b sm sec" href="#" data-go="resume">Add your resume</a></div></div>`;
   const posts = S.posts.filter(x => x.status === "published").sort((a, b) => b.at - a.at).slice(0, 2);
   const date = new Date().toLocaleDateString("en-US", {weekday: "long", month: "long", day: "numeric"});
-  return `<div class="page-head"><div class="num">${esc(date)}</div><h1>${hello}, ${esc((p.display_name || "").split(" ")[0])}.</h1><p>Here's what's new for you. Every listing and message is scanned for scams before you see it.</p></div>
+  const first = (p.display_name || "").split(" ")[0], live = approvedJobs().length, best = Math.max(0, ...recs.map(r => r.fit ? r.fit.score : r.score));
+  const kpis = kpi(live, `live listing${live !== 1 ? "s" : ""}, all reviewed`, "jobs") + (recs.length ? kpi(best, "your best fit right now", "jobs", best >= 65) : "") + kpi(n, `unread message${n !== 1 ? "s" : ""}`, "messages", n > 0);
+  return `${helloBand(date, `${hello}${first ? "," : "."}${first ? `<br><em>${esc(first)}.</em>` : ""}`, "Here's what's new for you. Every listing and message is scanned for scams before you see it.", kpis, "arch-074.webp")}
 <div class="bento"><div class="tile w4 tall"><h3>${icon("spark")}Recommended for you</h3>${recHtml}<div class="foot row"><a class="b sm" href="#" data-go="assistant">Ask the job assistant</a><a class="b sm sec" href="#" data-go="jobs">All jobs</a></div></div>
 <div class="tile w2 goldt"><h3>${icon("chat")}Messages</h3><div class="big">${n}</div><p>unread message${n !== 1 ? "s" : ""}</p><div class="foot"><a class="b sm sec" href="#" data-go="messages">Open messages</a></div></div>
 <div class="tile w2"><h3>${icon("shield")}Scam check</h3><p>Got a DM or email about a job? Paste it and get a verdict with the evidence.</p><div class="foot"><a class="b sm sec" href="#" data-go="scam?kind=message">Check a message</a></div></div>
@@ -264,12 +272,13 @@ function employerHome() {
   const tile = {pending: ["goldt", "Your organization is in review", "You can post jobs now. Messaging, the student directory and feed posts open once you're approved.", '<a class="b sm sec" href="#" data-go="admin">Approve it in the reviewer view</a>'],
     approved: ["", "You're an approved employer", "You can message students, browse the directory and post opportunities to the FSU feed.", '<a class="b sm sec" href="#" data-go="talent">Find students</a>'],
     rejected: ["tint", "Your profile wasn't approved", p.status_note || "Update your details and send it again.", '<a class="b" href="#" data-go="setup?step=1">Update profile</a>']}[p.status] || ["tint", "Finish your company profile", "", '<a class="b" href="#" data-go="setup?step=1">Finish profile</a>'];
-  return `<div class="page-head"><div class="num">Employer</div><h1>${hello}, ${esc(p.company)}.</h1><p>Post roles for FSU students, answer messages, and share opportunities on the feed.</p></div>
+  const live = mine.filter(j => j.review_status === "approved").length, st = mine.map(jobStats), viewed = st.reduce((a, x) => a + x.views, 0), cands = S.candidates.filter(c => mine.some(j => j.id === c.job)).length;
+  const kpis = kpi(live, `live listing${live !== 1 ? "s" : ""}`, "hiring") + kpi(viewed, `student view${viewed !== 1 ? "s" : ""} of your listings`, "hiring") + kpi(cands, `candidate${cands !== 1 ? "s" : ""} in your tracker`, "hiring") + kpi(n, "unread", "messages", n > 0);
+  return `${helloBand("Employer", `${hello},<br><em>${esc(p.company)}.</em>`, "Post roles for FSU students, answer messages, and share opportunities on the feed.", kpis, "office-960.webp")}
 <div class="bento"><div class="tile w4 ${tile[0]}"><h3>${esc(tile[1])}</h3><p>${esc(tile[2])}</p><div class="foot">${tile[3]}</div></div>
-<div class="tile w2 goldt"><h3>${icon("chat")}Messages</h3><div class="big">${n}</div><p>unread</p><div class="foot"><a class="b sm sec" href="#" data-go="messages">Open messages</a></div></div>
 <div class="tile w2"><h3>${icon("jobs")}Live listings</h3><div class="big">${mine.filter(j => j.review_status === "approved").length}</div><p>${mine.filter(j => j.review_status === "pending").length} waiting for review</p><div class="foot row"><a class="b sm" href="#" data-go="hiring">Matches &amp; stats</a><a class="b sm sec" href="#" data-go="post">Post a job</a></div></div>
-<div class="tile w2"><h3>${icon("people")}Find students</h3><p>Search students who opted in, by skill or major.</p><div class="foot"><a class="b sm sec" href="#" data-go="talent">Open directory</a></div></div>
-<div class="tile w2"><h3>${icon("feed")}FSU feed</h3><p>Share internships, info sessions and advice. Posts must be relevant to FSU students.</p><div class="foot"><a class="b sm sec" href="#" data-go="feed">Open the feed</a></div></div></div>`;
+<div class="tile w3"><h3>${icon("people")}Find students</h3><p>Search students who opted in, by skill or major.</p><div class="foot"><a class="b sm sec" href="#" data-go="talent">Open directory</a></div></div>
+<div class="tile w3"><h3>${icon("feed")}FSU feed</h3><p>Share internships, info sessions and advice. Posts must be relevant to FSU students.</p><div class="foot"><a class="b sm sec" href="#" data-go="feed">Open the feed</a></div></div></div>`;
 }
 function completion(p) {
   const checks = [[!!p.display_name, "your name"], [!!p.major, "your major"], [!!p.grad_term, "your graduation term"], [(p.skills || []).length >= 3, "at least 3 skills"],
@@ -679,7 +688,7 @@ function companyHtml(p, uid, notice) {
   const links = [["website", "Website"], ["linkedin", "LinkedIn"]].filter(([k]) => p[k]).map(([k, l]) => `<a href="${esc(p[k])}" target="_blank" rel="noopener noreferrer nofollow">${l} ↗</a>`).join("");
   const actions = owner ? '<div class="row"><a class="b sm sec" href="#" data-go="setup?step=1">Edit profile</a><a class="b sm ghost" href="#" data-go="hiring">Your listings</a></div>'
     : isStudent() && p.status === "approved" ? `<div class="row"><a class="b sm" href="#" data-go="newmsg?to=${uid}">${icon("chat", 14)} Message</a></div>` : "";
-  const hero = `<section class="card phero"><div class="pbanner emp" aria-hidden="true"></div><div class="pinfo"><span class="avatar xl emp">${initials(p.company)}</span>
+  const hero = `<section class="card phero"><div class="pbanner emp ph" aria-hidden="true" style="--ph:url(${MEDIA("arch-060.webp")})"></div><div class="pinfo"><span class="avatar xl emp">${initials(p.company)}</span>
 <div class="row between" style="align-items:flex-end;gap:14px"><div style="min-width:0"><h1>${esc(p.company || "Your organization")}</h1>${p.tagline ? `<p class="headline">${esc(p.tagline)}</p>` : ""}<p class="school">${meta}</p><p class="where"><span class="plinks">${links}</span></p>
 <div class="row" style="margin-top:10px">${statusPill}${trustPill(t, (owner ? "profile" : "company?id=" + uid) + "#trust")}</div></div>${actions}</div></div></section>`;
   const since = p.status === "approved" ? (s.days_approved < 30 ? "New" : `${Math.floor(s.days_approved / 30)} month${s.days_approved >= 60 ? "s" : ""}`) : "Not yet approved";
@@ -806,7 +815,7 @@ function profileHtml(p, o) {
   const opento = openTo.length ? `<div class="opento"><b>Open to</b> ${esc(openTo.join(" · "))}${owner ? ' <a href="#" data-go="setup?step=2">Edit</a>' : ""}</div>`
     : owner ? '<div class="opento muted"><b>Open to</b> <a href="#" data-go="setup?step=2">Add what you\'re looking for</a></div>' : "";
   const actions = owner ? `<div class="row"><a class="b sm sec" href="#" data-go="setup?step=1">Edit intro</a>${p.resume_text ? '<button class="b sm ghost" type="button" data-do="import-resume">Fill from resume</button>' : '<a class="b sm ghost" href="#" data-go="resume">Add resume</a>'}</div>` : (o.messageBtn || "");
-  const hero = `<section class="card phero"><div class="pbanner" aria-hidden="true"></div><div class="pinfo"><span class="avatar xl">${initials(name)}</span>
+  const hero = `<section class="card phero"><div class="pbanner ph" aria-hidden="true" style="--ph:url(${MEDIA("arch-074.webp")})"></div><div class="pinfo"><span class="avatar xl">${initials(name)}</span>
 <div class="row between" style="align-items:flex-end;gap:14px"><div style="min-width:0"><h1>${esc(name)}${p.pronouns ? ` <span class="pron">(${esc(p.pronouns)})</span>` : ""}</h1>${p.headline ? `<p class="headline">${esc(p.headline)}</p>` : ""}
 <p class="school">${esc(schoolLine(p))}</p><p class="where">${esc(p.location || "Tallahassee, FL")}${links ? " · " : ""}<span class="plinks">${links}</span></p></div>${actions}</div>${opento}</div></section>`;
   const look = [["Job types", (p.job_kinds || []).map(k => KIND_LABEL[k] || k)], ["Roles", p.looking_roles || []], ["Industries", p.interests || []],
@@ -995,7 +1004,10 @@ function rankedMatches(j) {
   return Object.keys(S.students).map(Number).filter(id => { const p = SP(id); return U(id) && p.visible && studentReady(p) && ((p.skills || []).length || p.resume_text || (p.items || []).length); })
     .map(id => [N.fitScore(j, SP(id)), SP(id), id]).sort((a, b) => b[0].score - a[0].score || a[1].display_name.localeCompare(b[1].display_name)).slice(0, 40);
 }
-const statTile = (n, l, s) => `<div class="stat"><div class="n">${n}</div><div class="l">${esc(l)}</div>${s ? `<div class="s">${esc(s)}</div>` : ""}</div>`;
+const statTile = (n, l, s, of) => `<div class="stat"><div class="n">${n}</div><div class="l">${esc(l)}</div>${s ? `<div class="s">${esc(s)}</div>` : ""}${of === undefined ? "" : `<span class="fb"${of ? ` style="--f:${Math.min(1, n / of).toFixed(3)}"` : ""}><i></i></span>`}</div>`;
+// Every number measured against the students who viewed: a funnel (twin of hiring._funnel).
+const funnel = (s, subs, cls) => { subs = subs || ["", "", "", ""]; return `<div class="stats funnel ${cls || ""}">${statTile(s.views, "students viewed", subs[0], s.views)}${statTile(s.clicks, "clicked Apply", subs[1], s.views)}${statTile(s.messaged, "messaged you", subs[2], s.views)}${statTile(s.candidates, "candidates", subs[3], s.views)}</div>`; };
+const pipeline = cands => `<div class="pipe" aria-label="Candidates by stage">${STAGES.map(([k, v]) => { const n = cands.filter(c => c.stage === k).length; return `<div class="pstep${n ? " has" : ""}"><span class="n">${n}</span><span class="l">${esc(v)}</span></div>`; }).join("")}</div>`;
 function evidence(f) {
   const bits = f.matched.slice(0, 3).map(m => `<b>${esc(m.skill)}</b> <span class="faint">(${esc(m.where[0].replace("Your skills list", "skills list").replace("Your resume", "resume").replace("Your headline and about", "about"))})</span>`);
   const met = f.checklist.filter(c => c.status === "met").length;
@@ -1014,7 +1026,7 @@ P.hiring = () => {
   return head + `<div class="row" style="margin-bottom:14px"><a class="b" href="#" data-go="post">${icon("plus", 16)} Post a job</a></div>` + mine.map(j => {
     const s = jobStats(j), [tone, label] = JOB_STATUS[j.review_status] || ["", j.review_status];
     return `<a class="card lift hjob" href="#" data-go="hjob?id=${j.id}"><div class="row between" style="align-items:flex-start"><div style="min-width:0"><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</div></div><span class="pill ${tone}">${esc(label)}</span></div>
-<div class="stats sm">${statTile(s.views, "students viewed")}${statTile(s.clicks, "clicked Apply")}${statTile(s.messaged, "messaged you")}${statTile(s.candidates, "candidates")}</div></a>`; }).join("");
+${funnel(s, null, "sm")}</a>`; }).join("");
 };
 P.hjob = () => {
   if (!isEmployer()) return needLogin("your listings", "employer");
@@ -1033,7 +1045,7 @@ P.hjob = () => {
 ${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class="small" style="margin-top:8px">${evidence(f)}</p><div class="chips" style="margin-top:8px">${f.parts.map(x => `<span class="chip" title="${esc(x.detail)}">${esc(x.name)} ${x.score}</span>`).join("")}</div>
 <div class="row" style="margin-top:12px">${live && p.allow_messages ? `<a class="b sm" href="#" data-go="newmsg?to=${id}&amp;job=${j.id}&amp;invite=1">${icon("chat", 14)} Invite to apply</a>` : ""}${saved.has(id) ? '<span class="pill ok">In candidates</span>' : `<button class="b sm sec" type="button" data-do="save-cand" data-id="${id}">Save to candidates</button>`}<a class="b sm ghost" href="#" data-go="u?id=${id}">View profile</a></div></div>`).join("")
       : '<div class="empty">No students match yet. Matches come from students who made their profile visible to approved employers.</div>');
-  } else content = cands.length ? `<p class="small muted" style="margin-bottom:12px">${esc(stageBits)}. Stages and notes are private to your organization.</p>` + cands.map(c => {
+  } else content = cands.length ? pipeline(cands) + '<p class="small muted" style="margin-bottom:12px">Stages and notes are private to your organization.</p>' + cands.map(c => {
       const p = SP(c.student); if (!p) return "";
       const f = N.fitScore(j, p), [src, st] = SOURCES[c.source] || [c.source, ""], convo = S.convos.find(x => x.student === c.student && x.employer === me().id);
       const msg = convo ? `<a class="b sm ghost" href="#" data-go="messages?c=${convo.id}">Open conversation</a>` : live && p.allow_messages ? `<a class="b sm ghost" href="#" data-go="newmsg?to=${c.student}&amp;job=${j.id}&amp;invite=1">Invite to apply</a>` : "";
@@ -1043,7 +1055,7 @@ ${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class=
 <div class="row" style="margin-top:8px">${msg}<a class="b sm ghost" href="#" data-go="u?id=${c.student}">View profile</a></div></div>`; }).join("")
     : '<div class="empty">No candidates yet. Students appear here when they message you about this listing, when you invite them, or when you save them from the ranked matches.</div>';
   return `<a class="back" href="#" data-go="hiring">← Your listings</a>${takeFlash()}<div class="row between" style="align-items:flex-start;margin-top:6px"><div><h2 class="page" style="margin:0">${esc(j.title)}</h2><p class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</p></div><div class="row"><span class="pill ${tone}">${esc(label)}</span>${live ? `<a class="b sm sec" href="#" data-go="job?id=${j.id}">View listing</a>` : ""}</div></div>
-<div class="stats">${statTile(s.views, "students viewed")}${statTile(s.clicks, "clicked Apply", s.views ? Math.round(100 * s.clicks / s.views) + "% of viewers" : "")}${statTile(s.messaged, "messaged you")}${statTile(s.candidates, "candidates", stageBits)}</div>
+${funnel(s, ["", s.views ? Math.round(100 * s.clicks / s.views) + "% of viewers" : "", "", stageBits])}
 <p class="small faint">Views and Apply clicks are totals. You see who a student is only when they message you, you invite them, or you save them from matches.</p>
 <div class="seg" role="tablist" style="margin:18px 0"><a href="#" data-go="hjob?id=${j.id}&amp;tab=matches"${tab === "matches" ? ' class="on" aria-current="page"' : ""}>Ranked matches</a><a href="#" data-go="hjob?id=${j.id}&amp;tab=candidates"${tab === "candidates" ? ' class="on" aria-current="page"' : ""}>Candidates (${cands.length})</a></div>${content}`;
 };
@@ -1204,8 +1216,10 @@ P.aschools = () => { const m = new Map();
   return adminPage("School requests", "aschools", '<p class="lead">Schools that visitors asked for after using the public scam check. Only the school name is stored.</p>' + (rows ? `<div class="card"><table class="t"><tr><th>School</th><th>Requests</th><th>Latest</th></tr>${rows}</table></div>` : '<div class="empty">No requests yet. Run a scam check while logged out and use the form under the result.</div>')); };
 function adminPage(title, active, body) {
   if (!S.admin) return `${pageHead("Reviewer sign-in", "The review queues are restricted. In this demo any password works.")}<form id="adminLogin" class="card" style="max-width:440px"><div class="form-field"><label for="a-pw">Password</label><input id="a-pw" type="password" name="password" required maxlength="200" autocomplete="off"></div><button class="submit-btn" type="submit">Sign in</button></form>`;
-  const c = adminCounts();
-  return `<h2 class="page">${esc(title)}</h2><div class="admin-tabs seg">${ADMIN_TABS.map(([k, t]) => `<a href="#" data-go="${k}"${k === active ? ' class="on"' : ""}>${t}${c[k] ? " · " + c[k] : ""}</a>`).join("")}<a href="#" data-go="live"${active === "live" ? ' class="on"' : ""}>Live listings</a></div>${body}<p style="margin-top:18px"><button class="linkbtn" type="button" data-do="admin-out">Sign out of the reviewer view</button></p>`;
+  const c = adminCounts(), tabs = ADMIN_TABS.concat([["live", "Live listings"]]);
+  c.live = approvedJobs().length;
+  const cells = tabs.map(([k, t]) => `<a href="#" data-go="${k}"${k === active ? ' class="on" aria-current="page"' : ""}><span class="n${c[k] ? "" : " zero"}">${c[k] || 0}</span><span class="l">${t}</span></a>`).join("");
+  return `<section class="desk"><div class="desk-top"><div><div class="eyebrow">Reviewer</div><h1>${esc(title)}</h1></div><span class="keys"><kbd>J</kbd><kbd>K</kbd> next and previous card</span></div><nav class="qtabs" aria-label="Review queues">${cells}</nav></section>${body}<p style="margin-top:18px"><button class="linkbtn" type="button" data-do="admin-out">Sign out of the reviewer view</button></p>`;
 }
 const findingsHtml = fs => fs.filter(f => f.severity !== "note").map(f => `<div class="finding ${esc(f.severity)}"><b>${esc(f.title)}</b><br>${esc(f.why)}</div>`).join("");
 P.admin = () => {
@@ -1214,6 +1228,7 @@ P.admin = () => {
   let agree = 0, missed = 0, fa = 0; rows.forEach(j => { const flagged = j.scam_status !== "clear", bad = j.review_label !== "legit"; if (flagged === bad) agree++; else if (bad) missed++; else fa++; });
   const stats = rows.length ? `<p class="lead" style="font-size:13px">Detector vs your decisions: ${rows.length} labeled${rows.length < 10 ? " so far. Too few to judge; every decision is training data for the next rule update." : `, agreed on ${Math.round(100 * agree / rows.length)}%. Missed ${missed}; flagged ${fa} you approved.`}</p>` : "";
   return adminPage("Review queue", "admin", `${stats}<p class="lead">${plural(list.length, "submission")} waiting. The scam score is advisory; you decide what publishes.</p>` + (list.map(j => `<div class="rev-card"><div class="row between" style="align-items:flex-start"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span></div>
+${riskMeter(j.score, j.scam_status)}
 <div class="job-meta" style="margin-top:10px"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>
 ${findingsHtml(j.findings) ? `<div style="margin:12px 0">${findingsHtml(j.findings)}</div>` : '<p class="small muted" style="margin:10px 0">No scam signals fired.</p>'}
 <div class="detail-desc" style="font-size:14px;max-height:140px;overflow:auto;background:var(--sunk);padding:10px 12px;border-radius:8px">${esc(j.description)}</div>${j.apply_url ? `<p class="small muted" style="word-break:break-all">Apply: ${esc(j.apply_url)}</p>` : ""}

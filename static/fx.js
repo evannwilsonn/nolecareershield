@@ -1,9 +1,12 @@
 /* NoleCareerShield visual effects. Decoration only: every page works and reads the same without it.
+ *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing and lights each flag.
  *   1. Scroll-scrubbed footage: section[data-cine] pins while you scroll and plays a camera move frame by
  *      frame on a canvas (Apple-style image sequence). Sets --p (0 to 1) and data-cap for the captions.
  *   2. Cursor parallax: [data-pan] layers drift a few pixels against the pointer (fine pointers only).
  *   3. Floating header: over the footage the header is clear; it turns solid once you scroll past.
  *   4. Border light: sets --mx/--my on the card under the cursor so CSS can light its border there.
+ *   5. Signed-in pages: score rings, bars and funnels draw in when seen, numbers count up once,
+ *      "/" focuses the page's search box, and J/K move between cards in the reviewer queues.
  * Honours prefers-reduced-motion and Save-Data (the footage stays a still photo). Works on pages that
  * re-render in place (the demo): new sections are picked up as they appear, old ones are dropped. */
 (function () {
@@ -105,6 +108,77 @@
     return self;
   }
 
+  // ---------- listing scanner ----------
+  // A gold line runs down the sample listing; each flag lights up as the line passes it, then the stamp
+  // lands. On wide screens it follows the scroll (the section pins); on phones it plays once when seen.
+  var scans = [];
+
+  function Scan(sec) {
+    var card = sec.querySelector(".scan-card"), line = sec.querySelector(".scan-line"), stick = sec.querySelector(".scan-stick");
+    var marks = [].slice.call(card.querySelectorAll("mark")), sups = [].slice.call(card.querySelectorAll("sup"));
+    var items = {}, h = 1, done = false;
+    [].slice.call(sec.querySelectorAll(".scan-flags li")).forEach(function (li) { items[li.getAttribute("data-f")] = li; });
+    var verdict = sec.querySelector(".scan-verdict"), stamp = sec.querySelector(".scan-stamp");
+    var pinned = window.innerWidth >= 901 && stick.offsetHeight <= window.innerHeight;
+    var self = { sec: sec, tick: function () { return false; }, measure: measure };
+
+    function measure() {
+      var top = card.getBoundingClientRect().top;
+      h = card.offsetHeight;
+      marks.forEach(function (m) { m.__y = m.getBoundingClientRect().bottom - top; });
+      sups.forEach(function (x) { x.__y = x.getBoundingClientRect().bottom - top; });
+    }
+    function at(q) {
+      var y = Math.max(0, Math.min(1, q)) * h;
+      line.style.transform = "translateY(" + y.toFixed(1) + "px)";
+      marks.forEach(function (m) {
+        var on = m.__y <= y + 3;
+        if (on && !m.classList.contains("on")) {
+          m.classList.add("on", "flash");
+          setTimeout(function () { m.classList.remove("flash"); }, 650);
+        } else if (!on) m.classList.remove("on");
+      });
+      sups.forEach(function (x) {
+        var on = x.__y <= y + 3, li = items[x.getAttribute("data-f")];
+        x.classList.toggle("on", on);
+        if (li) li.classList.toggle("on", on);
+      });
+    }
+    function finish(on) {
+      if (on === done) return;
+      done = on;
+      stamp.classList.toggle("on", on); verdict.classList.toggle("on", on); sec.classList.toggle("done", on);
+    }
+
+    sec.classList.add("armed");
+    if (pinned) {
+      sec.classList.add("pinned");
+      self.tick = function () {
+        var r = sec.getBoundingClientRect(), total = sec.offsetHeight - window.innerHeight;
+        var p = total > 0 ? Math.min(1, Math.max(0, -r.top / total)) : 0;
+        at((p - 0.06) / 0.62);
+        finish(p > 0.74);
+        return false;
+      };
+    } else {
+      // Plays once, the first time most of the card is on screen.
+      var io = new IntersectionObserver(function (es) {
+        if (!es[0].isIntersecting) return;
+        io.disconnect();
+        var t0 = performance.now(), D = 2800;
+        (function step(now) {
+          var q = (now - t0) / D;
+          at(q);
+          if (q < 1) requestAnimationFrame(step); else setTimeout(function () { finish(true); }, 250);
+        })(t0);
+      }, { threshold: 0.6 });
+      io.observe(card);
+    }
+    measure(); at(0);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { measure(); kick(); });
+    return self;
+  }
+
   // ---------- cursor parallax ----------
   var pans = [], px = 0, py = 0, tx = 0, ty = 0;
   document.addEventListener("pointermove", function (e) {
@@ -128,12 +202,71 @@
     header.classList.toggle("solid", solid);
   }
 
+  // ---------- signed-in pages: draw-ins and count-ups ----------
+  // Rings, bars, funnels and checklists get .in when they reach the screen (CSS does the drawing);
+  // numbers count up once. html.fx arms it all; under reduced motion it is never set, so nothing moves.
+  if (!reduce.matches) root.classList.add("fx");
+  var DRAW = ".ring,.fitb,.meter,.funnel,.risk,.checklist";
+  var COUNT = ".kpi .n,.stat .n,.tile .big,.ring b,.qtabs .n,.pstep .n";
+  var seenIO = "IntersectionObserver" in window && !reduce.matches ? new IntersectionObserver(function (es) {
+    es.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      seenIO.unobserve(e.target);
+      if (e.target.__count) countUp(e.target); else e.target.classList.add("in");
+    });
+  }, { rootMargin: "0px 0px -8% 0px" }) : null;
+  function countUp(el) {
+    var to = el.__count, t0 = performance.now(), D = to > 20 ? 1000 : 650;
+    (function step(now) {
+      var q = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - q, 3);
+      el.textContent = String(Math.round(to * e));
+      if (q < 1) requestAnimationFrame(step); else el.textContent = el.__text;
+    })(t0);
+  }
+  function arm() {
+    document.querySelectorAll(DRAW).forEach(function (el) {
+      if (el.__drawn) return; el.__drawn = true;
+      if (seenIO) seenIO.observe(el); else el.classList.add("in");
+    });
+    document.querySelectorAll(COUNT).forEach(function (el) {
+      if (el.__counted) return; el.__counted = true;
+      var t = el.textContent.trim();
+      if (!seenIO || !/^\d{1,5}$/.test(t) || +t === 0) return;
+      el.__text = t; el.__count = +t; el.textContent = "0";
+      seenIO.observe(el);
+    });
+  }
+
+  // ---------- keyboard: "/" jumps to search; J and K walk the reviewer's cards ----------
+  document.addEventListener("keydown", function (e) {
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = e.target, typing = t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+    if (typing) return;
+    if (e.key === "/") {
+      var box = document.querySelector('main input[type="search"], main input[name="search"], main input[name="q"]');
+      if (box) { e.preventDefault(); box.focus(); box.select(); }
+      return;
+    }
+    if ((e.key === "j" || e.key === "k") && document.querySelector(".desk")) {
+      var cards = [].slice.call(document.querySelectorAll("main .rev-card"));
+      if (!cards.length) return;
+      var i = cards.indexOf(document.querySelector("main .rev-card.cur"));
+      i = e.key === "j" ? Math.min(cards.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1);
+      cards.forEach(function (c) { c.classList.remove("cur"); });
+      var c = cards[i];
+      c.classList.add("cur"); c.setAttribute("tabindex", "-1");
+      c.focus({ preventScroll: true });
+      c.scrollIntoView({ block: "start", behavior: reduce.matches ? "auto" : "smooth" });
+    }
+  });
+
   // ---------- one frame loop for all of it ----------
   var raf = 0;
   function frame() {
     raf = 0;
     var again = false;
     for (var i = 0; i < cines.length; i++) if (cines[i].tick()) again = true;
+    for (var j = 0; j < scans.length; j++) scans[j].tick();
     if (pans.length && panStep()) again = true;
     headerStep();
     if (again) raf = requestAnimationFrame(frame);
@@ -142,18 +275,26 @@
   window.addEventListener("scroll", kick, { passive: true });
   window.addEventListener("resize", function () {
     for (var i = 0; i < cines.length; i++) cines[i].measure();
+    for (var j = 0; j < scans.length; j++) scans[j].measure();
     if (header) root.style.setProperty("--hdr", header.offsetHeight + "px");
     kick();
   });
 
   function scan() {
     cines = cines.filter(function (c) { return c.sec.isConnected; });
+    scans = scans.filter(function (c) { return c.sec.isConnected; });
     pans = Array.prototype.filter.call(document.querySelectorAll("[data-pan]"), function (el) { return el.isConnected; });
     document.querySelectorAll("section[data-cine]").forEach(function (sec) {
       if (sec.__cine) return; sec.__cine = true;
       if (reduce.matches || lite || !("IntersectionObserver" in window)) return;   // stays a still photo
       try { cines.push(Cine(sec)); } catch (e) { /* decoration only */ }
     });
+    document.querySelectorAll("section[data-scan]").forEach(function (sec) {
+      if (sec.__scan) return; sec.__scan = true;
+      if (reduce.matches || !("IntersectionObserver" in window)) return;             // stays finished
+      try { scans.push(Scan(sec)); } catch (e) { /* decoration only */ }
+    });
+    arm();
     var first = document.querySelector("main > .cine:first-child, main > .chapter.top:first-child");
     lead = first;
     header = document.querySelector("header");

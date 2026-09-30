@@ -102,3 +102,24 @@ def test_deleting_accounts_clears_hiring_data(net):
         store.delete_account(conn, sid)
         assert conn.execute("SELECT COUNT(*) FROM candidates").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM job_views").fetchone()[0] == 0
+
+
+def test_signed_in_pages_carry_the_new_pieces(net):
+    """Welcome bands, fit badges, the listing funnel, the candidate pipeline and the reviewer desk."""
+    from test_network import admin
+    s1, sid1 = student(net)
+    emp, eid = employer(net)
+    job = add_job(net, eid)
+    s1.get(f"/job/{job}")
+    home = s1.get("/").text
+    assert 'class="hello"' in home and 'class="kpi' in home and 'class="fitb' in home and "arch-074.webp" in home
+    ehome = emp.get("/").text
+    assert 'class="hello"' in ehome and "student view" in ehome
+    t = ucsrf(emp)
+    emp.post(f"/hiring/{job}/save", data={"csrf": t, "student": sid1})
+    page = emp.get(f"/hiring/{job}?tab=candidates").text
+    assert 'class="stats funnel' in page and 'style="--f:1.000"' in page         # one viewer, measured against itself
+    assert 'class="pipe"' in page and "Not moving forward" in page
+    a = admin(net)
+    queue = a.get("/admin").text
+    assert 'class="desk"' in queue and "<kbd>J</kbd>" in queue and 'class="qtabs"' in queue

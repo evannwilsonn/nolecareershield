@@ -447,7 +447,7 @@ footer .tm{display:block;margin-top:6px;font-size:11.5px}
 footer a{color:var(--muted)}
 /* ---------- display type, motion and effects ----------
    Borrowed from the reference sites: condensed uppercase display type, a cursor-reactive dot grid,
-   a light that follows the cursor around card borders, one marquee, and one scroll-pinned teardown.
+   a light that follows the cursor around card borders, one marquee, and one scroll-driven listing scan.
    Everything degrades to a still page without JS, without scroll-driven animation, and under reduced motion. */
 .display{font-family:var(--display);font-weight:800;font-stretch:70%;text-transform:uppercase;letter-spacing:-.005em;line-height:.9}
 .display em{font-style:normal;color:var(--accent-ink)}
@@ -529,43 +529,54 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .marquee li{font-family:var(--display);font-weight:750;font-stretch:72%;text-transform:uppercase;font-size:clamp(20px,2.4vw,30px);letter-spacing:.005em;color:var(--ink-2);padding:0 22px;white-space:nowrap;display:flex;align-items:center;gap:22px}
 .marquee li::after{content:"";width:9px;height:9px;background:var(--gold);transform:rotate(45deg);flex:none}
 .marquee .cap{font-size:12.5px;color:var(--faint);text-align:center;margin-top:8px}
-/* the teardown: a scam message comes apart as you scroll */
-.teardown{background:var(--stage);color:var(--on-stage);position:relative;view-timeline:--td block}
-.teardown .td-stick{max-width:1120px;margin:0 auto;padding:72px 20px;display:grid;grid-template-columns:.9fr 1.1fr;gap:48px;align-items:center}
-.teardown h2.display{font-size:clamp(44px,6.6vw,92px);color:var(--on-stage)}
-.teardown h2.display em{color:var(--gold)}
-.teardown .td-lede{color:var(--on-stage-2);font-size:17px;max-width:38ch;margin:16px 0 0}
-.teardown .td-verdict{margin-top:26px;display:inline-flex;align-items:center;gap:10px;border:1.5px solid #f0a193;color:#f0a193;border-radius:10px;padding:10px 16px;font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:24px;letter-spacing:.01em}
-.teardown .td-cta{margin-top:18px}
-.teardown .td-cta a{color:var(--gold);font-weight:600;text-decoration:none}
-.teardown .td-cta a:hover{text-decoration:underline}
-.td-msg{position:relative;display:grid;gap:0}
-.td-from{font-size:12.5px;color:var(--on-stage-2);margin:0 0 8px 4px}
-.td-msg{padding-right:200px}
-/* Default (no motion, or no scroll-driven animation): the message is already taken apart. */
-.slice{position:relative;background:var(--stage-2);border:1px solid rgba(243,238,230,.12);border-radius:14px;padding:14px 18px;font-size:16px;line-height:1.5;color:var(--on-stage);
-  transform:translateY(calc(var(--i) * 10px)) rotate(var(--r,0deg))}
-.slice mark{background:none;color:inherit;box-shadow:inset 0 -2px 0 #f0a193}
-.slice .flag{position:absolute;right:-12px;top:50%;transform:translate(100%,-50%);display:flex;gap:8px;align-items:center;white-space:nowrap;font-size:13.5px;font-weight:600;color:#f0a193}
-.slice .flag::before{content:"";width:18px;height:1px;background:currentColor}
-@media(max-width:900px){.teardown .td-stick{grid-template-columns:1fr;gap:34px;padding:56px 20px}.td-msg{padding-right:0}
-  .slice{transform:none;margin-bottom:10px}.slice .flag{position:static;transform:none;margin-top:8px}.slice .flag::before{display:none}}
-@supports (animation-timeline:view()){@media (prefers-reduced-motion:no-preference) and (min-width:901px){
-  .teardown{height:260vh}
-  .teardown .td-stick{position:sticky;top:0;min-height:100dvh}
-  .slice{animation:td-split linear both;animation-timeline:--td;animation-range:contain 0% contain 55%;transition:none}
-  .slice mark{animation:td-mark linear both;animation-timeline:--td}
-  .slice .flag{animation:td-flag linear both;animation-timeline:--td;transition:none}
-  .slice.s0 mark,.slice.s0 .flag{animation-range:contain 30% contain 42%}
-  .slice.s1 mark,.slice.s1 .flag{animation-range:contain 40% contain 52%}
-  .slice.s2 mark,.slice.s2 .flag{animation-range:contain 50% contain 62%}
-  .slice.s3 mark,.slice.s3 .flag{animation-range:contain 60% contain 72%}
-  .teardown .td-verdict{animation:td-stamp linear both;animation-timeline:--td;animation-range:contain 74% contain 86%}
-}}
-@keyframes td-split{from{transform:none;border-radius:4px}to{transform:translateY(calc(var(--i) * 24px)) rotate(var(--r,0deg));border-radius:14px}}
-@keyframes td-mark{from{box-shadow:inset 0 -2px 0 rgba(240,161,147,0)}to{box-shadow:inset 0 -2px 0 #f0a193}}
-@keyframes td-flag{from{opacity:0;transform:translate(calc(100% + 16px),-50%)}to{opacity:1;transform:translate(100%,-50%)}}
-@keyframes td-stamp{from{opacity:0;transform:scale(1.25) rotate(-4deg)}to{opacity:1;transform:scale(1) rotate(-2deg)}}
+/* the scanner: a fake listing read by the real detector as you scroll (static/fx.js drives it).
+   With no JS or reduced motion it is shown finished: every flag underlined and listed, stamp down. */
+.scan{background:var(--stage);color:var(--on-stage);position:relative}
+.scan-stick{max-width:1160px;margin:0 auto;padding:84px 20px;display:grid;grid-template-columns:.92fr 1.08fr;gap:56px;align-items:center}
+.scan h2.display{font-size:clamp(42px,4.8vw,70px);color:var(--on-stage);margin:12px 0 18px}
+.scan h2.display em{color:var(--gold)}
+.scan .eyebrow{color:var(--gold);letter-spacing:.14em}
+.scan-copy p{color:var(--on-stage-2);font-size:17px;max-width:40ch;margin:0}
+.scan-cta{margin-top:22px!important}
+.scan-cta a{color:var(--gold);font-weight:600;text-decoration:none}.scan-cta a:hover{text-decoration:underline}
+.scan-board{position:relative;min-width:0}
+.scan-card{position:relative;overflow:hidden;background:#faf8f3;color:#1c1917;border-radius:14px;padding:20px 22px 18px;box-shadow:0 24px 60px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.06)}
+.scan-card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.scan-card h3{font-size:16.5px;font-weight:700;line-height:1.3}
+.scan-card .tag{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b655c;border:1px solid #d9d3c7;border-radius:999px;padding:3px 9px;flex:none}
+.scan-card .co{font-size:12.5px;color:#6b655c;margin:2px 0 12px}
+.scan-card .body{font-size:14.5px;line-height:1.85;margin:0}
+.scan-card .apply{font-size:13px;color:#6b655c;margin:12px 0 0}
+.scan-card mark{background:none;color:inherit;border-radius:2px;box-shadow:inset 0 -2px 0 var(--sev,#c2410c);transition:box-shadow .35s var(--ease),background-color .9s}
+.scan-card mark.crit{--sev:#b91c1c}.scan-card mark.warn{--sev:#b7791f}
+.scan-card sup{font-size:10px;font-weight:700;color:var(--sev,#b7791f);margin:0 2px 0 1px;transition:opacity .3s}
+.scan-card sup.crit{--sev:#b91c1c}.scan-card sup.warn{--sev:#b7791f}
+.scan-line{position:absolute;left:0;right:0;top:0;height:2px;background:var(--gold);box-shadow:0 0 14px 2px color-mix(in srgb,var(--gold) 70%,transparent);opacity:0;pointer-events:none;z-index:2}
+.scan-line::before{content:"";position:absolute;left:0;right:0;bottom:2px;height:56px;background:linear-gradient(0deg,color-mix(in srgb,var(--gold) 22%,transparent),transparent)}
+.scan-stamp{position:absolute;right:16px;bottom:14px;z-index:3;border:2.5px solid #b91c1c;color:#b91c1c;background:rgba(250,248,243,.92);border-radius:8px;padding:5px 12px;font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:21px;letter-spacing:.01em;transform:rotate(-5deg)}
+.scan-flags{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:6px}
+.scan-flags li{display:flex;align-items:center;gap:10px;background:var(--stage-2);border:1px solid rgba(243,238,230,.1);border-radius:9px;padding:8px 12px;font-size:13.5px;font-weight:600;transition:opacity .4s var(--ease),transform .4s var(--ease)}
+.scan-flags .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;flex:none;background:#e3b964;color:#2a1f0a}
+.scan-flags li.crit .n{background:#f0a193;color:#3a1410}
+.scan-flags .sev{margin-left:auto;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--on-stage-2);font-weight:700}
+.scan-flags li.crit .sev{color:#f0a193}
+.scan-verdict{margin-top:12px;border-radius:12px;padding:13px 16px;background:#3a1a17;border:1px solid rgba(240,161,147,.35);color:#fbe4df;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+.scan-verdict b{font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:20px;letter-spacing:.01em;color:#f0a193;margin-right:8px}
+.scan-verdict span{font-size:13px}
+.scan-verdict p{font-size:13px;margin:4px 0 0;color:#e8cfc9}.scan-verdict a{color:#fff;font-weight:600}
+@media(max-width:900px){.scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}.scan-card{padding-bottom:60px}}
+/* armed by fx.js: things appear as the scan line reaches them */
+.scan.armed .scan-line{opacity:1}
+.scan.armed .scan-card mark:not(.on){box-shadow:inset 0 -2px 0 transparent}
+.scan.armed .scan-card mark.flash{background-color:color-mix(in srgb,var(--sev) 16%,transparent)}
+.scan.armed .scan-card sup:not(.on){opacity:0}
+.scan.armed .scan-flags li:not(.on){opacity:0;transform:translateX(14px)}
+.scan.armed .scan-verdict:not(.on){opacity:0;transform:translateY(10px)}
+.scan.armed .scan-stamp{opacity:0;transform:rotate(-5deg) scale(1.6)}
+.scan.armed .scan-stamp.on{opacity:1;transform:rotate(-5deg) scale(1);transition:opacity .15s,transform .45s cubic-bezier(.2,1.6,.4,1)}
+.scan.armed.done .scan-line{opacity:0;transition:opacity .6s}
+.scan.pinned{height:250vh}
+.scan.pinned .scan-stick{position:sticky;top:0;min-height:100vh;min-height:100svh}
 /* how it works: an asymmetric bento instead of three equal cards */
 .how-bento{max-width:1120px;margin:0 auto;padding:64px 20px 20px;display:grid;grid-template-columns:1.25fr 1fr;grid-template-rows:auto auto;gap:16px}
 .how-bento .hb{background:var(--surface);border:1px solid var(--whisper);border-radius:16px;padding:24px 24px 22px;position:relative}
@@ -617,6 +628,86 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
   .spot:hover::after,.tile:hover::after,.job:hover::after,.hb:hover::after{opacity:1}
   .how-bento .hb.lead::after{background:radial-gradient(420px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.08),transparent 60%)}
 }
+/* ---------- signed-in pages: welcome band, KPIs, fit badges, funnel, pipeline, reviewer desk ----------
+   Quiet on purpose: numbers count up once, rings and bars draw in when they reach the screen, nothing loops.
+   fx.js adds html.fx (never under reduced motion); without it everything is simply shown finished. */
+@property --ringp{syntax:"<number>";inherits:false;initial-value:0}
+.ring{--ringp:var(--p);background:conic-gradient(var(--accent) calc(var(--ringp)*1%),var(--sand) 0)}
+.ring.in,.fitb.in i{transition:--ringp 1.2s var(--ease)}
+.meter i{transform-origin:left}.meter.in i{transition:transform 1.1s var(--ease)}
+html.fx .ring:not(.in),html.fx .fitb:not(.in) i{--ringp:0}
+html.fx .meter:not(.in) i,html.fx .funnel:not(.in) .fb,html.fx .risk:not(.in) i{transform:scaleX(0)}
+@media (prefers-reduced-motion:no-preference){
+  html.fx .checklist.in li{animation:fade-up .45s var(--ease) both}
+  html.fx .checklist:not(.in) li{opacity:0}
+  html.fx .checklist.in li:nth-child(2){animation-delay:.05s}html.fx .checklist.in li:nth-child(3){animation-delay:.1s}
+  html.fx .checklist.in li:nth-child(4){animation-delay:.15s}html.fx .checklist.in li:nth-child(5){animation-delay:.2s}
+  html.fx .checklist.in li:nth-child(n+6){animation-delay:.25s}
+}
+/* welcome band on each role's home */
+.hello{position:relative;isolation:isolate;overflow:hidden;background:var(--stage);color:var(--on-stage);border-radius:18px;padding:30px 30px 24px;margin:0 0 18px}
+.hello .ph{position:absolute;inset:0;z-index:-1;background:var(--ph) 70% 50%/cover no-repeat;opacity:.55;
+  -webkit-mask:linear-gradient(90deg,transparent 18%,#000 78%);mask:linear-gradient(90deg,transparent 18%,#000 78%)}
+.hello .eyebrow{color:var(--gold);letter-spacing:.14em}
+.hello h1{font-family:var(--display);font-weight:800;font-stretch:70%;text-transform:uppercase;font-size:clamp(34px,4.8vw,58px);line-height:.92;margin:10px 0 12px;letter-spacing:-.005em;color:var(--on-stage)}
+.hello h1 em{font-style:normal;color:var(--gold)}
+.hello p{color:var(--on-stage-2);max-width:52ch;font-size:15px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px 18px;margin-top:24px;max-width:640px}
+.kpi{display:block;text-decoration:none;color:inherit;border-top:1px solid rgba(243,238,230,.2);padding-top:10px}
+.kpi .n{font-family:var(--display);font-weight:750;font-stretch:72%;font-size:42px;line-height:1;font-variant-numeric:tabular-nums;display:block;transition:color .2s}
+.kpi .l{font-size:12.5px;color:var(--on-stage-2);display:block;margin-top:5px}
+a.kpi:hover .n,.kpi.hot .n{color:var(--gold)}
+.hello .foot{margin-top:18px;display:flex;gap:8px;flex-wrap:wrap}
+.hello .b.sec{background:rgba(255,255,255,.08);color:var(--on-stage);box-shadow:0 0 0 1px rgba(255,255,255,.3) inset}
+.hello .b.sec:hover{background:rgba(255,255,255,.15)}
+@media(max-width:620px){.hello{padding:24px 18px 20px;border-radius:14px}.kpi .n{font-size:34px}.hello .ph{opacity:.35}}
+/* fit badge: a small ring next to the number */
+.fitb{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent-ink);background:var(--accent-tint);border-radius:999px;padding:3px 10px 3px 4px;white-space:nowrap;flex:none}
+.fitb i{--ringp:var(--p);width:17px;height:17px;border-radius:50%;background:conic-gradient(currentColor calc(var(--ringp)*1%),color-mix(in srgb,currentColor 20%,transparent) 0);
+  -webkit-mask:radial-gradient(circle,transparent 4.6px,#000 5.2px);mask:radial-gradient(circle,transparent 4.6px,#000 5.2px)}
+.fitb b{font-weight:600}
+.fitb.hi{color:var(--ok);background:var(--ok-tint)}.fitb.lo{color:var(--muted);background:var(--sunk)}
+/* employer funnel: every number measured against how many students viewed */
+.stats.funnel .stat{position:relative;overflow:hidden}
+.stats.funnel .fb{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--sand)}
+.stats.funnel .fb i{display:block;height:100%;width:calc(var(--f,0) * 100%);background:var(--accent);border-radius:0 3px 3px 0}
+.stats.funnel .fb{transform-origin:left}.stats.funnel.in .fb{transition:transform 1.1s var(--ease)}
+.stats.funnel.in .stat:nth-child(2) .fb{transition-delay:.08s}.stats.funnel.in .stat:nth-child(3) .fb{transition-delay:.16s}.stats.funnel.in .stat:nth-child(4) .fb{transition-delay:.24s}
+/* candidate pipeline */
+.pipe{display:flex;gap:4px;margin:0 0 14px;flex-wrap:wrap}
+.pstep{flex:1 1 90px;background:var(--sunk);border-radius:8px;padding:8px 12px;box-shadow:0 0 0 1px var(--whisper) inset;min-width:0}
+.pstep .n{font-family:var(--display);font-weight:750;font-stretch:72%;font-size:24px;line-height:1;display:block;color:var(--faint);font-variant-numeric:tabular-nums}
+.pstep .l{font-size:11.5px;color:var(--muted);font-weight:600}
+.pstep.has{background:var(--surface)}.pstep.has .n{color:var(--accent-ink)}
+/* reviewer desk: the queue counts as big numbers, with keyboard hints */
+.desk{background:var(--stage);color:var(--on-stage);border-radius:18px;padding:26px 26px 0;margin:0 0 18px;overflow:hidden}
+.desk-top{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.desk .eyebrow{color:var(--gold);letter-spacing:.14em}
+.desk h1{font-family:var(--display);font-weight:800;font-stretch:70%;text-transform:uppercase;font-size:clamp(32px,4.2vw,50px);line-height:.95;margin-top:8px;color:var(--on-stage)}
+.keys{font-size:12px;color:var(--on-stage-2);display:flex;gap:5px;align-items:center}
+kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;place-items:center;padding:0 5px;border-radius:5px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2)}
+.desk kbd{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25);color:var(--on-stage)}
+.qtabs{display:flex;gap:0;margin-top:22px;overflow-x:auto;scrollbar-width:none}
+.qtabs a{flex:1 0 auto;text-decoration:none;color:var(--on-stage-2);padding:10px 16px 14px 0;margin-right:16px;border-bottom:2px solid transparent;min-width:84px}
+.qtabs a .n{display:block;font-family:var(--display);font-weight:750;font-stretch:72%;font-size:30px;line-height:1;color:var(--on-stage);font-variant-numeric:tabular-nums}
+.qtabs a .n.zero{color:rgba(243,238,230,.3)}
+.qtabs a .l{font-size:12px;font-weight:600;display:block;margin-top:4px;white-space:nowrap}
+.qtabs a:hover .l{color:var(--on-stage)}
+.qtabs a.on{border-bottom-color:var(--gold)}.qtabs a.on .l{color:var(--gold)}
+.rev-card{scroll-margin-top:84px;transition:box-shadow .2s}
+.rev-card.cur{box-shadow:0 0 0 2px var(--gold),var(--shadow-deep)}
+.rev-card:focus{outline:none}
+.hello,.desk{box-shadow:0 0 0 1px var(--whisper) inset}
+@media (hover:none){.keys{display:none}}
+/* scam-risk meter on review cards */
+.risk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.risk>span:nth-child(2){order:-1}
+.risk .bar{flex:1;height:6px;border-radius:999px;background:var(--sand);overflow:hidden;max-width:360px}
+.risk .bar i{display:block;height:100%;width:max(5px,calc(var(--r) * 1%));background:var(--ok);border-radius:999px;transform-origin:left}.risk.in .bar i{transition:transform 1.1s var(--ease)}
+.risk.flagged .bar i{background:var(--warn)}.risk.held .bar i{background:var(--bad)}
+/* profile covers use the site's own photography */
+.pbanner.ph{height:150px;background:var(--ph) 50% 60%/cover no-repeat}
+.pbanner.ph::after{background:linear-gradient(180deg,rgba(18,13,12,0) 40%,rgba(18,13,12,.35));opacity:1}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 """
 
@@ -779,26 +870,85 @@ def marquee_block() -> str:
             f'<ul>{items}</ul><ul aria-hidden="true">{items}</ul></div></section>')
 
 
-# A typical student-targeted scam, split the way the checker reads it. Each flag is a real rule.
-_TEARDOWN = [
-    ("Hi! This is Dr. Carter from the Biology department. ", "You've been selected", " for a remote assistant role.", "An offer you never applied for", "-1deg"),
-    ("It pays ", "$400 weekly", " for a few hours of work. No experience needed.", "Flat weekly pay for vague work", "1.2deg"),
-    ("I'll mail you a check for supplies. ", "Deposit it and send the rest", " to our vendor.", "The fake-check scam", "-.6deg"),
-    ("Please reply from ", "your personal email", ", not your fsu.edu account.", "Pushed off your school email", "1deg"),
-]
+# A fake listing for the landing-page scanner. Its flags are NOT written by hand: scan_findings() runs the
+# real detector on it, and tests/test_app.py fails if the detector stops catching any of SCAN_EXPECTED.
+SCAN_SAMPLE = {
+    "title": "Remote Administrative Assistant", "company": "QuickCash Staffing", "meta": "Remote · Part-time",
+    "body": ("Congratulations, you've been selected, no interview needed! This part-time remote assistant role pays "
+             "$500 weekly. We'll mail you a check to buy equipment from our approved vendor. Deposit it and send the "
+             "balance by Zelle. Text our hiring manager on WhatsApp to get started."),
+    "apply": "quickcash.hiring@gmail.com",
+}
+SCAN_EXPECTED = {"instant_hire", "weekly_stipend", "fake_check_funds", "money_mule", "advance_fee",
+                 "irreversible_pay", "off_platform", "personal_email"}
 
 
-def teardown_block(cta_html: str) -> str:
-    slices = "".join(
-        f'<div class="slice s{i}" style="--i:{i};--r:{r}">{esc(a)}<mark>{esc(m)}</mark>{esc(b)}'
-        f'<span class="flag">{esc(flag)}</span></div>'
-        for i, (a, m, b, flag, r) in enumerate(_TEARDOWN))
-    return f"""<section class="teardown" aria-label="How the scam check reads a message"><div class="td-stick">
-<div><h2 class="display">The<br><em>teardown.</em></h2>
-<p class="td-lede">Paste any message about a job and the checker takes it apart, line by line. This is a typical one.</p>
-<div class="td-verdict" role="note">{icon("shield", 22)} Scam. Stop here.</div>
-<p class="td-cta">{cta_html}</p></div>
-<div class="td-msg"><p class="td-from">From: dr.carter.biology@gmail.com</p>{slices}</div>
+def scan_findings() -> dict:
+    """Run the detector on the sample and place each finding in the text: [{rule_id, title, severity, spans}]."""
+    import re
+    from scam_detector.scorer import score_posting
+    s = SCAN_SAMPLE
+    text = s["body"] + "\n" + s["apply"]
+    r = score_posting(s["title"], text, s["company"], run_network=False)
+    placed = []
+    for f in r.findings:
+        spans = []
+        for phrase in f["matched"]:
+            rx = re.compile(r"\s+".join(re.escape(w) for w in phrase.split()), re.I)
+            m = rx.search(text)
+            if m:
+                spans.append((m.start(), m.end()))
+        placed.append({"rule_id": f["rule_id"], "title": f["title"], "severity": f["severity"], "spans": sorted(spans)})
+    # Number the flags in reading order: by where each one's last underline ends.
+    placed.sort(key=lambda f: (f["spans"][-1][1] if f["spans"] else 10 ** 6, f["spans"][0][0] if f["spans"] else 0))
+    return {"score": r.score, "band": r.band, "findings": placed, "text": text}
+
+
+def _scan_text(text: str, findings: list) -> str:
+    """The sample text with every flagged phrase underlined and a numbered marker after each flag."""
+    cuts = {0, len(text)}
+    for f in findings:
+        for a, b in f["spans"]:
+            cuts |= {a, b}
+    cuts = sorted(cuts)
+    ends: dict[int, list] = {}
+    for i, f in enumerate(findings, 1):
+        if f["spans"]:
+            ends.setdefault(f["spans"][-1][1], []).append((i, f))
+    sev = lambda f: "crit" if f["severity"] == "critical" else "warn"
+    out = []
+    for a, b in zip(cuts, cuts[1:]):
+        seg = esc(text[a:b])
+        cover = [(i, f) for i, f in enumerate(findings, 1) if any(x <= a and b <= y for x, y in f["spans"])]
+        if cover:
+            worst = min(cover, key=lambda t: t[1]["severity"] != "critical")[1]
+            out.append(f'<mark class="{sev(worst)}" data-f="{" ".join(str(i) for i, _ in cover)}">{seg}</mark>')
+        else:
+            out.append(seg)
+        for i, f in ends.get(b, []):
+            out.append(f'<sup class="{sev(f)}" data-f="{i}">{i}</sup>')
+    return "".join(out)
+
+
+def scan_block(cta_html: str) -> str:
+    s, r = SCAN_SAMPLE, scan_findings()
+    body, _, apply = _scan_text(r["text"], r["findings"]).rpartition("\n")
+    flags = "".join(
+        f'<li class="{"crit" if f["severity"] == "critical" else "warn"}" data-f="{i}"><span class="n">{i}</span>{esc(f["title"])}'
+        f'<span class="sev">{"Critical" if f["severity"] == "critical" else "Warning"}</span></li>'
+        for i, f in enumerate(r["findings"], 1))
+    n = len(r["findings"])
+    return f"""<section class="scan" data-scan aria-labelledby="scan-h"><div class="scan-stick">
+<div class="scan-copy"><div class="eyebrow">A fake listing, read by the real detector</div>
+<h2 class="display" id="scan-h">Know it's real<br><em>before you apply.</em></h2>
+<p>This listing is made up. Scroll and watch the scam check read it. Every underline is something the detector caught on its own, not something we wrote in.</p>
+<p class="scan-cta">{cta_html}</p></div>
+<div class="scan-board"><div class="scan-card"><div class="scan-line" aria-hidden="true"></div>
+<div class="top"><h3>{esc(s["title"])}</h3><span class="tag">Sample</span></div><p class="co">{esc(s["company"])} · {esc(s["meta"])}</p>
+<p class="body">{body}</p><p class="apply">Apply: {apply}</p><div class="scan-stamp" aria-hidden="true">Scam. Stop here.</div></div>
+<ol class="scan-flags" aria-label="What the detector found">{flags}</ol>
+<div class="scan-verdict"><b>Scam. Stop here.</b><span>Scam risk {r["score"]}/100 from {n} signals.</span>
+<p>Don't apply, reply or send anything. {cta_html}</p></div></div>
 </div></section>"""
 
 
@@ -876,12 +1026,12 @@ def chapter(photo: str, eyebrow: str, title_html: str, text: str, cta_html: str 
 
 
 def students_chapters(links: dict | None = None) -> tuple[str, str]:
-    """The two photo chapters on the student landing: before the teardown, and before the listings."""
+    """The two photo chapters on the student landing: before the scanner, and before the listings."""
     L = links or SITE_LINKS
     night = chapter("night", "11:48 pm, a new message",
                     '<span class="ln"><span>Offers come at night.</span></span><span class="ln"><span><em>So do scams</em><span class="dot">.</span></span></span>',
-                    "Paste any message about a job into the scam check. It reads it the way scammers write them, line by line.",
-                    f'<a class="secondary" {L["check_msg"]}>Check a message you got</a>', focus="58%")
+                    "Most fake jobs look almost real. The scam check reads a listing or a message the way scammers write them, line by line.",
+                    f'<a class="secondary" {L["check"]}>Check one you got</a>', focus="58%")
     fair = chapter("fair", "Employers, checked first",
                    '<span class="ln"><span>Meet employers</span></span><span class="ln"><span>a person <em>vetted</em><span class="dot">.</span></span></span>',
                    "Every employer is reviewed before they can post a job or message you, and every listing is reviewed again.",
@@ -912,6 +1062,43 @@ def employer_chapter(links: dict | None = None) -> str:
                    '<span class="ln"><span>Meet them</span></span><span class="ln"><span>before the <em>fair</em><span class="dot">.</span></span></span>',
                    "Students answer because every employer here was checked by a person. Your ranked matches are ready the day a listing goes live.",
                    f'<a class="primary" {L["emp_signup"]}>Create an employer account</a>', focus="50%")
+
+
+# ---------- signed-in pieces (the demo has JS twins of these in demo/app.js) ----------
+
+def kpi(n, label: str, href: str = "", hot: bool = False) -> str:
+    tag, attr = ("a", f' href="{href}"') if href else ("div", "")
+    return f'<{tag} class="kpi{" hot" if hot else ""}"{attr}><span class="n">{n}</span><span class="l">{esc(label)}</span></{tag}>'
+
+
+def hello_band(eyebrow: str, title_html: str, lede: str, kpis: str = "", photo: str = "", foot: str = "") -> str:
+    """The dark welcome band at the top of each role's home. `photo` is a static/media file name."""
+    ph = f'<div class="ph" aria-hidden="true" style="--ph:url({media_url(photo)})"></div>' if photo else ""
+    return (f'<section class="hello">{ph}<div class="eyebrow">{esc(eyebrow)}</div><h1>{title_html}</h1><p>{esc(lede)}</p>'
+            f'{f"<div class=kpis>{kpis}</div>" if kpis else ""}{f"<div class=foot>{foot}</div>" if foot else ""}</section>')
+
+
+def fit_badge(score: int, label: str = "") -> str:
+    """'Fit 81' with a small ring. Green at 65 and up (good or strong fit), grey under 45."""
+    tone = " hi" if score >= 65 else " lo" if score < 45 else ""
+    return (f'<span class="fitb{tone}" style="--p:{int(score)}" title="{esc(label or "Fit score")}">'
+            f'<i aria-hidden="true"></i><b>Fit {int(score)}</b></span>')
+
+
+def desk(title: str, tabs: list[tuple[str, str, int | None, bool]]) -> str:
+    """Reviewer header: title, the queues as big counts (href, label, count, active), keyboard hints."""
+    cells = "".join(
+        f'<a href="{h}"{" class=on aria-current=page" if on else ""}><span class="n{" zero" if not n else ""}">{n or 0}</span>'
+        f'<span class="l">{esc(label)}</span></a>' for h, label, n, on in tabs)
+    return (f'<section class="desk"><div class="desk-top"><div><div class="eyebrow">Reviewer</div><h1>{esc(title)}</h1></div>'
+            f'<span class="keys"><kbd>J</kbd><kbd>K</kbd> next and previous card</span></div>'
+            f'<nav class="qtabs" aria-label="Review queues">{cells}</nav></section>')
+
+
+def risk_meter(score: int, status: str) -> str:
+    s = max(0, min(100, int(score)))
+    return (f'<div class="risk {esc(status)}" style="--r:{s}"><span class="bar" role="img" aria-label="Scam risk {s} of 100"><i></i></span>'
+            f'<span aria-hidden="true">0</span><span class="bar-end" aria-hidden="true">100</span></div>')
 
 
 # ---------- static script ----------

@@ -859,10 +859,8 @@ def test_font_and_effects_are_self_hosted(client):
 
 def test_landing_pages_carry_the_new_blocks(client):
     home = client.get("/").text
-    assert "data-cine" in home and 'class="marquee"' in home and 'class="teardown"' in home and 'class="how-bento"' in home
-    assert home.count('class="chapter"') == 2
-    # The teardown flags come from real detector rules, and the check link goes to the message tab.
-    assert "The fake-check scam" in home and 'href="/check?kind=message"' in home
+    assert "data-cine" in home and 'class="marquee"' in home and "data-scan" in home and 'class="how-bento"' in home
+    assert home.count('class="chapter"') == 2 and 'href="/check"' in home
     assert "—" not in re.sub(r"<title>.*?</title>", "", home)          # no em-dashes in visible copy
     emp = client.get("/employers").text
     assert 'class="how-bento three"' in emp and 'class="chapter top"' in emp and 'class="gets"' in emp
@@ -879,3 +877,21 @@ def test_landing_media_is_served_and_cached(client):
     # Only files that exist can be named: no paths, no other folders.
     for bad in ("../app.py", "..%2Fapp.py", "nope.webp", "arch-000.png"):
         assert client.get(f"/static/media/{bad}").status_code == 404
+
+
+def test_scanner_flags_come_from_the_detector():
+    """The landing-page scanner shows what the real detector finds in the sample listing, nothing written by hand.
+    If a rule change stops the detector catching one of these, this fails: update the sample or the rules."""
+    import ui
+    from scam_detector.scorer import score_posting
+    r = ui.scan_findings()
+    ids = {f["rule_id"] for f in r["findings"]}
+    assert ui.SCAN_EXPECTED <= ids, f"detector no longer catches {ui.SCAN_EXPECTED - ids}"
+    assert r["band"] == "block"
+    assert all(f["spans"] for f in r["findings"]), "every flag should be underlined somewhere in the sample"
+    s = ui.SCAN_SAMPLE
+    direct = score_posting(s["title"], s["body"] + "\n" + s["apply"], s["company"], run_network=False)
+    html = ui.scan_block("")
+    for f in direct.findings:                      # every title shown is the detector's own wording
+        assert ui.esc(f["title"]) in html
+    assert f"Scam risk {direct.score}/100 from {len(direct.findings)} signals" in html

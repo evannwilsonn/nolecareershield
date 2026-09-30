@@ -50,7 +50,7 @@ def _card(r: dict) -> dict:
 
 def card_html(c: dict) -> str:
     badge = ('<span class="badge verified">✓ Verified</span>' if c["verified"] else '<span class="badge warning">⚠ Check carefully</span>')
-    match = (f'<span class="pill accent" title="{esc(c.get("fit_label") or "")}">Fit {int(c["score"])}</span>' if c.get("fit_label")
+    match = (ui.fit_badge(int(c["score"]), c.get("fit_label") or "") if c.get("fit_label")
              else f'<span class="pill accent">{int(c["score"])}% match</span>' if c.get("score") is not None else "")
     why = f'<div class="why">{esc(c["reasons"][0])}</div>' if c.get("reasons") else ""
     loc = f'<span class="chip">{esc(c["location"])}</span>' if c.get("location") else ""

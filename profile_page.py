@@ -237,7 +237,7 @@ def profile_html(p: dict, *, owner: bool, show_links: bool = True, show_resume: 
     actions = ('<div class="row"><a class="b sm sec" href="/profile/setup/1">Edit intro</a>'
                + (f'<form method="post" action="/profile/import" class="navform">{ui.user_csrf_input()}<button class="b sm ghost" type="submit">Fill from resume</button></form>'
                   if p.get("resume_text") else '<a class="b sm ghost" href="/resume">Add resume</a>') + "</div>") if owner else message_btn
-    hero = f"""<section class="card phero"><div class="pbanner" aria-hidden="true"></div><div class="pinfo">
+    hero = f"""<section class="card phero"><div class="pbanner ph" aria-hidden="true" style="--ph:url({ui.media_url('arch-074.webp')})"></div><div class="pinfo">
 <span class="avatar xl">{ui.initials(name)}</span>
 <div class="row between" style="align-items:flex-end;gap:14px"><div style="min-width:0">
 <h1>{esc(name)}{pron}</h1>{f'<p class="headline">{esc(p["headline"])}</p>' if p.get("headline") else ""}

@@ -593,6 +593,9 @@ def dashboard(user: dict) -> str:
         else:
             p = ensure_employer(conn, user["id"])
             mine = store.rows(conn, "SELECT review_status, COUNT(*) AS n FROM jobs WHERE employer_id = ? GROUP BY review_status", (user["id"],))
+            viewed = conn.execute("SELECT COUNT(*) FROM (SELECT DISTINCT job_id, user_id FROM job_views WHERE job_id IN "
+                                  "(SELECT id FROM jobs WHERE employer_id = ?))", (user["id"],)).fetchone()[0]
+            n_cands = conn.execute("SELECT COUNT(*) FROM candidates WHERE employer_id = ?", (user["id"],)).fetchone()[0]
     if user["role"] == "student":
         name = (p.get("display_name") or "").split(" ")[0]
         pct, missing = student_completion(p)
@@ -603,7 +606,7 @@ def dashboard(user: dict) -> str:
         recs = matching.rank_jobs(jobs, p, limit=3) if jobs else []
         rec_html = "".join(f'<a class="job" href="/job/{int(r["job"]["id"])}" style="margin:0 0 8px"><div class="job-top"><div>'
                            f'<div class="job-title" style="font-size:16px">{esc(r["job"]["title"])}</div><div class="job-co">{esc(r["job"]["company"])}</div></div>'
-                           f'<span class="pill accent" title="{esc(r.get("fit", {}).get("label", ""))}">Fit {r.get("fit", {}).get("score", r["score"])}</span></div>'
+                           f'{ui.fit_badge(r.get("fit", {}).get("score", r["score"]), r.get("fit", {}).get("label", ""))}</div>'
                            + ("<div class=why>" + esc(r["reasons"][0]) + "</div>" if r["reasons"] else "") + '</a>' for r in recs) \
             or '<p>No listings yet. New ones appear here as reviewers approve them.</p>'
         resume_tile = ""
@@ -618,8 +621,14 @@ def dashboard(user: dict) -> str:
         feed = "".join(f'<p style="border-left:2px solid var(--line);padding-left:10px;margin-top:6px">{esc(x["body"][:120])}{"…" if len(x["body"]) > 120 else ""}</p>' for x in posts) \
             or "<p>Be the first to post a question or an opportunity.</p>"
         ai_note = "Powered by Claude" if ai.enabled() else "Built-in matching"
-        return f"""<div class="page-head"><div class="num">{esc(time.strftime("%A, %B %-d"))}</div><h1>{hello}{", " + esc(name) if name else ""}.</h1>
-<p>Here's what's new for you. Every listing and message is scanned for scams before you see it.</p></div>
+        best = max((r.get("fit", {}).get("score", r["score"]) for r in recs), default=0)
+        kpis = (ui.kpi(len(jobs), f"live listing{'s' if len(jobs) != 1 else ''}, all reviewed", "/jobs")
+                + (ui.kpi(best, "your best fit right now", "/jobs", hot=best >= 65) if recs else "")
+                + ui.kpi(unread, f"unread message{'s' if unread != 1 else ''}", "/messages", hot=unread > 0))
+        band = ui.hello_band(time.strftime("%A, %B %-d"), f'{hello}{"," if name else "."}' + (f"<br><em>{esc(name)}.</em>" if name else ""),
+                             "Here's what's new for you. Every listing and message is scanned for scams before you see it.",
+                             kpis, photo="arch-074.webp")
+        return f"""{band}
 <div class="bento">{setup}
 <div class="tile w4 tall"><h3>{ui.icon("spark")}Recommended for you</h3>{rec_html}<div class="foot row"><a class="b sm" href="/assistant">Ask the job assistant</a><a class="b sm sec" href="/jobs">All jobs</a></div></div>
 <div class="tile w2 goldt"><h3>{ui.icon("chat")}Messages</h3><div class="big">{unread}</div><p>unread message{"s" if unread != 1 else ""}</p><div class="foot"><a class="b sm sec" href="/messages">Open messages</a></div></div>
@@ -637,10 +646,16 @@ def dashboard(user: dict) -> str:
         "rejected": ('tint', "Your profile wasn't approved", p.get("status_note") or "Update your details and send it again.", '<a class="b" href="/profile/setup/1">Update profile</a>'),
         "suspended": ('tint', "Your account is suspended", "Contact us if you think this is a mistake.", ""),
     }[st]
-    return f"""<div class="page-head"><div class="num">Employer</div><h1>{hello}{", " + esc(p.get("company")) if p.get("company") else ""}.</h1>
-<p>Post roles for FSU students, answer messages, and share opportunities on the feed.</p></div>
+    live = counts.get("approved", 0)
+    kpis = (ui.kpi(live, f"live listing{'s' if live != 1 else ''}", "/hiring")
+            + ui.kpi(viewed, f"student view{'s' if viewed != 1 else ''} of your listings", "/hiring")
+            + ui.kpi(n_cands, f"candidate{'s' if n_cands != 1 else ''} in your tracker", "/hiring")
+            + ui.kpi(unread, "unread", "/messages", hot=unread > 0))
+    company = p.get("company")
+    band = ui.hello_band("Employer", f'{hello}{"," if company else "."}' + (f"<br><em>{esc(company)}.</em>" if company else ""),
+                         "Post roles for FSU students, answer messages, and share opportunities on the feed.", kpis, photo="office-960.webp")
+    return f"""{band}
 <div class="bento"><div class="tile w4 {status_tile[0]}"><h3>{esc(status_tile[1])}</h3><p>{esc(status_tile[2])}</p><div class="foot">{status_tile[3]}</div></div>
-<div class="tile w2 goldt"><h3>{ui.icon("chat")}Messages</h3><div class="big">{unread}</div><p>unread</p><div class="foot"><a class="b sm sec" href="/messages">Open messages</a></div></div>
 <div class="tile w2"><h3>{ui.icon("jobs")}Live listings</h3><div class="big">{counts.get("approved", 0)}</div><p>{counts.get("pending", 0)} waiting for review</p><div class="foot row"><a class="b sm" href="/hiring">Matches &amp; stats</a><a class="b sm sec" href="/post">Post a job</a></div></div>
-<div class="tile w2"><h3>{ui.icon("people")}Find students</h3><p>Search students who opted in, by skill or major.</p><div class="foot"><a class="b sm sec" href="/talent">Open directory</a></div></div>
-<div class="tile w2"><h3>{ui.icon("feed")}FSU feed</h3><p>Share internships, info sessions and advice. Posts must be relevant to FSU students.</p><div class="foot"><a class="b sm sec" href="/feed">Open the feed</a></div></div></div>"""
+<div class="tile w3"><h3>{ui.icon("people")}Find students</h3><p>Search students who opted in, by skill or major.</p><div class="foot"><a class="b sm sec" href="/talent">Open directory</a></div></div>
+<div class="tile w3"><h3>{ui.icon("feed")}FSU feed</h3><p>Share internships, info sessions and advice. Posts must be relevant to FSU students.</p><div class="foot"><a class="b sm sec" href="/feed">Open the feed</a></div></div></div>"""

@@ -12,7 +12,7 @@ stand, what was decided and why, and what's next.
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
 - **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
   commit; `tests/test_installer.py` fails if it's out of date.
-- **Tests:** `python -m pytest -q` (139 passing at handoff).
+- **Tests:** `python -m pytest -q` (141 passing at handoff).
 
 ## Rules Evan set (keep them)
 
@@ -43,8 +43,8 @@ stand, what was decided and why, and what's next.
   - **Student home:** a camera move along a brick walk, through a gothic arch under live oaks, into a sunlit quad.
     It is pinned and scrubbed by scroll (75 frames in `static/media/arch-*.webp`, drawn on a canvas by
     `static/fx.js`), with three captions that cross-fade: "Student jobs. Checked for scams." then "Scanned for scam
-    signals." then "Then approved by a person." Then photo chapters around the teardown ("Offers come at night. So
-    do scams.") and before the listings.
+    signals." then "Then approved by a person." Then a photo chapter ("Offers come at night. So do scams."), the
+    listing scanner, and a second photo chapter before the listings.
   - **Employer page:** a full-bleed office photo as the hero, three "what you get" tiles, the how-it-works bento, and a
     career-fair photo chapter.
   - Footage and photos were generated for this site with Higgsfield (Wan 3.0 video, Seedream and Z-Image stills,
@@ -53,12 +53,31 @@ stand, what was decided and why, and what's next.
     pinned. Photos are served from `/static/media/` with a year-long cache; the page policy needed no change.
 - **Type:** Archivo (variable, self-hosted in `static/fonts/`, OFL). Condensed uppercase for big statements
   (`.display`), normal width for body.
+- **The listing scanner** (replaced "The teardown", idea from another chat): a fake listing on the student home
+  ("Know it's real before you apply"). As you scroll, a gold line runs down it and each phrase the detector caught
+  gets underlined and numbered, then the flags list fills in and a "Scam. Stop here." stamp lands with the real
+  score (100/100 from 8 signals). The flags are not written by hand: `ui.scan_findings()` runs the real detector
+  on `ui.SCAN_SAMPLE`, and `test_scanner_flags_come_from_the_detector` fails if it stops catching any of
+  `ui.SCAN_EXPECTED`. Pinned and scroll-driven on wide screens, plays once when seen on phones, shown finished
+  with reduced motion or no JS. Works in every browser (JS, not the newer CSS scroll feature).
+- **Signed-in pages** (all three roles, site and demo), kept quiet on purpose: nothing loops, numbers count up
+  once, rings and bars draw in the first time they reach the screen.
+  - Students: a dark welcome band with live listings, best fit and unread counts over a campus photo; fit badges
+    with a small ring on job cards; the job page's fit ring, bars and checklist draw in; a campus photo as the
+    profile cover.
+  - Employers: welcome band with live listings, student views, candidates and unread; each listing's numbers are
+    a funnel (a bar under each shows it as a share of students who viewed); a stage pipeline on the Candidates
+    tab. The Messages tile on employer home was dropped since the band shows unread.
+  - Reviewers: a "desk" header with every queue as a big count (replaces the small tabs), a scam-risk meter on
+    each listing card, and J / K to move between cards.
+  - Everywhere: "/" jumps to the page's search box. Reduced motion turns all of it off.
 - **Other effects:** a light that follows the cursor around card borders, a slight cursor parallax on the hero
-  footage, one marquee of scam patterns, and "The teardown": a scam message that comes apart as you scroll, with
-  each red flag labelled (CSS scroll-driven animation; other browsers see it already taken apart).
+  footage, and one marquee of scam patterns.
 - **Shared blocks:** `ui.cine_hero()`, `ui.students_chapters()`, `ui.employer_hero()`, `ui.employer_gets()`,
-  `ui.employer_chapter()`, `ui.marquee_block()`, `ui.teardown_block()`, `ui.how_students()`, `ui.how_employers()`
+  `ui.employer_chapter()`, `ui.marquee_block()`, `ui.scan_block()`, `ui.how_students()`, `ui.how_employers()`
   feed both the site and the demo, so they can't drift. Links are passed in, so the demo points them at its router.
+  The signed-in pieces (`ui.hello_band`, `ui.kpi`, `ui.fit_badge`, `ui.desk`, `ui.risk_meter`) have JS twins in
+  `demo/app.js` with the same markup; change both.
 - To swap the footage: replace the files in `static/media/` (same names; `ui.CINE_FRAMES` is the frame count).
 
 ## Decisions and why

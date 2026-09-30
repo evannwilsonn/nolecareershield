@@ -98,8 +98,22 @@ def job_stats(conn, job: dict) -> dict:
 STATUS_PILL = {"approved": ("ok", "Live"), "pending": ("warn", "In review"), "rejected": ("bad", "Not approved"), "removed": ("bad", "Removed")}
 
 
-def _stat(n, label: str, sub: str = "") -> str:
-    return f'<div class="stat"><div class="n">{n}</div><div class="l">{esc(label)}</div>{f"<div class=s>{esc(sub)}</div>" if sub else ""}</div>'
+def _stat(n, label: str, sub: str = "", of: int | None = None) -> str:
+    """One number. With `of` (the students who viewed), a thin bar shows it as a share of them: a funnel."""
+    bar = f'<span class="fb" style="--f:{min(1, n / of):.3f}"><i></i></span>' if of else ('<span class="fb"><i></i></span>' if of == 0 else "")
+    return f'<div class="stat"><div class="n">{n}</div><div class="l">{esc(label)}</div>{f"<div class=s>{esc(sub)}</div>" if sub else ""}{bar}</div>'
+
+
+def _funnel(s: dict, subs: tuple = ("", "", "", ""), cls: str = "") -> str:
+    v = s["views"]
+    return (f'<div class="stats funnel {cls}">{_stat(v, "students viewed", subs[0], v)}{_stat(s["clicks"], "clicked Apply", subs[1], v)}'
+            f'{_stat(s["messaged"], "messaged you", subs[2], v)}{_stat(s["candidates"], "candidates", subs[3], v)}</div>')
+
+
+def _pipeline(cands: list[dict]) -> str:
+    cells = "".join(f'<div class="pstep{" has" if n else ""}"><span class="n">{n}</span><span class="l">{esc(label)}</span></div>'
+                    for label, n in ((v, sum(1 for c in cands if c["stage"] == k)) for k, v in STAGES))
+    return f'<div class="pipe" aria-label="Candidates by stage">{cells}</div>'
 
 
 @router.get("/hiring", response_class=HTMLResponse)
@@ -119,8 +133,7 @@ def overview(request: Request):
         rows_html += (f'<a class="card lift hjob" href="/hiring/{int(j["id"])}"><div class="row between" style="align-items:flex-start">'
                       f'<div style="min-width:0"><div class="job-title">{esc(j["title"])}</div><div class="job-co">{esc(j["company"])} · {esc(j["work_type"].title())}'
                       f'{" · " + esc(j["location"]) if j["location"] else ""}</div></div><span class="pill {tone}">{esc(label)}</span></div>'
-                      f'<div class="stats sm">{_stat(s["views"], "students viewed")}{_stat(s["clicks"], "clicked Apply")}'
-                      f'{_stat(s["messaged"], "messaged you")}{_stat(s["candidates"], "candidates")}</div></a>')
+                      f'{_funnel(s, cls="sm")}</a>')
     body = head + f'<div class="row" style="margin-bottom:14px"><a class="b" href="/post">{ui.icon("plus", 16)} Post a job</a></div>{rows_html}'
     return web.page(body, "Your listings", active="/hiring")
 
@@ -190,8 +203,7 @@ def listing(job_id: int, request: Request, tab: str = "matches"):
     body = (f'<a class="back" href="/hiring">← Your listings</a><div class="row between" style="align-items:flex-start;margin-top:6px">'
             f'<div><h2 class="page" style="margin:0">{esc(j["title"])}</h2><p class="job-co">{esc(j["company"])} · {esc(j["work_type"].title())}'
             f'{" · " + esc(j["location"]) if j["location"] else ""}</p></div><div class="row"><span class="pill {tone}">{esc(label)}</span>{view_link}</div></div>'
-            f'<div class="stats">{_stat(s["views"], "students viewed", week_note)}{_stat(s["clicks"], "clicked Apply", rate)}'
-            f'{_stat(s["messaged"], "messaged you")}{_stat(s["candidates"], "candidates", stage_bits)}</div>'
+            f'{_funnel(s, (week_note, rate, "", stage_bits))}'
             f'<p class="small faint">Views and Apply clicks are totals. You see who a student is only when they message you, you invite them, or you save them from matches.</p>'
             + _tabs(job_id, tab, len(cands)) + content)
     return web.page(body, j["title"], active="/hiring")
@@ -236,8 +248,8 @@ def _candidates_html(conn, j: dict, cands: list[dict]) -> str:
                    f'<div class="form-field"><label for="st{int(c["student_id"])}">Stage</label><select id="st{int(c["student_id"])}" name="stage">{opts}</select></div>'
                    f'<div class="form-field"><label for="nt{int(c["student_id"])}">Private note</label><input id="nt{int(c["student_id"])}" name="note" maxlength="{NOTE_MAX}" value="{esc(c["note"])}" placeholder="Only your team sees this"></div>'
                    f'<button class="b sm" type="submit">Update</button></form><div class="row" style="margin-top:8px">{msg}<a class="b sm ghost" href="/u/{int(c["student_id"])}">View profile</a></div></div>')
-    counts = " · ".join(f"{sum(1 for c in cands if c['stage'] == k)} {v.lower()}" for k, v in STAGES if any(c["stage"] == k for c in cands))
-    return f'<p class="small muted" style="margin-bottom:12px">{esc(counts)}. Stages and notes are private to your organization.</p>' + "".join(out)
+    return (_pipeline(cands) + '<p class="small muted" style="margin-bottom:12px">Stages and notes are private to your organization.</p>'
+            + "".join(out))
 
 
 @router.post("/hiring/{job_id}/save")

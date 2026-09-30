@@ -55,18 +55,22 @@ def counts(conn) -> dict:
     }
 
 
-def tabs(active: str) -> str:
+def tabs(active: str, title: str = "") -> str:
+    """The reviewer desk: the page title and every queue as a count (see ui.desk)."""
     with store.db() as conn:
         c = counts(conn)
-    items = [("/admin", "Listings", None), ("/admin/employers", "Employers", c["employers"]), ("/admin/posts", "Feed", c["posts"]),
-             ("/admin/messages", "Held messages", c["messages"]), ("/admin/reports", "Reports", c["reports"]),
-             ("/admin/checks", "Sent-in messages", c["checks"]), ("/admin/schools", "School requests", c["schools"])]
-    return '<div class="admin-tabs seg">' + "".join(
-        f'<a href="{h}"{" class=on" if h == active else ""}>{esc(t)}{f" · {n}" if n else ""}</a>' for h, t, n in items) + "</div>"
+        c["listings"] = conn.execute("SELECT COUNT(*) FROM jobs WHERE review_status = 'pending'").fetchone()[0]
+        c["live"] = conn.execute("SELECT COUNT(*) FROM jobs WHERE review_status = 'approved'").fetchone()[0]
+    items = [("/admin", "Listings", "listings"), ("/admin/employers", "Employers", "employers"), ("/admin/posts", "Feed", "posts"),
+             ("/admin/messages", "Held messages", "messages"), ("/admin/reports", "Reports", "reports"),
+             ("/admin/checks", "Sent-in messages", "checks"), ("/admin/schools", "School requests", "schools"),
+             ("/admin/live", "Live listings", "live")]
+    return ui.desk(title or next((t for h, t, _ in items if h == active), "Review queue"),
+                   [(h, t, c[k], h == active) for h, t, k in items])
 
 
 def _page(body: str, title: str, active: str) -> HTMLResponse:
-    return HTMLResponse(ui.shell(f'<h2 class="page">{esc(title)}</h2>' + tabs(active) + body, title=title, admin=True))
+    return HTMLResponse(ui.shell(tabs(active, title) + body, title=title, admin=True))
 
 
 def _domain_note(email: str, website: str) -> str:

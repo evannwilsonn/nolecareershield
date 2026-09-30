@@ -335,6 +335,10 @@ def _score_pill(j: dict) -> str:
     return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
 
 
+def _risk(j: dict) -> str:
+    return ui.risk_meter(int(j["score"]), j["scam_status"])
+
+
 def _teaser_card(j: dict) -> str:
     """What visitors see: title, company and category. Everything else is for signed-in students."""
     return (f'<a class="job teaser" href="/login?next=/job/{int(j["id"])}"><div class="job-top"><div><div class="job-title">{esc(j["title"])}</div>'
@@ -521,7 +525,7 @@ def landing(request: Request):
         return HTMLResponse(shell(profiles.dashboard(user), title="Home — NoleCareerShield", active="/", js=True))
     night, fair = ui.students_chapters()
     hero = (ui.cine_hero() + ui.marquee_block() + night
-            + ui.teardown_block('<a href="/check?kind=message">Check a message you got →</a>') + ui.how_students() + fair)
+            + ui.scan_block('<a href="/check">Check one you found →</a>') + ui.how_students() + fair)
     jobs = query_public()
     if jobs:
         with store.db() as conn:
@@ -612,7 +616,7 @@ def job_detail(job_id: int, request: Request):
         # Through /job/{id}/apply so the employer's Apply-click total counts it; the student lands on the same link.
         apply = f'<a class="apply-btn" href="/job/{int(j["id"])}/apply" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a>'
     elif j["contact"]:
-        apply = f'<p style="font-size:14px;color:var(--soft)">Contact: {esc(j["contact"])}</p>'
+        apply = f'<p style="font-size:14px;color:var(--muted)">Contact: {esc(j["contact"])}</p>'
 
     extras = after = trust_html = ""
     if viewer and j.get("employer_id"):
@@ -1472,19 +1476,20 @@ def admin_home(session: str | None = Cookie(default=None)):
             fl = "".join(
                 f'<div class="finding {esc(f["severity"])}"><b>{esc(f["title"])}</b><br>{esc(f["why"])}</div>'
                 for f in findings if f["severity"] in ("critical","warning"))
-            fl_block = f'<div style="margin:12px 0">{fl}</div>' if fl else '<p style="font-size:13px;color:var(--soft);margin:10px 0">No scam signals fired.</p>'
+            fl_block = f'<div style="margin:12px 0">{fl}</div>' if fl else '<p style="font-size:13px;color:var(--muted);margin:10px 0">No scam signals fired.</p>'
             loc = esc(j["location"]) if j["location"] else ""
-            url_line = f'<p style="font-size:13px;color:var(--soft);margin-top:8px;word-break:break-all">Apply: {esc(j["apply_url"])}</p>' if j["apply_url"] else ''
-            contact_line = f'<p style="font-size:13px;color:var(--soft);margin-top:4px">Contact: {esc(j["contact"])}</p>' if j["contact"] else ''
-            contact_line += (f'<p style="font-size:13px;color:var(--soft);margin-top:4px">Posted by: {esc(j["employer_email"])} (email confirmed)</p>'
+            url_line = f'<p style="font-size:13px;color:var(--muted);margin-top:8px;word-break:break-all">Apply: {esc(j["apply_url"])}</p>' if j["apply_url"] else ''
+            contact_line = f'<p style="font-size:13px;color:var(--muted);margin-top:4px">Contact: {esc(j["contact"])}</p>' if j["contact"] else ''
+            contact_line += (f'<p style="font-size:13px;color:var(--muted);margin-top:4px">Posted by: {esc(j["employer_email"])} (email confirmed)</p>'
                              if j.get("employer_email") else '')
             inner += f"""<div class="rev-card">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
 <div><div class="job-title">{esc(j['title'])}</div><div class="job-co">{esc(j['company'])}</div></div>
 {_score_pill(j)}</div>
+{_risk(j)}
 <div class="job-meta" style="margin-top:10px"><span class="chip">{esc(j['category'])}</span><span class="chip">{esc(j['work_type'].title())}</span>{f'<span class="chip">{loc}</span>' if loc else ''}</div>
 {fl_block}
-<div class="detail-desc" style="font-size:14px;max-height:140px;overflow:auto;background:var(--bg);padding:10px 12px;border-radius:6px">{esc(j['description'])}</div>
+<div class="detail-desc" style="font-size:14px;max-height:140px;overflow:auto;background:var(--sunk);padding:10px 12px;border-radius:8px">{esc(j['description'])}</div>
 {url_line}{contact_line}
 <div class="rev-actions">
 <form method="post" action="/admin/approve/{int(j['id'])}">{csrf}<button class="btn-approve" type="submit">Approve &amp; publish</button></form>
@@ -1500,10 +1505,9 @@ def admin_home(session: str | None = Cookie(default=None)):
         pct = round(100 * st["agree"] / st["n"])
         stats_html = (f'<p class="lead" style="font-size:13px">Detector vs your decisions: agreed on {pct}% of {st["n"]}. '
                       f'Missed {st["missed"]} listing(s) you rejected as bad; flagged {st["false_alarm"]} you approved.</p>')
-    body = (f'<h2 class="page">Review queue</h2>{admin_extra.tabs("/admin")}{stats_html}<p class="lead">{len(pending)} submission{"s" if len(pending)!=1 else ""} waiting. '
-            f'The scam score is advisory — you decide what publishes. '
-            f'<a href="/admin/live">Live listings</a></p><div class="lead" style="margin-top:-12px">'
-            f'<form method="post" action="/admin/logout" style="display:inline">{csrf}<button style="background:none;border:none;color:var(--garnet);text-decoration:underline;cursor:pointer;font:inherit">Sign out</button></form></div>{inner}')
+    body = (f'{admin_extra.tabs("/admin", "Review queue")}{stats_html}<p class="lead">{len(pending)} submission{"s" if len(pending)!=1 else ""} waiting. '
+            f'The scam score is advisory; you decide what publishes. '
+            f'<form method="post" action="/admin/logout" style="display:inline">{csrf}<button style="background:none;border:none;color:var(--accent-ink);text-decoration:underline;cursor:pointer;font:inherit">Sign out</button></form></p>{inner}')
     return shell(body, title="Review queue", admin=True)
 
 
@@ -1519,7 +1523,7 @@ def admin_live(session: str | None = Cookie(default=None)):
         inner = "".join(f"""<div class="rev-card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
 <div><div class="job-title">{esc(j['title'])}</div><div class="job-co">{esc(j['company'])} · posted {esc(j['created_at'][:10])}</div></div>
 <form method="post" action="/admin/remove/{int(j['id'])}" style="display:flex;gap:8px;flex-wrap:wrap">{csrf}<button class="btn-reject" type="submit" name="reason" value="scam">Remove: scam</button><button class="btn-reject" type="submit" name="reason" value="lead_gen">Remove: aggregator</button><button class="btn-reject" type="submit" name="reason" value="other">Remove: other</button></form></div></div>""" for j in live)
-    body = f'<h2 class="page">Live listings</h2><p class="lead">Removing a listing takes it off the board immediately. <a href="/admin">Back to queue</a></p>{inner}'
+    body = f'{admin_extra.tabs("/admin/live")}<p class="lead">Removing a listing takes it off the board immediately.</p>{inner}'
     return shell(body, title="Live listings", admin=True)
 
 
