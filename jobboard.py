@@ -377,6 +377,42 @@ def scam_block(j: dict, pill: str, risk: str) -> str:
     return f'<section class="js"><div class="js-top"><h3>Scam check</h3>{pill}</div>{risk}{banner}{items}</section>'
 
 
+QUICK_NOTE = ('<p class="qa-note">Quick apply makes job applications short and sweet. However, experts recommend '
+              'applying directly on company websites.</p>')
+
+
+def applied(conn, job_id: int, student_id: int) -> bool:
+    """Has this student applied: through Quick apply, or by opening the employer's own application link."""
+    return bool(conn.execute("SELECT 1 FROM applications WHERE job_id = ? AND student_id = ?", (job_id, student_id)).fetchone()
+                or conn.execute("SELECT 1 FROM job_apply_clicks WHERE job_id = ? AND user_id = ?", (job_id, student_id)).fetchone())
+
+
+def poster_block(conn, viewer: dict, j: dict, emp_ok: bool) -> str:
+    """Who posted the listing. Students who applied can message them; the email shows only if the poster chose that."""
+    if not j.get("employer_id"):
+        return ""
+    ep = store.employer_profile(conn, j["employer_id"]) or {}
+    name = (j.get("poster_name") or ep.get("contact_name") or "").strip()
+    title = (j.get("poster_title") or ep.get("contact_title") or "").strip()
+    if not name:
+        name = "The hiring team"
+    email = ""
+    if j.get("show_email"):
+        r = conn.execute("SELECT email FROM users WHERE id = ?", (j["employer_id"],)).fetchone()
+        if r:
+            email = f'<a class="jp-mail" href="mailto:{esc(r[0])}">{ui.icon("mail", 14)} {esc(r[0])}</a>'
+    first = "the hiring team" if name == "The hiring team" else esc(name.split(" ")[0])
+    act = ""
+    if viewer["role"] == "student" and emp_ok:
+        if applied(conn, int(j["id"]), viewer["id"]):
+            act = f'<a class="b" href="/messages/new?to={int(j["employer_id"])}&amp;job={int(j["id"])}">{ui.icon("chat", 16)} Message {first}</a>'
+        else:
+            act = f'<p class="jp-hint">You can message {first} once you apply.</p>'
+    who = esc(title + (" at " if title else "") + j["company"])
+    return (f'<section class="jp"><h3>Meet the poster</h3><div class="jp-row"><span class="jc-logo" aria-hidden="true">{ui.initials(name)}</span>'
+            f'<div class="jp-who"><b>{esc(name)}</b><span>{who}</span>{email}</div>{act}</div></section>')
+
+
 def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, next_: str, record: bool, saved: bool | None, full: bool = False) -> str:
     """One listing: header and actions, scam check, match and qualifications, at a glance, description."""
     jid = int(j["id"])
@@ -403,6 +439,8 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
                 banner = f'<div class="banner verified">✓ You applied {esc(web.ago(done["created_at"]))}. <a href="/applications">Your applications</a></div>'
             elif emp_ok:
                 apply = f'<a class="apply-btn" href="/job/{jid}/easy">Quick apply →</a>'
+                if j["apply_url"]:
+                    apply += f'<a class="b ghost" href="/job/{jid}/apply" target="_blank" rel="noopener noreferrer nofollow ugc">Apply on company site</a>'
             elif j["contact"]:
                 banner = f'<p style="font-size:14px;color:var(--muted)">Contact: {esc(j["contact"])}</p>'
         elif j["apply_url"]:
@@ -415,7 +453,6 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
     if saved is not None:
         acts += save_button(jid, saved, next_, label=True)
     if is_student and emp_ok:
-        acts += f'<a class="b ghost" href="/messages/new?to={int(j["employer_id"])}&amp;job={jid}">{ui.icon("chat", 16)} Message</a>'
         acts += network.follow_button(int(j["employer_id"]), following, next_=f"/job/{jid}", small=False)
     own = ""
     if viewer["role"] == "employer" and j.get("employer_id") == viewer["id"]:
@@ -428,5 +465,6 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
     h = "h1" if full else "h2"
     return (f'{back}<article class="jd"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">{ui.initials(j["company"])}</span><div class="jd-h"><{h} class="jd-title">{esc(j["title"])}</{h}>'
             f'<div class="jd-co">{co}</div><div class="jd-sub">{esc(sub)}</div>{f"<div class=jd-trust>{trust}</div>" if trust else ""}</div></div>'
-            f'{own}<div class="jd-acts">{acts}</div>{banner}{scam_block(j, pill(j), risk(j))}{match}{q}{glance(j)}'
+            f'{own}<div class="jd-acts">{acts}</div>{QUICK_NOTE if (is_student and easyapply.is_easy(j) and not done) else ""}{banner}'
+            f'{poster_block(conn, viewer, j, emp_ok)}{scam_block(j, pill(j), risk(j))}{match}{q}{glance(j)}'
             f'<section class="jd-desc"><h3>About the job</h3><div class="detail-desc">{esc(j["description"])}</div></section></article>')

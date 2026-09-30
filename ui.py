@@ -41,6 +41,7 @@ _ICON_PATHS = {
     "jobs": '<rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5v2"/><path d="M3.5 12.5h17"/>',
     "feed": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12.5h8M8 16h5"/>',
     "chat": '<path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z"/>',
+    "mail": '<rect x="3.5" y="5.5" width="17" height="13" rx="1.5"/><path d="m4 7 8 6 8-6"/>',
     "spark": '<path d="M12 3.5 13.8 10.2 20.5 12 13.8 13.8 12 20.5 10.2 13.8 3.5 12 10.2 10.2Z"/>',
     "file": '<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/><path d="M9.5 12h6M9.5 15.5h6"/>',
     "shield": '<path d="M12 3.5 19 6v6c0 4.5-3 7.5-7 8.5-4-1-7-4-7-8.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
@@ -739,6 +740,27 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 /* profile covers use the site's own photography */
 .pbanner.ph{height:150px;background:var(--ph) 50% 60%/cover no-repeat}
 .pbanner.ph::after{background:linear-gradient(180deg,rgba(18,13,12,0) 40%,rgba(18,13,12,.35));opacity:1}
+.rqs{margin-top:10px;font-size:13.5px}.rqs summary{cursor:pointer;font-weight:600}
+.rqs ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:5px}
+.rq{display:flex;align-items:center;gap:8px}.rq>span:first-child{width:18px;text-align:center;font-weight:700}
+.rq.met>span:first-child{color:var(--ok)}.rq.miss>span:first-child{color:var(--bad)}.rq.unk>span:first-child{color:var(--muted)}
+.rq em{font-style:normal;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--sunk);color:var(--muted);margin-left:auto}
+.pconn-sec{margin-top:26px}.pconn-sec h3 .faint{font-weight:500;font-size:13px;margin-left:6px}
+.pconns{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:8px}
+.pconn{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);color:inherit;text-decoration:none;min-width:0}
+.pconn:hover{border-color:var(--garnet);background:var(--sunk)}
+.pconn .av{flex:none;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--garnet);color:#fff;font-size:13px;font-weight:600}
+.pc-t{display:flex;flex-direction:column;min-width:0}.pc-t b,.pc-t small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-t small{color:var(--muted);font-size:12px}.pc-t em{font-style:normal;font-size:11px;color:var(--ok);font-weight:600}
+.mailbox{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+.mailbox .ml{border-right:1px solid var(--line);max-height:70vh;overflow:auto}
+.mailbox .mi{display:block;padding:12px 16px;border-bottom:1px solid var(--line);color:inherit;text-decoration:none}
+.mailbox .mi:hover{background:var(--sunk)}.mailbox .mi.on{background:var(--sunk);box-shadow:inset 3px 0 0 var(--garnet)}
+.mailbox .mi b{display:block;font-size:14px}.mailbox .mi.unread b::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--garnet);margin-right:7px;vertical-align:1px}
+.mailbox .mi small{color:var(--muted);font-size:12px}
+.mailbox .mv{padding:20px 24px;min-width:0}.mailbox .mv h2{margin:0 0 4px;font-size:20px}
+.mailbox .mv pre{white-space:pre-wrap;font:14px/1.6 var(--sans,inherit);margin:16px 0 0;overflow-wrap:anywhere}
+@media (max-width:760px){.mailbox{grid-template-columns:1fr}.mailbox .ml{border-right:0;max-height:none}.mailbox.open .ml{display:none}.mailbox:not(.open) .mv{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 """
 
@@ -816,13 +838,13 @@ def _nav_links(admin: bool) -> str:
 
 _STUDENT_NAV = [
     ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("spark", "/assistant", "Career assistant"),
-          ("feed", "/feed", "Feed"), ("chat", "/messages", "Messages"), ("people", "/network", "Network")]),
+          ("feed", "/feed", "Feed"), ("chat", "/messages", "Messages"), ("mail", "/emails", "Emails"), ("people", "/network", "Network")]),
     ("Career tools", [("send", "/applications", "Applications"), ("file", "/resume", "Resume studio"), ("shield", "/check", "Scam check")]),
     ("You", [("user", "/profile", "Profile")]),
 ]
 _EMPLOYER_NAV = [
     ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("feed", "/feed", "Feed"),
-          ("chat", "/messages", "Messages"), ("people", "/talent", "Find students")]),
+          ("chat", "/messages", "Messages"), ("mail", "/emails", "Emails"), ("people", "/talent", "Find students")]),
     ("Hiring", [("jobs", "/hiring", "Your listings"), ("plus", "/post", "Post a job"), ("shield", "/check", "Scam check")]),
     ("You", [("user", "/profile", "Company profile")]),
 ]
@@ -833,6 +855,7 @@ def _sidebar(active: str) -> str:
     groups = _STUDENT_NAV if user["role"] == "student" else _EMPLOYER_NAV
     unread = viewer_extra().get("unread", 0)
     reqs = viewer_extra().get("requests", 0)
+    mails = viewer_extra().get("emails", 0)
     out = []
     for grp, items in groups:
         if grp:
@@ -840,7 +863,8 @@ def _sidebar(active: str) -> str:
         for ic, href, label in items:
             on = ' class="on" aria-current="page"' if href == active else ""
             count = (f'<span class="count" aria-label="{unread} unread">{unread}</span>' if href == "/messages" and unread else
-                     f'<span class="count" aria-label="{reqs} connection requests">{reqs}</span>' if href == "/network" and reqs else "")
+                     f'<span class="count" aria-label="{reqs} connection requests">{reqs}</span>' if href == "/network" and reqs else
+                     f'<span class="count" aria-label="{mails} unread emails">{mails}</span>' if href == "/emails" and mails else "")
             out.append(f'<a href="{href}"{on}>{icon(ic)}<span>{esc(label)}</span>{count}</a>')
     tip = ('<div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. '
            '<a href="/check?kind=message">Check a message</a>.</div>')

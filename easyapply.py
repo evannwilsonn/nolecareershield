@@ -150,6 +150,7 @@ def _form_page(job: dict, p: dict, values: dict | None = None, error: str = "", 
     err = ui.banner("warning", error) if error else ""
     body = (f'<a class="back" href="/job/{int(job["id"])}">← {esc(job["title"])}</a>'
             + ui.page_head("Quick apply", f'{esc(job["title"])} at {esc(job["company"])}. Your profile fills in the basics; answer the questions and send.', num="Apply")
+            + '<p class="qa-note">Quick apply makes job applications short and sweet. However, experts recommend applying directly on company websites.</p>'
             + err
             + f'<form method="post" action="/job/{int(job["id"])}/easy" class="card easy">{ui.user_csrf_input()}'
               f'<div class="row" style="gap:12px;align-items:center;margin-bottom:14px">{web.person(p["display_name"], sub, "stu")}</div>'
@@ -248,7 +249,7 @@ def my_applications(request: Request, sent: int = 0, already: int = 0, withdrawn
         note = ui.banner("info", "Application withdrawn.")
     head = ui.page_head("Your applications", "Everything you sent with quick apply. Employers see it only while it's here.", num="Apply")
     if not apps:
-        return web.page(head + note + '<div class="empty">No applications yet. Listings with an <b>Quick apply</b> button let you apply without leaving the site. <a href="/jobs">Browse jobs</a></div>',
+        return web.page(head + note + '<div class="empty">No applications yet. Listings with a <b>Quick apply</b> button let you apply without leaving the site. <a href="/jobs">Browse jobs</a></div>',
                         "Applications", active="/applications")
     csrf = ui.user_csrf_input()
     cards = "".join(

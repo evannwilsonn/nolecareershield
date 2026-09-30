@@ -243,6 +243,8 @@ MAX_LEN = {
     "description": 8000,
     "apply_url": 2000,
     "contact": 200,
+    "poster_name": 80,
+    "poster_title": 80,
     "password": 200,
 }
 

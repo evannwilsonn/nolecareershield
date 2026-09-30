@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 # Everything that reads settings at import time, so each test gets a fresh copy.
 LOCAL_MODULES = ("security", "app", "ui", "web", "store", "accounts", "mailer", "ai", "matching", "resume_engine",
                  "profiles", "messaging", "msgcheck", "assistant", "resume_tools", "feed", "admin_extra", "profile_page", "hiring",
-                 "employer_page", "sso", "fit", "jobfit", "easyapply", "network", "quals", "jobboard", "css_feed", "css_jobs", "css_resume", "css_assist")
+                 "employer_page", "sso", "fit", "jobfit", "easyapply", "network", "quals", "emails", "jobboard", "css_feed", "css_jobs", "css_resume", "css_assist")
 
 
 @pytest.fixture()
@@ -79,7 +79,7 @@ def submit(client, **over):
     tok = csrf_from(client.get("/post").text)
     data = dict(title="Data Analyst", company="Acme", category="Other", work_type="remote",
                 location="", description="Analyze data using SQL.", apply_url="https://acme.com/j",
-                contact="", csrf=tok, website="")
+                contact="", csrf=tok, website="", direct="1")
     data.update(over)
     return client.post("/post", data=data)
 
@@ -405,7 +405,7 @@ def test_expired_form_keeps_what_was_typed_and_resubmits(client):
     assert r.status_code == 400 and "Keep Me" in r.text and "Body text" in r.text
     tok = csrf_from(r.text)
     ok = client.post("/post", data=dict(title="Keep Me", company="Co", work_type="remote", description="Body text",
-                                        csrf=tok))
+                                        csrf=tok, direct="1"))
     assert ok.status_code == 200 and client.appmod.pending_count() == 1
 
 
@@ -620,7 +620,7 @@ def test_next_parameter_cannot_leave_the_site(client):
 def _post_data(client, **over):
     tok = csrf_from(client.get("/post").text)
     d = dict(title="Data Analyst", company="Acme", category="Other", work_type="remote", location="",
-             description="Analyze data using SQL.", apply_url="https://acme.com/j", contact="", csrf=tok, website="")
+             description="Analyze data using SQL.", apply_url="https://acme.com/j", contact="", csrf=tok, website="", direct="1")
     d.update(over)
     return d
 

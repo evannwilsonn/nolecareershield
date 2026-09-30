@@ -438,6 +438,7 @@ def my_profile(request: Request, welcome: int = 0, imported: int = 0):
             elif request.query_params.get("imported") == "0":
                 top = ui.banner("info", "Your profile already has everything we could find in your resume.")
             body = profile_page.profile_html(p, owner=True, notice=top, completion=student_completion(p))
+            body += network.connections_section(conn, user["id"], user["id"])
         else:
             p = ensure_employer(conn, user["id"])
             if not p.get("company"):
@@ -491,9 +492,10 @@ def student_page(uid: int, request: Request):
             msg = f'<a class="b" href="/messages/new?to={uid}">{ui.icon("chat", 16)} Message</a>'
         elif user["role"] == "student" and user["id"] != uid:
             msg = network.profile_strip(conn, user["id"], uid, f"/u/{uid}")
+        conns = network.connections_section(conn, uid, user["id"])
     body = (f'<a class="back" href="{"/talent" if user["role"] == "employer" else "/feed"}">← Back</a>' +
             profile_page.profile_html(p, owner=user["id"] == uid, show_links=links, show_resume=resume, message_btn=msg,
-                                      show_sections=user["id"] == uid or user["role"] == "employer"))
+                                      show_sections=user["id"] == uid or user["role"] == "employer")) + conns
     return web.page(body, p["display_name"] or "Profile", active="")
 
 
@@ -566,6 +568,7 @@ def export(request: Request):
                 "connections": store.rows(conn, "SELECT user_a, user_b, requested_by, status, created_at FROM connections WHERE user_a = ? OR user_b = ?", (user["id"], user["id"])),
                 "follows": store.rows(conn, "SELECT employer_id, created_at FROM follows WHERE student_id = ?", (user["id"],)),
                 "saved_jobs": store.rows(conn, "SELECT job_id, created_at FROM saved_jobs WHERE user_id = ?", (user["id"],)),
+                "emails": store.rows(conn, "SELECT subject, body, sent_at, read_at FROM emails WHERE user_id = ? ORDER BY sent_at", (user["id"],)),
                 "assistant_chats": [dict(c, messages=store.rows(conn, "SELECT role, text, feedback, created_at FROM assistant_msgs WHERE chat_id = ? ORDER BY id", (c["id"],)))
                                     for c in store.rows(conn, "SELECT id, title, created_at, updated_at FROM assistant_chats WHERE user_id = ? ORDER BY id", (user["id"],))],
                 "job_listings": store.rows(conn, "SELECT title, company, description, review_status, created_at FROM jobs WHERE employer_id = ?", (user["id"],))}

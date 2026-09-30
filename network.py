@@ -182,6 +182,27 @@ def profile_strip(conn, viewer_id: int, other: int, next_: str) -> str:
     return f'<div class="row netstrip">{btn}{counts}</div>'
 
 
+def connections_section(conn, uid: int, viewer_id: int, limit: int = 8) -> str:
+    """The Connections card on a student's profile: count, mutual count and the most recent connections."""
+    ids = [i for i in connection_ids(conn, uid)
+           if (lambda p: p and p.get("display_name"))(store.student_profile(conn, i))]
+    own = uid == viewer_id
+    mutual = set() if own else set(mutual_ids(conn, viewer_id, uid))
+    if not ids:
+        body = ('<p class="small muted" style="margin:0">No connections yet. <a href="/network?tab=discover">Find classmates</a></p>'
+                if own else '<p class="small muted" style="margin:0">No connections yet.</p>')
+    else:
+        ids.sort(key=lambda i: (i not in mutual,))
+        people = "".join(
+            f'<a class="pconn" href="/u/{i}"><span class="av" aria-hidden="true">{ui.initials(web.display_name(conn, i, "student")[0])}</span>'
+            f'<span class="pc-t"><b>{esc(web.display_name(conn, i, "student")[0])}</b><small>{esc(web.display_name(conn, i, "student")[1])}</small>'
+            f'{"<em>Mutual</em>" if i in mutual else ""}</span></a>' for i in ids[:limit])
+        more = f'<a class="small" href="/network?tab=connections">See all {len(ids)}</a>' if own and len(ids) > limit else ""
+        body = f'<div class="pconns">{people}</div>{more}'
+    head = f'{web.plural(len(ids), "connection")}' + (f" · {len(mutual)} mutual" if mutual else "")
+    return f'<section class="psec pconn-sec"><h3 class="sec">Connections <span class="faint">{esc(head)}</span></h3><div class="card">{body}</div></section>'
+
+
 # ---------- pages ----------
 
 def _tab_bar(tab: str, counts: dict) -> str:

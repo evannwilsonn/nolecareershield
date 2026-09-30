@@ -155,6 +155,19 @@ def _evidence(f: dict) -> str:
     return " · ".join(bits + ([tail] if tail else []))
 
 
+def _reqs(f: dict) -> str:
+    """Which of the listing's requirements this student meets, item by item (employer view)."""
+    if not f["checklist"]:
+        return ""
+    mark = {"met": ("✓", "met", "Met"), "missing": ("⊘", "miss", "Not met"), "unknown": ("?", "unk", "Not on profile")}
+    rows = "".join(f'<li class="rq {mark[c["status"]][1]}"><span aria-hidden="true">{mark[c["status"]][0]}</span>'
+                   f'<span class="sr">{mark[c["status"]][2]}: </span>{esc(c["text"].replace(" (preferred)", ""))}'
+                   f'{"<em>Required</em>" if c.get("must") else ("<em class=p>Preferred</em>" if "(preferred)" in c["text"] else "")}</li>'
+                   for c in f["checklist"])
+    return (f'<details class="rqs"><summary>Meets {f["met"]} of {f["total"]} of your requirements</summary>'
+            f'<ul>{rows}</ul></details>')
+
+
 def _match_card(conn, jid: int, f: dict, p: dict, can_invite: bool, saved: bool) -> str:
     uid = int(p["user_id"])
     sub = " · ".join(x for x in (p["major"], p["grad_term"] and "Graduating " + p["grad_term"]) if x)
@@ -168,11 +181,11 @@ def _match_card(conn, jid: int, f: dict, p: dict, can_invite: bool, saved: bool)
     invite = (f'<a class="b sm" href="/messages/new?to={uid}&amp;job={jid}&amp;invite=1">{ui.icon("chat", 14)} Invite to apply</a>'
               if can_invite and p["allow_messages"] else "")
     return (f'<div class="card mcard"><div class="row between" style="align-items:flex-start;gap:12px">'
-            f'<div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:{f["score"]}"><b>{f["score"]}</b></div>'
+            f'<div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:{f["score"]}"><b>{f["score"]}%</b></div>'
             f'<div style="min-width:0">{web.person(p["display_name"], sub, "stu", f"/u/{uid}")}</div></div>'
-            f'<span class="pill {tone}">{esc(f["label"])}</span></div>'
+            f'<span class="pill {tone}">{f["percent"]}% match</span></div>'
             f'{headline}'
-            f'<p class="small" style="margin-top:8px">{_evidence(f)}</p><div class="chips" style="margin-top:8px">{parts}</div>'
+            f'<p class="small" style="margin-top:8px">{_evidence(f)}</p>{_reqs(f)}<div class="chips" style="margin-top:8px">{parts}</div>'
             f'<div class="row" style="margin-top:12px">{invite}{save}<a class="b sm ghost" href="/u/{uid}">View profile</a></div></div>')
 
 
@@ -243,10 +256,10 @@ def _candidates_html(conn, j: dict, cands: list[dict]) -> str:
                 f'{"Message" if c["source"] == "applied" else "Invite to apply"}</a>'
                 if j["review_status"] == "approved" and p["allow_messages"] else ""))
         out.append(f'<div class="card mcard" id="c{int(c["student_id"])}"><div class="row between" style="align-items:flex-start;gap:12px">'
-                   f'<div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:{f["score"]}"><b>{f["score"]}</b></div>'
+                   f'<div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:{f["score"]}"><b>{f["score"]}%</b></div>'
                    f'<div style="min-width:0">{web.person(p["display_name"], sub, "stu", "/u/" + str(int(c["student_id"])))}</div></div>'
                    f'<div class="row"><span class="pill {src_tone}">{esc(src)}</span><span class="small faint">{esc(web.ago(c["created_at"]))}</span></div></div>'
-                   f'<p class="small" style="margin-top:8px">{_evidence(f)}</p>'
+                   f'<p class="small" style="margin-top:8px">{_evidence(f)}</p>{_reqs(f)}'
                    + (easyapply.application_html(apps[c["student_id"]], p) if c["student_id"] in apps else "") +
                    f'<form method="post" action="/hiring/{int(j["id"])}/stage" class="cform">{csrf}<input type="hidden" name="student" value="{int(c["student_id"])}">'
                    f'<div class="form-field"><label for="st{int(c["student_id"])}">Stage</label><select id="st{int(c["student_id"])}" name="stage">{opts}</select></div>'

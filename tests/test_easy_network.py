@@ -117,7 +117,7 @@ def test_easy_apply_questions_are_validated_and_scanned(net):
     def post(**kw):
         import app as _a
         tok = _a.make_csrf("form")
-        return emp.post("/post", data={**base, "csrf": tok, **kw})
+        return emp.post("/post", data={**base, "csrf": tok, "direct": "1", **kw})
     r = post(easy_apply="1", qtext=["What is your SSN?", ""], qkind=["short", "short"], qreq=["1", "0"])
     assert r.status_code == 400 and "can't ask for SSNs" in r.text
     r = post(easy_apply="1", qtext=["Send your bank account number"], qkind=["short"], qreq=["0"])

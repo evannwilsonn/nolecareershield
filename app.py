@@ -81,6 +81,7 @@ import feed
 import admin_extra
 import hiring
 import easyapply
+import emails
 import quals
 import network
 import employer_page
@@ -141,7 +142,9 @@ WORK_TYPES = matching.WORK_TYPES
 # Added after the first release; existing databases are migrated in place.
 _EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_at": "TEXT", "employer_id": "INTEGER",
                   "easy_apply": "INTEGER NOT NULL DEFAULT 0", "questions": "TEXT NOT NULL DEFAULT '[]'",
-                  "requirements": "TEXT NOT NULL DEFAULT '[]'"}
+                  "requirements": "TEXT NOT NULL DEFAULT '[]'",
+                  "poster_name": "TEXT NOT NULL DEFAULT ''", "poster_title": "TEXT NOT NULL DEFAULT ''",
+                  "show_email": "INTEGER NOT NULL DEFAULT 0"}
 REVIEW_REASONS = ["scam", "lead_gen", "other"]
 
 
@@ -223,8 +226,9 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             INSERT INTO jobs (title, company, category, work_type, location,
                               description, apply_url, contact, score, band,
                               scam_status, review_status, findings_json, created_at,
-                              ruleset_version, employer_id, easy_apply, questions, requirements)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                              ruleset_version, employer_id, easy_apply, questions, requirements,
+                              poster_name, poster_title, show_email)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data["title"], data["company"], data.get("category","Other"),
             data["work_type"], data.get("location",""), data["description"],
@@ -234,6 +238,7 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             result.ruleset_version, employer_id,
             1 if data.get("easy_apply") else 0, json.dumps(data.get("questions") or []),
             json.dumps(data.get("requirements") or []),
+            data.get("poster_name", ""), data.get("poster_title", ""), 1 if data.get("show_email") else 0,
         ))
         db.commit()
         job_id = cur.lastrowid
@@ -376,6 +381,7 @@ async def security_headers(request: Request, call_next):
     if user and not request.url.path.startswith(("/static/", "/api/")):
         with store.db() as conn:
             extra["unread"] = store.unread_count(conn, user["id"])
+            extra["emails"] = emails.unread(conn, user["id"])
             if user["role"] == "student":
                 extra["requests"] = network.incoming_count(conn, user["id"])
     marker = _viewer.set({"user": user, "token": raw if user else None, "extra": extra})
@@ -629,6 +635,12 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
 <div class="form-field"><label for="f-description">Description</label><p class="hint">The full posting — responsibilities, requirements, and pay if you can share it.</p><textarea id="f-description" name="description" required maxlength="8000">{val('description')}</textarea></div>
 <div class="form-field"><label for="f-apply_url">Apply URL</label><p class="hint">Where applicants should go. The scanner checks this link too.</p><input id="f-apply_url" name="apply_url" maxlength="2000" placeholder="https://..." value="{val('apply_url')}"></div>
 <div class="form-field"><label for="f-contact">Contact (optional)</label><p class="hint">Shown publicly if approved. Use a role or company address, not a personal one.</p><input id="f-contact" name="contact" maxlength="200" placeholder="careers@company.com" value="{val('contact')}"></div>
+<fieldset class="form-field easyset"><legend>Who's posting</legend>
+<p class="hint">Your name appears on the listing so students know who they'd be talking to. Students who apply can message you on NoleCareerShield.</p>
+<div class="form-field"><label for="f-poster_name">Your name</label><input id="f-poster_name" name="poster_name" maxlength="80" placeholder="e.g. Dana Whitfield" value="{val('poster_name')}"></div>
+<div class="form-field"><label for="f-poster_title">Your job title</label><input id="f-poster_title" name="poster_title" maxlength="80" placeholder="e.g. Campus Recruiting Manager" value="{val('poster_title')}"></div>
+<label class="toggle" for="f-show_email"><input id="f-show_email" type="checkbox" name="show_email" value="1"{" checked" if v.get("show_email") in (1, True, "1", "on") else ""}><span><b>Show my email on this listing.</b> Off by default. Students can always message you here after they apply.</span></label>
+<label class="toggle" for="f-direct" style="margin-top:12px"><input id="f-direct" type="checkbox" name="direct" value="1" required{" checked" if v.get("direct") in (1, True, "1", "on") else ""}><span><b>I work directly for this company.</b> Staffing agencies and second- or third-party recruiters can't post jobs for a client.</span></label></fieldset>
 <fieldset class="form-field easyset"><legend>Qualifications</legend>
 <p class="hint">Choose what applicants need. Students see which ones they meet, and you see the same on every applicant. Skills, majors, certifications, class standing, graduation year and GPA only. Up to {quals.MAX_ITEMS}.</p>{r_rows}</fieldset>
 <fieldset class="form-field easyset"><legend>Quick apply</legend>
@@ -657,8 +669,32 @@ def _clean_quals(raw) -> list[dict]:
         raise ValidationError(str(e))
 
 
-def _clean_listing(f: dict) -> dict:
+# Only the hiring organization may post its jobs: no staffing agencies, no second- or third-party recruiters.
+_RECRUITER = re.compile(r"\b(on behalf of (?:our|a|my|an?) (?:valued |esteemed )?client|our client(?:'s)?|for (?:a|our) client|"
+                        r"staffing (?:agency|firm|company|partner)|recruit(?:ing|ment) (?:agency|firm|company|partner)|"
+                        r"(?:third|3rd|second|2nd)[- ]party recruit\w*|headhunter|placement (?:agency|firm)|talent acquisition (?:agency|firm)|"
+                        r"we are a (?:recruit\w*|staffing) )", re.IGNORECASE)
+RECRUITER_MSG = ("Only the company that is hiring can post its jobs here. Staffing agencies and second- or third-party "
+                 "recruiters can't post on behalf of a client.")
+_CO_SUFFIX = re.compile(r"\b(inc|llc|l\.l\.c|ltd|co|corp|corporation|company|the|group|pllc|pa|plc)\b\.?", re.IGNORECASE)
+
+
+def _co_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", _CO_SUFFIX.sub("", (name or "").lower()))
+
+
+def company_mismatch(employer_company: str, posted: str) -> bool:
+    """True when an employer tries to post for an organization other than their own."""
+    a, b = _co_key(employer_company), _co_key(posted)
+    return bool(a and b and a not in b and b not in a)
+
+
+def _clean_listing(f: dict, form: bool = False) -> dict:
     """Validate the fields of a listing. Raises ValidationError with a message fit to show the poster."""
+    if form and f.get("direct") not in ("1", "on", 1, True):
+        raise ValidationError("Confirm that you work directly for this company. " + RECRUITER_MSG)
+    if _RECRUITER.search(" ".join(str(f.get(k) or "") for k in ("title", "company", "description", "poster_title"))):
+        raise ValidationError(RECRUITER_MSG)
     return {
         "title": clean_text(f.get("title", ""), "title"),
         "company": clean_text(f.get("company", ""), "company"),
@@ -671,6 +707,9 @@ def _clean_listing(f: dict) -> dict:
         "easy_apply": 1 if f.get("easy_apply") in (1, True, "1", "on", "yes") else 0,
         "questions": _clean_questions(f.get("questions")),
         "requirements": _clean_quals(f.get("requirements")),
+        "poster_name": clean_text(f.get("poster_name", ""), "poster_name", required=False),
+        "poster_title": clean_text(f.get("poster_title", ""), "poster_title", required=False),
+        "show_email": 1 if f.get("show_email") in (1, True, "1", "on", "yes") else 0,
     }
 
 
@@ -691,13 +730,15 @@ def post_submit(
     work_type: str = Form(...), location: str = Form(""), description: str = Form(...),
     apply_url: str = Form(""), contact: str = Form(""),
     csrf: str = Form(""), website: str = Form(""),
+    poster_name: str = Form(""), poster_title: str = Form(""), show_email: str = Form(""), direct: str = Form(""),
     rkind: list[str] = Form([]), rlabel: list[str] = Form([]), rmust: list[str] = Form([]),
     easy_apply: str = Form(""), qtext: list[str] = Form([]), qkind: list[str] = Form([]), qreq: list[str] = Form([]),
 ):
     enforce_rate_limit(request, submit_limiter, "post_submit")
     typed = {"title": title, "company": company, "category": category, "work_type": work_type,
              "location": location, "description": description, "apply_url": apply_url, "contact": contact,
-             "easy_apply": easy_apply,
+             "easy_apply": easy_apply, "poster_name": poster_name, "poster_title": poster_title,
+             "show_email": show_email, "direct": direct,
              "requirements": [{"kind": (rkind[i] if i < len(rkind) else "skill"), "label": t, "must": (rmust[i] if i < len(rmust) else "0") == "1"}
                               for i, t in enumerate(rlabel[:quals.MAX_ITEMS])],
              "questions": [{"q": t, "kind": (qkind[i] if i < len(qkind) else "short"), "required": (qreq[i] if i < len(qreq) else "0") == "1"}
@@ -710,7 +751,7 @@ def post_submit(
         return HTMLResponse(shell('<h2 class="page">Submitted for review</h2><div class="banner info">Thanks, your listing has been submitted.</div>'))
 
     try:
-        clean = _clean_listing(typed)
+        clean = _clean_listing(typed, form=True)
     except ValidationError as e:
         return _post_form_page(typed, str(e), status=400)
 
@@ -725,6 +766,11 @@ def post_submit(
                         max_age=accounts.DRAFT_TTL, path="/")
         return resp
 
+    with store.db() as conn:
+        ep = store.employer_profile(conn, user["id"]) or {}
+    if company_mismatch(ep.get("company", ""), clean["company"]):
+        return _post_form_page(typed, f"You can only post jobs for your own organization ({ep['company']}). " + RECRUITER_MSG, status=400)
+    _poster_defaults(clean, ep)
     add_job(clean, employer_id=user["id"])
     background.add_task(_mail_listing_received, user["email"], clean["title"])
     # Same confirmation regardless of scam score: the submitter is not told the internal verdict
@@ -732,10 +778,12 @@ def post_submit(
     return HTMLResponse(shell(_SUBMITTED_BODY))
 
 
+mailer.copy_hook = emails.keep
+
 # ---------- student network ----------
 
 for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, assistant.router, resume_tools.router,
-           feed.router, admin_extra.router, hiring.router, easyapply.router, network.router, jobboard.router):
+           feed.router, admin_extra.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router):
     app.include_router(_r)
 
 
@@ -965,6 +1013,14 @@ def _clear_draft_cookie(resp):
     return resp
 
 
+def _poster_defaults(clean: dict, ep: dict) -> None:
+    """A listing always names the person who posted it; fall back to the organization's contact."""
+    if not clean.get("poster_name"):
+        clean["poster_name"] = ep.get("contact_name", "")
+    if not clean.get("poster_title"):
+        clean["poster_title"] = ep.get("contact_title", "")
+
+
 def _resume_draft(request: Request, user: dict, background: BackgroundTasks) -> bool:
     """If this browser typed a listing before logging in, send it now. Returns True if a listing was submitted."""
     with closing(sqlite3.connect(DB_PATH)) as db:
@@ -975,6 +1031,11 @@ def _resume_draft(request: Request, user: dict, background: BackgroundTasks) -> 
         clean = _clean_listing(data)
     except ValidationError:
         return False
+    with store.db() as conn:
+        ep = store.employer_profile(conn, user["id"]) or {}
+    if company_mismatch(ep.get("company", ""), clean["company"]):
+        return False
+    _poster_defaults(clean, ep)
     add_job(clean, employer_id=user["id"])
     background.add_task(_mail_listing_received, user["email"], clean["title"])
     return True

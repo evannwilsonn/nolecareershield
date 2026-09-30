@@ -280,6 +280,16 @@ CREATE TABLE IF NOT EXISTS follows (
 );
 CREATE INDEX IF NOT EXISTS idx_follow_emp ON follows (employer_id);
 -- Jobs a student bookmarked on the board (jobboard.py). Private to the student; gone with the listing or the account.
+-- In-site copy of every email sent to an account holder (emails.py). Sign-in links are redacted.
+CREATE TABLE IF NOT EXISTS emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    sent_at REAL NOT NULL,
+    read_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_emails_user ON emails (user_id, sent_at);
 CREATE TABLE IF NOT EXISTS saved_jobs (
     user_id INTEGER NOT NULL,
     job_id INTEGER NOT NULL,
@@ -347,6 +357,8 @@ def purge(conn) -> None:
     for t in ("job_views", "job_apply_clicks", "candidates", "applications", "saved_jobs"):
         conn.execute(f"DELETE FROM {t} WHERE job_id NOT IN (SELECT id FROM jobs)")
     conn.execute("DELETE FROM job_views WHERE day < ?", (time.strftime("%Y-%m-%d", time.gmtime(now - 180 * 86400)),))
+    # In-site email copies are kept for a year.
+    conn.execute("DELETE FROM emails WHERE sent_at < ?", (now - 365 * 86400,))
     # Assistant chats go after 180 days without a new message.
     conn.execute("DELETE FROM assistant_chats WHERE updated_at < ?", (now - 180 * 86400,))
     conn.execute("DELETE FROM assistant_msgs WHERE chat_id NOT IN (SELECT id FROM assistant_chats)")
@@ -382,6 +394,7 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM connections WHERE user_a = ? OR user_b = ?", (user_id, user_id))
     conn.execute("DELETE FROM follows WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
     conn.execute("DELETE FROM saved_jobs WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM emails WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_msgs WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_chats WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))

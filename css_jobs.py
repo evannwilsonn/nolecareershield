@@ -129,4 +129,12 @@ CSS = """
   .jb-dd.sort{position:relative}.jb-dd.sort .jb-menu{position:absolute;left:auto;right:0;max-width:calc(100vw - 32px)}
   .jd-head{gap:11px}.jc-logo.lg{width:46px;height:46px}
 }
+.qa-note{margin:10px 0 0;padding:10px 14px;border-left:3px solid var(--gold,#c99a06);background:var(--sunk);border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.5;color:var(--muted)}
+.jp{margin:18px 0;padding:16px 18px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.jp h3{margin:0 0 12px;font-size:15px}
+.jp-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.jp-who{display:flex;flex-direction:column;gap:2px;flex:1;min-width:180px}
+.jp-who span{font-size:13.5px;color:var(--muted)}
+.jp-mail{font-size:13.5px;display:inline-flex;align-items:center;gap:5px}
+.jp-hint{margin:0;font-size:13px;color:var(--muted)}
 """

@@ -27,6 +27,7 @@ from email.message import EmailMessage
 log = logging.getLogger("nolecareershield.mail")
 
 outbox: list[dict] = []          # development / tests only
+copy_hook = None                 # set by the app: keeps an in-site copy for account holders (emails.py)
 
 
 def smtp_configured() -> bool:
@@ -35,6 +36,11 @@ def smtp_configured() -> bool:
 
 def send(to: str, subject: str, body: str) -> None:
     """Send one message. Never raises: a mail outage must not break a page or reveal whether an account exists."""
+    if copy_hook:
+        try:
+            copy_hook(to, subject, body)
+        except Exception:                  # noqa: BLE001 - the copy is a convenience, never a reason to fail
+            log.exception("could not keep an in-site copy")
     try:
         if not smtp_configured():
             entry = {"to": to, "subject": subject, "body": body, "at": time.time()}
