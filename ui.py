@@ -436,6 +436,18 @@ table.t td{padding:10px;border-bottom:1px solid var(--whisper);vertical-align:to
 .checklist .unknown .st{background:var(--sand);color:var(--muted)}
 .checklist .ev{display:block;font-size:12.5px;color:var(--muted)}
 @media(max-width:620px){.fit{grid-template-columns:1fr}.fitparts .cat{grid-template-columns:120px 1fr 40px}}
+/* ---------- hiring ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0 8px}
+.stat{background:var(--surface);border-radius:12px;box-shadow:0 0 0 1px var(--whisper) inset;padding:12px 14px}
+.stat .n{font-family:var(--serif);font-size:28px;font-weight:500;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat .l{font-size:13px;color:var(--ink-2)}.stat .s{font-size:12px;color:var(--faint);margin-top:2px}
+.stats.sm{margin:12px 0 0}.stats.sm .stat{padding:8px 10px;background:var(--sunk)}.stats.sm .n{font-size:20px}
+a.hjob{display:block;text-decoration:none;color:inherit;margin-bottom:10px}
+.mcard{margin-bottom:10px}.mcard .chips .chip{font-size:12px}
+.ring.sm{width:52px;height:52px}.ring.sm b{width:40px;height:40px;font-size:17px}
+.cform{display:grid;grid-template-columns:200px minmax(0,1fr) auto;gap:10px;align-items:end;margin-top:10px}
+.cform .form-field{margin:0}
+@media(max-width:620px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.cform{grid-template-columns:1fr}}
 /* ---------- footer ---------- */
 footer{color:var(--faint);font-size:12px;border-top:1px solid var(--whisper);margin-top:48px;padding:22px;text-align:center;line-height:1.7}
 footer .tm{display:block;margin-top:6px;font-size:11.5px}
@@ -521,7 +533,7 @@ _STUDENT_NAV = [
 _EMPLOYER_NAV = [
     ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("feed", "/feed", "Feed"),
           ("chat", "/messages", "Messages"), ("people", "/talent", "Find students")]),
-    ("Hiring", [("plus", "/post", "Post a job"), ("shield", "/check", "Scam check")]),
+    ("Hiring", [("jobs", "/hiring", "Your listings"), ("plus", "/post", "Post a job"), ("shield", "/check", "Scam check")]),
     ("You", [("user", "/profile", "Company profile")]),
 ]
 

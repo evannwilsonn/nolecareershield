@@ -61,7 +61,7 @@ const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [],
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: []};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -118,6 +118,10 @@ function reset() {
   addMsg(c1, 4, "Hi Jordan, yes it is! Could you do a 20-minute video call Thursday afternoon? You can also apply on our careers page so HR has your resume.", t - 3000e3);
   const c2 = convo(j.id, 5, 0); addMsg(c2, 5, "Hello! We have a remote assistant opening. Text me on WhatsApp at 850-555-0142 so we can move faster, HR is swamped this week.", t - 1800e3);
   c1.messages.forEach(x => x.read = true); c2.messages.forEach(x => x.read = false);
+  const jc = S.candidates.find(x => x.job === 1 && x.student === j.id); if (jc) { jc.stage = "interviewing"; jc.note = "SQL reports for the county. Video call Thursday."; }
+  // Listing stats: students who opened the Garnet Analytics listing and pressed Apply (totals only).
+  for (let k = 0; k < 23; k++) recordView(1, 1000 + k);
+  for (let k = 0; k < 7; k++) (S.clicks[1] = S.clicks[1] || new Set()).add(1000 + k);
   // A held message only reviewers see.
   const c3 = convo(m.id, 7, 0); addMsg(c3, 7, "Congratulations, you have been pre-selected for a remote payments assistant position. You will receive a check to buy equipment from our approved vendor; deposit it and send the balance by Zelle.", t - 900e3);
 
@@ -143,7 +147,10 @@ function addMsg(c, from, body, at) {
   const r = N.check(body);
   const m = {id: S.convos.reduce((n, x) => n + x.messages.length, 0) + 1 + Math.floor(Math.random() * 1e6), from, body, at: at || NOW(), band: r.band,
     findings: r.findings.slice(0, 5).map(f => f.title), status: r.band === "block" ? "held" : "delivered", read: false};
-  c.messages.push(m); c.last = m.at; c.hidden = {}; return m;
+  c.messages.push(m); c.last = m.at; c.hidden = {};
+  // A delivered message about a listing puts the student in that listing's candidate tracker.
+  if (m.status === "delivered" && c.job) addCandidate(c.job, c.student, c.employer, from === c.student ? "messaged" : "invited");
+  return m;
 }
 function post(author, kind, body, link, status, at) {
   const scan = N.check(body + (link ? "\n" + link : ""));
@@ -194,7 +201,7 @@ function jobCard(j, match) {
 const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Job assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"]]],
   ["Career tools", [["file", "resume", "Resume studio"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Profile"]]]];
 const EMPLOYER_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["people", "talent", "Find students"]]],
-  ["Hiring", [["plus", "post", "Post a job"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Company profile"]]]];
+  ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Company profile"]]]];
 function sidebar(active) {
   const n = unread(me().id), out = [];
   for (const [grp, items] of (isStudent() ? STUDENT_NAV : EMPLOYER_NAV)) {
@@ -209,7 +216,7 @@ function nav() {
   if (me()) $("#navActions").innerHTML = extra + `<span class="who">${esc(me().email)}</span><button class="ghostbtn" type="button" data-do="logout">Log out</button>` + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "");
   else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="jobs">Browse jobs</a><a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="login">Log in</a><a class="btn" href="#" data-go="post">Post a job</a>';
 }
-const APP_PAGES = {home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages",
+const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages",
   resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", u: "", company: "", about: "", privacy: "", report: ""};
 
 // ---------------- pages ----------------
@@ -266,7 +273,7 @@ function employerHome() {
   return `<div class="page-head"><div class="num">Employer</div><h1>${hello}, ${esc(p.company)}.</h1><p>Post roles for FSU students, answer messages, and share opportunities on the feed.</p></div>
 <div class="bento"><div class="tile w4 ${tile[0]}"><h3>${esc(tile[1])}</h3><p>${esc(tile[2])}</p><div class="foot">${tile[3]}</div></div>
 <div class="tile w2 goldt"><h3>${icon("chat")}Messages</h3><div class="big">${n}</div><p>unread</p><div class="foot"><a class="b sm sec" href="#" data-go="messages">Open messages</a></div></div>
-<div class="tile w2"><h3>${icon("jobs")}Live listings</h3><div class="big">${mine.filter(j => j.review_status === "approved").length}</div><p>${mine.filter(j => j.review_status === "pending").length} waiting for review</p><div class="foot"><a class="b sm" href="#" data-go="post">Post a job</a></div></div>
+<div class="tile w2"><h3>${icon("jobs")}Live listings</h3><div class="big">${mine.filter(j => j.review_status === "approved").length}</div><p>${mine.filter(j => j.review_status === "pending").length} waiting for review</p><div class="foot row"><a class="b sm" href="#" data-go="hiring">Matches &amp; stats</a><a class="b sm sec" href="#" data-go="post">Post a job</a></div></div>
 <div class="tile w2"><h3>${icon("people")}Find students</h3><p>Search students who opted in, by skill or major.</p><div class="foot"><a class="b sm sec" href="#" data-go="talent">Open directory</a></div></div>
 <div class="tile w2"><h3>${icon("feed")}FSU feed</h3><p>Share internships, info sessions and advice. Posts must be relevant to FSU students.</p><div class="foot"><a class="b sm sec" href="#" data-go="feed">Open the feed</a></div></div></div>`;
 }
@@ -302,12 +309,14 @@ P.job = () => {
   const fh = j.scam_status !== "clear" ? `<div style="margin:20px 0"><b style="font-size:14px">Signals to be aware of:</b>${j.findings.filter(f => f.severity !== "note").map(f => `<div class="finding ${esc(f.severity)}"><b>${esc(f.title)}</b><br>${esc(f.why)}</div>`).join("")}</div>` : "";
   let extras = "", apply, after = "";
   if (isStudent()) {
+    recordView(j.id, me().id);
     const p = SP(me().id), btns = [`<a class="b sec" href="#" data-do="to-tailor">${icon("file", 16)} Tailor my resume</a>`];
     if (j.employer_id && approvedEmp(j.employer_id)) { btns.unshift(`<a class="b ghost" href="#" data-go="newmsg?to=${j.employer_id}&amp;job=${j.id}">${icon("chat", 16)} Message the employer</a>`); btns.push(`<a class="b sec" href="#" data-go="company?id=${j.employer_id}">Company profile</a>`); }
     extras = fitPanel(j, p) + `<div class="row" style="margin:14px 0">${btns.join("")}</div>`;
     after = tailorPanel(j, p);
-    apply = `<a class="apply-btn" href="${esc(j.apply_url)}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a><p class="fine" style="text-align:left">Demo links go to example addresses.</p>`;
-  } else apply = `<div class="card" style="background:var(--info-tint);color:var(--info);border:none"><b>Log in to apply.</b> Apply links are shown to signed-in FSU students only, which keeps scrapers and scammers away from them.<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="login?role=student&amp;next=job-${j.id}">Student log in</a><a class="b sm sec" href="#" data-go="signup?role=student&amp;next=job-${j.id}">Create student account</a></div></div>`;
+    apply = `<a class="apply-btn" href="${esc(j.apply_url)}" data-apply="${j.id}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a><p class="fine" style="text-align:left">Demo links go to example addresses.</p>`;
+  } else if (isEmployer() && j.employer_id === me().id) { extras = `<div class="banner info">This is your listing. <a href="#" data-go="hjob?id=${j.id}">See ranked student matches, candidates and stats →</a></div>`; apply = ""; }
+  else apply = `<div class="card" style="background:var(--info-tint);color:var(--info);border:none"><b>Log in to apply.</b> Apply links are shown to signed-in FSU students only, which keeps scrapers and scammers away from them.<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="login?role=student&amp;next=job-${j.id}">Student log in</a><a class="b sm sec" href="#" data-go="signup?role=student&amp;next=job-${j.id}">Create student account</a></div></div>`;
   return `<a class="back" href="#" data-go="jobs">← All jobs</a>${ban}<h2 class="page" style="margin-top:8px">${esc(j.title)}</h2><p class="job-co" style="font-size:16px">${esc(j.company)}</p>
 <div class="job-meta" style="margin:14px 0"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>${fh}${extras}<div class="detail-desc">${esc(j.description)}</div>${apply}${after}`;
 };
@@ -463,7 +472,7 @@ P.newmsg = () => {
   const [ok, why] = canStart(me(), to);
   if (!ok) return pageHead("New message") + banner("info", why) + '<a class="b sec" href="#" data-go="messages">Messages</a>';
   return pageHead("New message", "", "Messages") + `<div class="card" style="max-width:640px">${person(to)}${job ? `<p class="small muted" style="margin-top:8px">About: ${esc(job.title)}</p>` : ""}
-<form id="newMsgForm" data-to="${to}" data-job="${job ? job.id : 0}" style="margin-top:12px"><div class="form-field"><label for="n-body">Message</label><textarea id="n-body" name="body" required maxlength="4000">${isStudent() && job ? esc(`Hi! I'm interested in the ${job.title} role. `) : ""}</textarea></div><button class="submit-btn" type="submit">Send</button></form></div>`;
+<form id="newMsgForm" data-to="${to}" data-job="${job ? job.id : 0}" style="margin-top:12px"><div class="form-field"><label for="n-body">Message</label><textarea id="n-body" name="body" required maxlength="4000">${isStudent() && job ? esc(`Hi! I'm interested in the ${job.title} role. `) : isEmployer() && job && S.route.q.invite ? esc(inviteText(me().id, SP(to), job)) : ""}</textarea></div><button class="submit-btn" type="submit">Send</button></form></div>`;
 };
 function canStart(sender, to) {
   const u = U(to); if (!u || to === sender.id) return [false, "That account isn't available."];
@@ -856,6 +865,79 @@ async function readResumeFile(file) {
   return text;
 }
 
+// ---------------- employer hiring tools, same as hiring.py ----------------
+const STAGES = [["new", "New"], ["reviewing", "Reviewing"], ["interviewing", "Interviewing"], ["offer", "Offer"], ["hired", "Hired"], ["declined", "Not moving forward"]];
+const STAGE_NAME = Object.fromEntries(STAGES);
+const SOURCES = {messaged: ["Messaged you", "accent"], invited: ["You invited", "gold"], saved: ["Saved from matches", ""]};
+const JOB_STATUS = {approved: ["ok", "Live"], pending: ["warn", "In review"], rejected: ["bad", "Not approved"], removed: ["bad", "Removed"]};
+function addCandidate(job, student, employer, source) {
+  if (!job || S.candidates.some(c => c.job === job && c.student === student)) return false;
+  S.candidates.push({job, student, employer, stage: "new", source, note: "", at: NOW(), updated: NOW()}); return true;
+}
+const recordView = (jid, uid) => { (S.views[jid] = S.views[jid] || new Set()).add(uid); };
+function jobStats(j) {
+  const cands = S.candidates.filter(c => c.job === j.id), stages = {};
+  cands.forEach(c => { stages[c.stage] = (stages[c.stage] || 0) + 1; });
+  return {views: (S.views[j.id] || new Set()).size, clicks: (S.clicks[j.id] || new Set()).size, candidates: cands.length, stages,
+    messaged: S.convos.filter(c => c.job === j.id && c.employer === j.employer_id && c.messages.length && c.messages[0].from === c.student).length};
+}
+function rankedMatches(j) {
+  return Object.keys(S.students).map(Number).filter(id => { const p = SP(id); return U(id) && p.visible && studentReady(p) && ((p.skills || []).length || p.resume_text || (p.items || []).length); })
+    .map(id => [N.fitScore(j, SP(id)), SP(id), id]).sort((a, b) => b[0].score - a[0].score || a[1].display_name.localeCompare(b[1].display_name)).slice(0, 40);
+}
+const statTile = (n, l, s) => `<div class="stat"><div class="n">${n}</div><div class="l">${esc(l)}</div>${s ? `<div class="s">${esc(s)}</div>` : ""}</div>`;
+function evidence(f) {
+  const bits = f.matched.slice(0, 3).map(m => `<b>${esc(m.skill)}</b> <span class="faint">(${esc(m.where[0].replace("Your skills list", "skills list").replace("Your resume", "resume").replace("Your headline and about", "about"))})</span>`);
+  const met = f.checklist.filter(c => c.status === "met").length;
+  if (f.checklist.length) bits.push(`<span class="faint">${met} of ${f.checklist.length} requirements met</span>`);
+  return bits.join(" · ");
+}
+function inviteText(eid, p, j) {
+  const e = EP(eid) || {}, first = (p.display_name || "").split(" ")[0];
+  return `Hi ${first}! ${e.contact_name && e.company ? `I'm ${e.contact_name}, ${e.contact_title} at ${e.company}. ` : ""}Your profile looks like a strong fit for our ${j.title} role, and we'd love for you to apply. You'll find the listing and the Apply link on NoleCareerShield. Happy to answer any questions here.`;
+}
+P.hiring = () => {
+  if (!isEmployer()) return needLogin("your listings", "employer");
+  const head = pageHead("Your listings", "Views, Apply clicks, ranked student matches and a candidate tracker for every listing you post.", "Hiring");
+  const mine = S.jobs.filter(j => j.employer_id === me().id).slice().reverse();
+  if (!mine.length) return head + '<div class="empty">No listings yet. <a href="#" data-go="post">Post your first job</a> and it shows up here once it\'s submitted.</div>';
+  return head + `<div class="row" style="margin-bottom:14px"><a class="b" href="#" data-go="post">${icon("plus", 16)} Post a job</a></div>` + mine.map(j => {
+    const s = jobStats(j), [tone, label] = JOB_STATUS[j.review_status] || ["", j.review_status];
+    return `<a class="card lift hjob" href="#" data-go="hjob?id=${j.id}"><div class="row between" style="align-items:flex-start"><div style="min-width:0"><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</div></div><span class="pill ${tone}">${esc(label)}</span></div>
+<div class="stats sm">${statTile(s.views, "students viewed")}${statTile(s.clicks, "clicked Apply")}${statTile(s.messaged, "messaged you")}${statTile(s.candidates, "candidates")}</div></a>`; }).join("");
+};
+P.hjob = () => {
+  if (!isEmployer()) return needLogin("your listings", "employer");
+  const j = S.jobs.find(x => x.id === S.route.q.id && x.employer_id === me().id);
+  if (!j) return pageHead("Listing not found") + '<a class="b sec" href="#" data-go="hiring">Your listings</a>';
+  const tab = S.route.q.tab === "candidates" ? "candidates" : "matches", s = jobStats(j), [tone, label] = JOB_STATUS[j.review_status] || ["", j.review_status];
+  const cands = S.candidates.filter(c => c.job === j.id).sort((a, b) => b.updated - a.updated), live = j.review_status === "approved";
+  const stageBits = STAGES.filter(([k]) => s.stages[k]).map(([k, v]) => `${s.stages[k]} ${v.toLowerCase()}`).join(" · ");
+  let content;
+  if (!approvedEmp(me().id)) content = banner("info", "Ranked matches and student profiles open once a reviewer approves your organization. Your listing's stats are already counting.");
+  else if (tab === "matches") {
+    const ms = rankedMatches(j), saved = new Set(cands.map(c => c.student)), strong = ms.filter(m => m[0].score >= 65).length;
+    content = (live ? "" : banner("info", "Invites open once this listing is approved. You can already see who fits and save them.")) + (ms.length
+      ? `<p class="small muted" style="margin-bottom:12px"><b>${strong}</b> good or strong fit${strong !== 1 ? "s" : ""} among ${ms.length} students ranked. Each score uses the student's whole profile: skills, experience, projects, education, certifications and what they're looking for.</p>` +
+        ms.map(([f, p, id]) => `<div class="card mcard"><div class="row between" style="align-items:flex-start;gap:12px"><div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:${f.score}"><b>${f.score}</b></div>${person(id)}</div><span class="pill ${f.score >= 65 ? "ok" : f.score < 45 ? "warn" : ""}">${esc(f.label)}</span></div>
+${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class="small" style="margin-top:8px">${evidence(f)}</p><div class="chips" style="margin-top:8px">${f.parts.map(x => `<span class="chip" title="${esc(x.detail)}">${esc(x.name)} ${x.score}</span>`).join("")}</div>
+<div class="row" style="margin-top:12px">${live && p.allow_messages ? `<a class="b sm" href="#" data-go="newmsg?to=${id}&amp;job=${j.id}&amp;invite=1">${icon("chat", 14)} Invite to apply</a>` : ""}${saved.has(id) ? '<span class="pill ok">In candidates</span>' : `<button class="b sm sec" type="button" data-do="save-cand" data-id="${id}">Save to candidates</button>`}<a class="b sm ghost" href="#" data-go="u?id=${id}">View profile</a></div></div>`).join("")
+      : '<div class="empty">No students match yet. Matches come from students who made their profile visible to approved employers.</div>');
+  } else content = cands.length ? `<p class="small muted" style="margin-bottom:12px">${esc(stageBits)}. Stages and notes are private to your organization.</p>` + cands.map(c => {
+      const p = SP(c.student); if (!p) return "";
+      const f = N.fitScore(j, p), [src, st] = SOURCES[c.source] || [c.source, ""], convo = S.convos.find(x => x.student === c.student && x.employer === me().id);
+      const msg = convo ? `<a class="b sm ghost" href="#" data-go="messages?c=${convo.id}">Open conversation</a>` : live && p.allow_messages ? `<a class="b sm ghost" href="#" data-go="newmsg?to=${c.student}&amp;job=${j.id}&amp;invite=1">Invite to apply</a>` : "";
+      return `<div class="card mcard" id="c${c.student}"><div class="row between" style="align-items:flex-start;gap:12px"><div class="row" style="gap:12px;align-items:center;min-width:0"><div class="ring sm" style="--p:${f.score}"><b>${f.score}</b></div>${person(c.student)}</div><div class="row"><span class="pill ${st}">${esc(src)}</span><span class="small faint">${ago(c.at)}</span></div></div>
+<p class="small" style="margin-top:8px">${evidence(f)}</p><form class="cform stageForm" data-student="${c.student}"><div class="form-field"><label for="st${c.student}">Stage</label><select id="st${c.student}" name="stage">${STAGES.map(([k, v]) => `<option value="${k}"${k === c.stage ? " selected" : ""}>${esc(v)}</option>`).join("")}</select></div>
+<div class="form-field"><label for="nt${c.student}">Private note</label><input id="nt${c.student}" name="note" maxlength="300" value="${esc(c.note)}" placeholder="Only your team sees this"></div><button class="b sm" type="submit">Update</button></form>
+<div class="row" style="margin-top:8px">${msg}<a class="b sm ghost" href="#" data-go="u?id=${c.student}">View profile</a></div></div>`; }).join("")
+    : '<div class="empty">No candidates yet. Students appear here when they message you about this listing, when you invite them, or when you save them from the ranked matches.</div>';
+  return `<a class="back" href="#" data-go="hiring">← Your listings</a>${takeFlash()}<div class="row between" style="align-items:flex-start;margin-top:6px"><div><h2 class="page" style="margin:0">${esc(j.title)}</h2><p class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</p></div><div class="row"><span class="pill ${tone}">${esc(label)}</span>${live ? `<a class="b sm sec" href="#" data-go="job?id=${j.id}">View listing</a>` : ""}</div></div>
+<div class="stats">${statTile(s.views, "students viewed")}${statTile(s.clicks, "clicked Apply", s.views ? Math.round(100 * s.clicks / s.views) + "% of viewers" : "")}${statTile(s.messaged, "messaged you")}${statTile(s.candidates, "candidates", stageBits)}</div>
+<p class="small faint">Views and Apply clicks are totals. You see who a student is only when they message you, you invite them, or you save them from matches.</p>
+<div class="seg" role="tablist" style="margin:18px 0"><a href="#" data-go="hjob?id=${j.id}&amp;tab=matches"${tab === "matches" ? ' class="on" aria-current="page"' : ""}>Ranked matches</a><a href="#" data-go="hjob?id=${j.id}&amp;tab=candidates"${tab === "candidates" ? ' class="on" aria-current="page"' : ""}>Candidates (${cands.length})</a></div>${content}`;
+};
+
 function exportData() {
   const u = me(), d = {account: {email: u.email, role: u.role}, student_profile: SP(u.id) || null, employer_profile: EP(u.id) || null,
     messages_sent: S.convos.flatMap(c => c.messages.filter(m => m.from === u.id).map(m => ({conversation: c.id, body: m.body, status: m.status}))),
@@ -914,7 +996,7 @@ P.about = () => `${pageHead("About NoleCareerShield")}<div class="prose"><p>Stud
 <h3>Beyond the board</h3><ul><li><b>Profiles</b> that students control, including whether approved employers can find them.</li><li><b>Messaging</b> between students and reviewed employers, with every message scanned for scam signs.</li><li><b>A job assistant</b> that answers in plain words and only suggests listings that passed review.</li><li><b>A resume studio</b> that scores a resume, rewrites weak lines without inventing anything, and tailors it to a job.</li><li><b>A scam checker</b> for any message a student receives, here or anywhere else.</li><li><b>An FSU-only feed</b> where employer posts must be opportunities or advice for FSU students.</li></ul>
 <h3>What this is not</h3><p>A verified badge is not a guarantee. Always confirm an employer through their own website before sharing personal information. This is an independent student project and is not affiliated with Florida State University.</p></div>`;
 P.privacy = () => `${pageHead("Privacy")}<div class="prose"><p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, and you can download or delete everything at any time.</p>
-<h3>Students</h3><ul><li>A student account needs a confirmed @fsu.edu address and a password, stored as a salted hash. No student ID, date of birth or SSN.</li><li>Your profile holds only what you type in. Your resume is private unless you share it with approved employers.</li><li>Employers see your profile only if a reviewer approved them and you chose to be visible or are already talking with them. They see your experience, education and projects; other students see only your name, school, headline and skills.</li><li>If you upload a resume, we can fill your profile sections from it. Nothing is added that isn't in your resume, and you can edit or delete every entry.</li><li>Your fit score for a job is worked out when you open it. It isn't stored, and employers never see it.</li></ul>
+<h3>Students</h3><ul><li>A student account needs a confirmed @fsu.edu address and a password, stored as a salted hash. No student ID, date of birth or SSN.</li><li>Your profile holds only what you type in. Your resume is private unless you share it with approved employers.</li><li>Employers see your profile only if a reviewer approved them and you chose to be visible or are already talking with them. They see your experience, education and projects; other students see only your name, school, headline and skills.</li><li>If you upload a resume, we can fill your profile sections from it. Nothing is added that isn't in your resume, and you can edit or delete every entry.</li><li>Your fit score for a job is worked out when you open it. If you're visible to approved employers, they can see how well you fit their listings: the same score and evidence you see.</li><li>We count which listings students open and whether they press Apply, so employers see totals. They never see who viewed or clicked.</li><li>If you message an employer about a listing, or they invite you or save you from their matches, you appear in that employer's candidate list for it, where they can add a stage and a private note.</li></ul>
 <h3>Messages and the feed</h3><ul><li>Messages are only between students and approved employers, and every one is scanned when sent. Messages that match scam-only patterns are held for a reviewer.</li><li>Email notifications never include message text.</li><li>Only signed-in FSU students and approved employers can read or post on the feed.</li></ul>
 <h3>AI features</h3><ul><li>On the live site the assistant, resume tools and scam checker's second opinion can use Claude. Text is sent only when you use one of those features. This demo runs everything in your browser and sends nothing.</li></ul></div>`;
 P.report = () => `${pageHead("Report a listing")}<div class="prose"><p>See something that looks like a scam? Use the Report button on any message or feed post, or email the site operator with the listing title and company. Reports are reviewed by a person.</p><p>If you already sent money or personal information, contact your bank and report it to the FTC at reportfraud.ftc.gov.</p></div>`;
@@ -1061,6 +1143,7 @@ function submitDraft() {
 
 // ---------------- events ----------------
 document.addEventListener("click", e => {
+  const ap = e.target.closest("[data-apply]"); if (ap && isStudent()) { const k = Number(ap.dataset.apply); (S.clicks[k] = S.clicks[k] || new Set()).add(me().id); return; }
   const a = e.target.closest("[data-go]"); if (a) { e.preventDefault(); go(a.dataset.go); return; }
   const b = e.target.closest("[data-act]");
   if (b && S.admin) { const j = S.jobs.find(x => x.id === Number(b.dataset.id)); if (!j) return; const act = b.dataset.act; j.seedApproved = false;
@@ -1083,6 +1166,7 @@ document.addEventListener("click", e => {
     ask: () => ask(SUGG[Number(d.dataset.i)]),
     "apply-rewrite": () => { const r = S.lastRewrites[Number(d.dataset.i)], p = SP(me().id); if (r && p.resume_text.includes(r.text)) p.resume_text = p.resume_text.replace(r.text, r.rewrite); flash("verified", "Rewrite applied. Fill in any [placeholder] with your real numbers."); render(true); },
     "sample-resume": () => { const p = SP(me().id); p.resume_text = RESUME; p.resume_name = "Sample resume"; if (!(p.items || []).length) importResume(p); render(); },
+    "save-cand": () => { const j = S.jobs.find(x => x.id === S.route.q.id && x.employer_id === me().id), p = SP(id); if (j && p && p.visible) addCandidate(j.id, id, me().id, "saved"); render(true); },
     "import-resume": () => { const n = importResume(SP(me().id)); flash(n ? "verified" : "info", n ? `Added ${n} entr${n === 1 ? "y" : "ies"} from your resume. Check them over and edit anything that's off.` : "Your profile already has everything your resume shows."); render(true); },
     "del-item": () => { const p = SP(me().id), it = (p.items || []).find(i => i.id === id); p.items = (p.items || []).filter(i => i.id !== id); flash("verified", "Entry deleted."); go("profile" + (it ? "#" + it.kind : "")); },
     "to-tailor": () => { const el = document.getElementById("tailor"); if (el) el.scrollIntoView({behavior: "smooth", block: "start"}); },
@@ -1266,6 +1350,8 @@ document.addEventListener("submit", e => {
     else { try { addItem(p, it); } catch (err) { flash("warning", String(err)); return render(); } }
     S.itemDraft = null; return go("profile#" + it.kind);
   }
+  if (f.classList.contains("stageForm")) { const c = S.candidates.find(x => x.job === S.route.q.id && x.student === Number(f.dataset.student) && x.employer === me().id);
+    if (c && STAGE_NAME[g("stage")]) { c.stage = g("stage"); c.note = g("note").slice(0, 300); c.updated = NOW(); flash("verified", "Updated."); } return render(true); }
   if (id === "jobVersionForm") { S.versions.unshift({id: Date.now(), user: me().id, name: f.dataset.name || "Tailored copy", body: String(fd.get("body") || "").trim(), at: NOW()});
     flash("verified", "Saved a tailored copy. Your main resume didn't change."); return go("resume?tab=versions"); }
   if (id === "resumeSave") { const t = String(fd.get("text") || ""); if (t.trim().length < 80) { flash("warning", "A resume needs 80 to 20,000 characters."); return render(); }

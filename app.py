@@ -78,6 +78,7 @@ import assistant
 import resume_tools
 import feed
 import admin_extra
+import hiring
 import ai
 from ui import esc, EMBLEM, BASE_CSS, PAGE_SCRIPT, PAGE_SCRIPT_HASH, _viewer, shell
 from security import (
@@ -562,7 +563,8 @@ def job_detail(job_id: int, request: Request):
                  '<p class="fine" style="text-align:left">Free, and only for @fsu.edu addresses. '
                  'Employers know their listing is only shown to students.</p>')
     elif j["apply_url"]:
-        apply = f'<a class="apply-btn" href="{esc(j["apply_url"])}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a>'
+        # Through /job/{id}/apply so the employer's Apply-click total counts it; the student lands on the same link.
+        apply = f'<a class="apply-btn" href="/job/{int(j["id"])}/apply" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a>'
     elif j["contact"]:
         apply = f'<p style="font-size:14px;color:var(--soft)">Contact: {esc(j["contact"])}</p>'
 
@@ -570,6 +572,7 @@ def job_detail(job_id: int, request: Request):
     if viewer and viewer["role"] == "student":
         with store.db() as conn:
             prof = store.student_profile(conn, viewer["id"])
+            hiring.record_view(conn, int(j["id"]), viewer["id"])
             emp_ok = bool(j.get("employer_id")) and store.employer_approved(conn, j["employer_id"])
         btns = [f'<a class="b sec" href="#tailor">{ui.icon("file", 16)} Tailor my resume</a>']
         if emp_ok:
@@ -577,6 +580,8 @@ def job_detail(job_id: int, request: Request):
             btns.append(f'<a class="b sec" href="/company/{int(j["employer_id"])}">Company profile</a>')
         extras = jobfit.fit_panel(j, prof) + f'<div class="row" style="margin:14px 0">{"".join(btns)}</div>'
         after = jobfit.tailor_panel(j, prof)
+    if viewer and viewer["role"] == "employer" and j.get("employer_id") == viewer["id"]:
+        extras = (f'<div class="banner info">This is your listing. <a href="/hiring/{int(j["id"])}">See ranked student matches, candidates and stats →</a></div>')
     loc = esc(j["location"]) if j["location"] else ""
     body = f"""<a class="back" href="/jobs">← All jobs</a>
 {banner}
@@ -585,6 +590,19 @@ def job_detail(job_id: int, request: Request):
 <div class="job-meta" style="margin:14px 0"><span class="chip">{esc(j['category'])}</span><span class="chip">{esc(j['work_type'].title())}</span>{f'<span class="chip">{loc}</span>' if loc else ''}</div>
 {findings_html}{extras}<div class="detail-desc">{esc(j['description'])}</div>{apply}{after}"""
     return shell(body, title=esc(j["title"]) + " — NoleCareerShield", active="/jobs", js=bool(after))
+
+
+@app.get("/job/{job_id}/apply")
+def job_apply(job_id: int, request: Request):
+    """Counts a student's Apply click (once per student, for the employer's totals), then goes to the apply link."""
+    viewer = getattr(request.state, "user", None)
+    j = get_job(job_id)
+    if not j or j["review_status"] != "approved" or not j["apply_url"] or not (viewer and viewer["role"] == "student"):
+        return RedirectResponse(f"/job/{int(job_id)}", status_code=303)
+    enforce_rate_limit(request, general_limiter, "job_apply")
+    with store.db() as conn:
+        hiring.record_apply_click(conn, int(j["id"]), viewer["id"])
+    return RedirectResponse(j["apply_url"], status_code=303)
 
 
 def _post_form_page(values: dict | None = None, error: str = "", status: int = 200) -> HTMLResponse:
@@ -694,7 +712,7 @@ def post_submit(
 # ---------- student network ----------
 
 for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, assistant.router, resume_tools.router,
-           feed.router, admin_extra.router):
+           feed.router, admin_extra.router, hiring.router):
     app.include_router(_r)
 
 
@@ -748,9 +766,11 @@ def privacy():
 <li>Your profile holds what you type in: the name you choose to show, major, graduation term, headline, skills, interests and optional links. We never ask for a student ID, date of birth or SSN.</li>
 <li>If you add a resume, we keep its text (not the file) and any versions you save. Only you can see it unless you turn on "share my resume with approved employers".</li>
 <li>Other students can see your name, school, major, class year, headline, about, skills and what you're looking for, never your experience, education entries, projects or resume. Employers see your full profile only if our reviewers approved them and you either turned on "let approved employers find me" or are already talking with them.</li>
+<li>If you're visible to approved employers, they can see how well you fit their listings: the same fit score and evidence you see on the listing, worked out from your profile.</li>
 <li>If you add a resume, we can fill your profile sections from it. You can edit or delete any entry.</li>
-<li>Each listing shows a fit score calculated from your profile when you open it. It isn't stored and employers never see it.</li>
-<li>We don't record which listings you open or apply to.</li></ul>
+<li>Each listing shows a fit score calculated from your profile when you open it. It isn't stored.</li>
+<li>We count which listings you open and whether you press Apply, so employers can see totals (for example "40 students viewed, 12 clicked Apply"). Employers never see who viewed or clicked.</li>
+<li>If you message an employer about a listing, or they invite you or save you from their matches, you appear in that employer's candidate list for it, where they can add a stage and a private note.</li></ul>
 <h3>Messages</h3>
 <ul><li>Messages are only between students and employers our reviewers approved. Every message is scanned for scam signs when it is sent. Messages that match a pattern only scams use are held for a reviewer instead of being delivered; others may be delivered with a warning.</li>
 <li>Reviewers read a message only when it was held by the scanner or reported by someone in the conversation.</li>

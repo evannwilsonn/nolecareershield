@@ -6,6 +6,7 @@ when no AI key is configured. Every score comes with the reasons behind it.
 
 from __future__ import annotations
 
+import functools
 import re
 from functools import lru_cache
 
@@ -147,13 +148,18 @@ def _patterns() -> list[tuple[str, re.Pattern]]:
 
 def extract_skills(text: str) -> list[str]:
     """Canonical skills found in text, in order of first appearance."""
-    text = text or ""
+    return list(_extract_cached(text or ""))
+
+
+@functools.lru_cache(maxsize=16384)
+def _extract_cached(text: str) -> tuple[str, ...]:
+    # The same profile and listing text is scanned again for every job and every ranking; cache it.
     found = []
     for canon, pat in _patterns():
         m = pat.search(text)
         if m:
             found.append((m.start(), canon))
-    return [c for _, c in sorted(found)]
+    return tuple(c for _, c in sorted(found))
 
 
 def normalize_skill(value: str) -> str | None:

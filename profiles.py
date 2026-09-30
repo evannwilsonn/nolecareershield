@@ -210,7 +210,7 @@ def _student_step(p: dict, step: int, error: str = "", status: int = 200) -> HTM
 <div class="grid2"><div class="form-field"><label for="p-li">LinkedIn (optional)</label><input id="p-li" name="linkedin" maxlength="300" value="{esc(links.get('linkedin', ''))}" placeholder="linkedin.com/in/you"></div>
 <div class="form-field"><label for="p-web">GitHub or portfolio (optional)</label><input id="p-web" name="website" maxlength="300" value="{esc(links.get('website', ''))}" placeholder="github.com/you"></div></div>
 <h3 class="sec" style="margin-top:6px">Privacy</h3>
-<label class="toggle"><input type="checkbox" name="visible" value="1"{" checked" if p.get("visible_to_employers") else ""}><span><b>Let approved employers find me.</b> Your name, major, class year, headline and skills appear in the student directory. Only employers our reviewers approved can see it.</span></label>
+<label class="toggle"><input type="checkbox" name="visible" value="1"{" checked" if p.get("visible_to_employers") or (p.get("setup_step") or 0) < 3 else ""}><span><b>Let approved employers find me.</b> Your profile appears in the student directory and in employers' ranked matches for their listings, with your fit score. Only employers our reviewers approved can see it.</span></label>
 <label class="toggle"><input type="checkbox" name="share_resume" value="1"{" checked" if p.get("share_resume") else ""}><span><b>Share my resume with approved employers</b> who can see my profile.</span></label>
 <label class="toggle"><input type="checkbox" name="allow_messages" value="1"{" checked" if p.get("allow_messages", 1) else ""}><span><b>Allow approved employers to message me.</b> Every message is scanned for scam signs, and you can block anyone.</span></label>
 <div class="row"><a class="b sec" href="/profile/setup/2">Back</a><button class="submit-btn" type="submit">Finish</button></div></form>"""
@@ -652,6 +652,6 @@ def dashboard(user: dict) -> str:
 <p>Post roles for FSU students, answer messages, and share opportunities on the feed.</p></div>
 <div class="bento"><div class="tile w4 {status_tile[0]}"><h3>{esc(status_tile[1])}</h3><p>{esc(status_tile[2])}</p><div class="foot">{status_tile[3]}</div></div>
 <div class="tile w2 goldt"><h3>{ui.icon("chat")}Messages</h3><div class="big">{unread}</div><p>unread</p><div class="foot"><a class="b sm sec" href="/messages">Open messages</a></div></div>
-<div class="tile w2"><h3>{ui.icon("jobs")}Live listings</h3><div class="big">{counts.get("approved", 0)}</div><p>{counts.get("pending", 0)} waiting for review</p><div class="foot"><a class="b sm" href="/post">Post a job</a></div></div>
+<div class="tile w2"><h3>{ui.icon("jobs")}Live listings</h3><div class="big">{counts.get("approved", 0)}</div><p>{counts.get("pending", 0)} waiting for review</p><div class="foot row"><a class="b sm" href="/hiring">Matches &amp; stats</a><a class="b sm sec" href="/post">Post a job</a></div></div>
 <div class="tile w2"><h3>{ui.icon("people")}Find students</h3><p>Search students who opted in, by skill or major.</p><div class="foot"><a class="b sm sec" href="/talent">Open directory</a></div></div>
 <div class="tile w2"><h3>{ui.icon("feed")}FSU feed</h3><p>Share internships, info sessions and advice. Posts must be relevant to FSU students.</p><div class="foot"><a class="b sm sec" href="/feed">Open the feed</a></div></div></div>"""
