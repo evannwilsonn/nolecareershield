@@ -436,7 +436,7 @@ def test_resume_review_edit_tailor_versions(net):
     s, sid = student(net)
     emp, eid = employer(net)
     job = add_job(net, eid)
-    page = s.get("/resume").text
+    page = s.get("/resume?tab=review").text
     assert "Resume score" in page and "Responsible for cleaning survey data" in page      # weak bullet flagged with a rewrite
     t = ucsrf(s)
     # Apply a suggested rewrite.

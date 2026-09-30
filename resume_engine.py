@@ -456,6 +456,130 @@ def versioned(resume: str, summary: str) -> str:
     return "\n".join(lines[:at] + ["SUMMARY", summary, ""] + lines[at:])
 
 
+# ---------- optimizer report (ATS readiness) ----------
+
+REPORT_SECTIONS = [("formatting", "Formatting", 35), ("keywords", "Keywords", 20),
+                   ("impact", "Impact & bullets", 45), ("contact", "Contact & structure", 20)]
+_FIND_SECTION = [(r"^Only \d+ of|strong verb|same verb", "impact"),
+                 (r"^No email|^No phone|LinkedIn|Education|graduation|Experience, Projects", "contact"),
+                 (r"Skills section", "keywords")]
+
+
+def _finding_section(msg: str) -> str:
+    for pat, key in _FIND_SECTION:
+        if re.search(pat, msg):
+            return key
+    return "formatting"
+
+
+def _has_word(low: str, term: str) -> bool:
+    return re.search(r"(?<![a-z0-9])" + re.escape(term.lower()) + r"(?![a-z0-9])", low) is not None
+
+
+def missing_profile_skills(text: str, skills: list | None) -> list[str]:
+    """Skills the student listed on their profile that the resume text doesn't mention (safe to add: they're theirs)."""
+    low = (text or "").lower()
+    out: list[str] = []
+    for s in skills or []:
+        s = str(s).strip()
+        if s and len(s) <= 40 and not _has_word(low, s) and s.lower() not in [o.lower() for o in out]:
+            out.append(s)
+    return out[:12]
+
+
+def add_skills(text: str, skills: list) -> str:
+    """Append skills to the Skills line (or add a Skills section). Skills already on the resume are skipped."""
+    skills = missing_profile_skills(text, skills)
+    if not skills:
+        return text
+    lines = (text or "").splitlines()
+    at = parse(text)["sections"].get("skills")
+    if at is None:
+        return (text or "").rstrip("\n") + "\n\nSKILLS\n" + ", ".join(skills) + "\n"
+    j = at + 1
+    while j < len(lines) and not lines[j].strip():
+        j += 1
+    if j >= len(lines) or _heading(lines[j]):
+        lines.insert(at + 1, ", ".join(skills))
+    else:
+        lines[j] = lines[j].rstrip().rstrip(",;") + ", " + ", ".join(skills)
+    return "\n".join(lines)
+
+
+def set_summary(text: str, summary: str) -> str:
+    """Put a summary at the top: fill an existing SUMMARY section, or add one above the first heading."""
+    summary = re.sub(r"\s+", " ", summary or "").strip()
+    lines = (text or "").splitlines()
+    at = parse(text)["sections"].get("summary")
+    if at is None:
+        return versioned(text, summary)
+    j = at + 1
+    while j < len(lines) and not lines[j].strip():
+        j += 1
+    if j >= len(lines) or _heading(lines[j]):
+        lines.insert(at + 1, summary)
+    else:
+        lines[j] = summary
+    return "\n".join(lines)
+
+
+def report(text: str, profile_skills: list | None = None) -> dict:
+    """The optimizer's answer: ATS readiness 0-100 in four sections, and every suggestion as a card that
+    can be accepted or dismissed. Nothing here changes the resume."""
+    rv = review(text)
+    cat = {c["key"]: c["score"] for c in rv["categories"]}
+    secs = set(rv["stats"]["sections"])
+    skills = rv["skills"]
+    scores = {"formatting": cat["length"] + cat["clarity"] + cat["safety"],
+              "keywords": min(20, 3 * len(skills) + (5 if "skills" in secs else 0)),
+              "impact": cat["impact"] + cat["verbs"], "contact": cat["structure"]}
+    sections = []
+    for key, name, mx in REPORT_SECTIONS:
+        pct = round(100 * scores[key] / mx)
+        sections.append({"key": key, "name": name, "score": scores[key], "max": mx, "percent": pct,
+                         "tone": "ok" if pct >= 80 else "warn" if pct < 50 else ""})
+    percent = round(100 * sum(scores.values()) / sum(m for _, _, m in REPORT_SECTIONS))
+    label = "ATS-ready" if percent >= 80 else "Almost ready" if percent >= 60 else "Needs work"
+    sugg: list[dict] = []
+    miss = missing_profile_skills(text, profile_skills)
+    if miss:
+        sugg.append({"section": "keywords", "kind": "skills", "severity": "warn", "title": "Add skills you already list on your profile",
+                     "detail": "These are on your profile but not on this resume: " + ", ".join(miss) + ". Screeners search resumes for them.",
+                     "old": "", "new": ", ".join(miss)})
+    for f in rv["findings"]:
+        if miss and f["message"].startswith("Add a Skills section"):
+            continue
+        sugg.append({"section": _finding_section(f["message"]), "kind": "tip", "severity": f["severity"], "title": f["message"],
+                     "detail": "", "old": "", "new": ""})
+    for b in rv["bullets"]:
+        sugg.append({"section": "impact", "kind": "rewrite", "severity": "warn", "title": "Strengthen this bullet",
+                     "detail": " ".join(b["issues"][:2]), "old": b["text"], "new": b["rewrite"]})
+    order = {key: i for i, (key, _, _) in enumerate(REPORT_SECTIONS)}
+    sev = {"bad": 0, "warn": 1, "info": 2}
+    sugg.sort(key=lambda x: (order[x["section"]], sev[x["severity"]]))
+    for i, x in enumerate(sugg):
+        x["id"] = f"s{i}"
+    return {"percent": percent, "label": label, "sections": sections, "suggestions": sugg, "stats": rv["stats"], "skills": skills}
+
+
+def stand_out(text: str) -> list[dict]:
+    """A few 'help me stand out' tips drawn from what the resume already says."""
+    p = parse(text)
+    tips = []
+    if "summary" not in p["sections"]:
+        tips.append({"title": "Open with a short summary",
+                     "detail": "Two lines on who you are and what you want. Tailor to a job writes one for a specific role."})
+    good = next((b["text"] for b in p["bullets"] if _NUM.search(b["text"]) and not bullet_issues(b["text"])), "")
+    if good:
+        tips.append({"title": "Lead with your strongest result", "detail": f"\u201c{good[:140]}\u201d shows a result. Put it first under its role."})
+    sk = extract_skills(text)[:5]
+    if sk:
+        tips.append({"title": "Name your tools", "detail": "Screeners search for skills like " + ", ".join(sk) + ". Keep them in a Skills section and in bullets where true."})
+    if not ({"leadership", "organizations", "activities"} & set(p["sections"])):
+        tips.append({"title": "Show campus involvement", "detail": "Clubs, teams and volunteering show initiative, especially with limited work history."})
+    return tips[:4]
+
+
 # ---------- .docx export ----------
 
 def _x(s: str) -> str:

@@ -1149,8 +1149,61 @@ majoring major majors minor degree hold holds certified certification certificat
     return {score, label, tone, new: !(s.listings || s.threads), parts: Object.keys(T_WEIGHTS).map(k => ({key: k, name: T_NAMES[k], weight: T_WEIGHTS[k], score: parts[k][0], detail: parts[k][1]})), tips: tips.slice(0, 4)};
   }
 
+  // ---- optimizer report (mirrors resume_engine.report / add_skills / stand_out) ----
+  const REPORT_SECTIONS = [["formatting", "Formatting", 35], ["keywords", "Keywords", 20], ["impact", "Impact & bullets", 45], ["contact", "Contact & structure", 20]];
+  const FIND_SECTION = [[/^Only \d+ of|strong verb|same verb/, "impact"], [/^No email|^No phone|LinkedIn|Education|graduation|Experience, Projects/, "contact"], [/Skills section/, "keywords"]];
+  const findingSection = msg => { for (const [rx, k] of FIND_SECTION) if (rx.test(msg)) return k; return "formatting"; };
+  const hasWord = (low, term) => new RegExp("(?<![a-z0-9])" + term.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![a-z0-9])").test(low);
+  function missingProfileSkills(text, skills) {
+    const low = (text || "").toLowerCase(), out = [];
+    for (let s of skills || []) { s = String(s).trim(); if (s && s.length <= 40 && !hasWord(low, s) && !out.some(o => o.toLowerCase() === s.toLowerCase())) out.push(s); }
+    return out.slice(0, 12);
+  }
+  function addSkills(text, skills) {
+    skills = missingProfileSkills(text, skills); if (!skills.length) return text;
+    const lines = (text || "").split(/\r?\n/), at = parse(text).sections.skills; if (lines.length && lines[lines.length - 1] === "") lines.pop();
+    if (at === undefined) return (text || "").replace(/\n+$/, "") + "\n\nSKILLS\n" + skills.join(", ") + "\n";
+    let j = at + 1; while (j < lines.length && !lines[j].trim()) j++;
+    if (j >= lines.length || heading(lines[j])) lines.splice(at + 1, 0, skills.join(", "));
+    else lines[j] = lines[j].replace(/\s+$/, "").replace(/[,;]+$/, "") + ", " + skills.join(", ");
+    return lines.join("\n");
+  }
+  function setSummary(text, summary) {
+    summary = (summary || "").replace(/\s+/g, " ").trim();
+    const lines = (text || "").split(/\r?\n/), at = parse(text).sections.summary; if (lines.length && lines[lines.length - 1] === "") lines.pop();
+    if (at === undefined) return versioned(lines.join("\n"), summary);
+    let j = at + 1; while (j < lines.length && !lines[j].trim()) j++;
+    if (j >= lines.length || heading(lines[j])) lines.splice(at + 1, 0, summary); else lines[j] = summary;
+    return lines.join("\n");
+  }
+  function report(text, profileSkills) {
+    const rv = review(text), c = rv.categories.map(x => x.score), secs = Object.keys(parse(text).sections), skills = rv.skills;
+    const scores = {formatting: c[3] + c[4] + c[5], keywords: Math.min(20, 3 * skills.length + (secs.includes("skills") ? 5 : 0)), impact: c[0] + c[1], contact: c[2]};
+    const sections = REPORT_SECTIONS.map(([key, name, max]) => { const pct = Math.round(100 * scores[key] / max); return {key, name, score: scores[key], max, percent: pct, tone: pct >= 80 ? "ok" : pct < 50 ? "warn" : ""}; });
+    const percent = Math.round(100 * Object.values(scores).reduce((a, b) => a + b, 0) / REPORT_SECTIONS.reduce((a, r) => a + r[2], 0));
+    const label = percent >= 80 ? "ATS-ready" : percent >= 60 ? "Almost ready" : "Needs work";
+    const sugg = [], miss = missingProfileSkills(text, profileSkills);
+    if (miss.length) sugg.push({section: "keywords", kind: "skills", severity: "warn", title: "Add skills you already list on your profile", detail: "These are on your profile but not on this resume: " + miss.join(", ") + ". Screeners search resumes for them.", old: "", new: miss.join(", ")});
+    for (const f of rv.findings) { if (miss.length && f.message.startsWith("Add a Skills section")) continue; sugg.push({section: findingSection(f.message), kind: "tip", severity: f.severity, title: f.message, detail: "", old: "", new: ""}); }
+    for (const b of rv.bullets) sugg.push({section: "impact", kind: "rewrite", severity: "warn", title: "Strengthen this bullet", detail: b.issues.slice(0, 2).join(" "), old: b.text, new: b.rewrite});
+    const order = Object.fromEntries(REPORT_SECTIONS.map((r, i) => [r[0], i])), sev = {bad: 0, warn: 1, info: 2};
+    sugg.sort((a, b) => order[a.section] - order[b.section] || sev[a.severity] - sev[b.severity]);
+    sugg.forEach((x, i) => { x.id = "s" + i; });
+    return {percent, label, sections, suggestions: sugg, stats: rv.stats, skills};
+  }
+  function standOut(text) {
+    const p = parse(text), tips = [];
+    if (!("summary" in p.sections)) tips.push({title: "Open with a short summary", detail: "Two lines on who you are and what you want. Tailor to a job writes one for a specific role."});
+    const good = (p.bullets.find(b => NUM.test(b.text) && !bulletIssues(b.text).length) || {}).text || "";
+    if (good) tips.push({title: "Lead with your strongest result", detail: `“${good.slice(0, 140)}” shows a result. Put it first under its role.`});
+    const sk = extractSkills(text).slice(0, 5);
+    if (sk.length) tips.push({title: "Name your tools", detail: "Screeners search for skills like " + sk.join(", ") + ". Keep them in a Skills section and in bullets where true."});
+    if (!["leadership", "organizations", "activities"].some(k => k in p.sections)) tips.push({title: "Show campus involvement", detail: "Clubs, teams and volunteering show initiative, especially with limited work history."});
+    return tips.slice(0, 4);
+  }
+
   const NCS = {normalize, runTextRules, scorePosting, check, linkFindings, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
-    categoriesForMajor, qualsOf, QUAL_KINDS, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
+    categoriesForMajor, qualsOf, QUAL_KINDS, review, report, standOut, addSkills, setSummary, missingProfileSkills, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;
   if (typeof module !== "undefined" && module.exports) module.exports = NCS;
