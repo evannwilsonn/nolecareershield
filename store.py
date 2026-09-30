@@ -203,6 +203,12 @@ CREATE TABLE IF NOT EXISTS submitted_checks (
     user_label TEXT NOT NULL DEFAULT '',
     created_at REAL NOT NULL
 );
+-- "Want NoleCareerShield at your school?" from the public scam check. Only the school name is kept.
+CREATE TABLE IF NOT EXISTS school_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    school TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 -- Employer hiring tools (hiring.py)
 CREATE TABLE IF NOT EXISTS job_views (
     job_id INTEGER NOT NULL,

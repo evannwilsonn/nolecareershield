@@ -51,6 +51,7 @@ def counts(conn) -> dict:
         "messages": one("SELECT COUNT(*) FROM messages WHERE status = 'held'"),
         "reports": one("SELECT COUNT(*) FROM reports WHERE resolved = 0"),
         "checks": one("SELECT COUNT(*) FROM submitted_checks"),
+        "schools": one("SELECT COUNT(DISTINCT lower(school)) FROM school_requests"),
     }
 
 
@@ -59,7 +60,7 @@ def tabs(active: str) -> str:
         c = counts(conn)
     items = [("/admin", "Listings", None), ("/admin/employers", "Employers", c["employers"]), ("/admin/posts", "Feed", c["posts"]),
              ("/admin/messages", "Held messages", c["messages"]), ("/admin/reports", "Reports", c["reports"]),
-             ("/admin/checks", "Sent-in messages", c["checks"])]
+             ("/admin/checks", "Sent-in messages", c["checks"]), ("/admin/schools", "School requests", c["schools"])]
     return '<div class="admin-tabs seg">' + "".join(
         f'<a href="{h}"{" class=on" if h == active else ""}>{esc(t)}{f" · {n}" if n else ""}</a>' for h, t, n in items) + "</div>"
 
@@ -269,3 +270,19 @@ def checks(session: str | None = Cookie(default=None)):
     return _page('<p class="lead">Messages students sent in from the scam checker. Label the clear ones into the corpus (see ADAPTING.md) '
                  'so the next rule update learns from them.</p>' + (out or '<div class="empty">Nothing sent in yet.</div>'),
                  "Sent-in messages", "/admin/checks")
+
+
+@router.get("/admin/schools", response_class=HTMLResponse)
+def schools(session: str | None = Cookie(default=None)):
+    """Schools visitors asked for from the public scam check: leads for the next campus."""
+    if not _ok(session):
+        return RedirectResponse("/admin", status_code=303)
+    with store.db() as conn:
+        rs = store.rows(conn, "SELECT min(school) AS school, COUNT(*) AS n, MAX(created_at) AS last FROM school_requests "
+                              "GROUP BY lower(school) ORDER BY n DESC, last DESC LIMIT 200")
+    rows = "".join(f'<tr><td><b>{esc(r["school"])}</b></td><td>{int(r["n"])}</td><td class="small muted">{esc(time.strftime("%Y-%m-%d", time.gmtime(r["last"])))}</td></tr>'
+                   for r in rs)
+    body = ('<p class="lead">Schools that visitors asked for after using the public scam check. Only the school name is stored.</p>'
+            + (f'<div class="card"><table class="t"><tr><th>School</th><th>Requests</th><th>Latest</th></tr>{rows}</table></div>' if rows
+               else '<div class="empty">No requests yet.</div>'))
+    return _page(body, "School requests", "/admin/schools")

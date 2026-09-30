@@ -213,7 +213,23 @@ NEXT_STEPS = {
 }
 
 
-def render_result(r: dict) -> str:
+def full_view(user: dict | None) -> bool:
+    """The full evidence (every signal, the exact words it caught, link checks) is for FSU students and approved employers.
+    Everyone else gets the verdict and plain reasons: enough to spot a scam, not enough to tune one until it passes."""
+    if not user:
+        return False
+    if user["role"] == "student":
+        return True
+    with store.db() as conn:
+        return store.employer_approved(conn, user["id"])
+
+
+PUBLIC_REASONS = 3
+
+
+def render_result(r: dict, full: bool = True) -> str:
+    if not full:
+        return _render_public(r)
     items = "".join(
         f'<li><b>{ui.esc(f["title"])}</b> <span class="pill {"bad" if f["severity"] == "critical" else "warn" if f["severity"] == "warning" else ""}">'
         f'{ {"critical": "strong signal", "warning": "warning", "note": "note"}[f["severity"]] }</span>'
@@ -247,6 +263,33 @@ def render_result(r: dict) -> str:
 <h2>{ui.icon(icon, 22)}{ui.esc(r['title'])}</h2><p>{ui.esc(r['advice'])}</p>{platform}
 <ul class="reasons">{items}</ul></section>
 {op}<h3 class="sec">What to do next</h3><ol class="next">{steps}</ol>"""
+
+
+def _render_public(r: dict) -> str:
+    shown = [f for f in r["findings"] if f["severity"] != "note"][:PUBLIC_REASONS] or r["findings"][:PUBLIC_REASONS]
+    items = "".join(f'<li><b>{ui.esc(f["title"])}</b><span class="ev">{ui.esc(f["why"])}</span></li>' for f in shown)
+    if r.get("lead_gen", {}).get("flag") and len(shown) < PUBLIC_REASONS:
+        items += '<li><b>Looks like a data-harvesting or aggregator ad</b></li>'
+    if not items:
+        items = '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns.</span></li>'
+    more = len(r["findings"]) - len(shown)
+    steps = "".join(f"<li>{ui.esc(s)}</li>" for s in NEXT_STEPS[r["level"]])
+    icon = {"ok": "check", "caution": "shield", "warn": "flag", "bad": "flag"}[r["key"]]
+    return f"""<section class="verdict {r['key']}" aria-live="polite">
+<div class="eyebrow" style="color:inherit">Verdict</div>
+<h2>{ui.icon(icon, 22)}{ui.esc(r['title'])}</h2><p>{ui.esc(r['advice'])}</p>
+<ul class="reasons">{items}</ul></section>
+<div class="banner info" style="margin-top:12px">FSU students see {f"{more} more signal{'s' if more != 1 else ''}, " if more > 0 else ""}the exact words each signal caught and the link and sender checks, and can check messages straight from their inbox. <a href="/login">Log in with your @fsu.edu email</a></div>
+<h3 class="sec">What to do next</h3><ol class="next">{steps}</ol>"""
+
+
+def _school_form(done: str = "") -> str:
+    if done:
+        return f'<div class="card" style="margin-top:22px"><b>Thanks.</b> <span class="muted">We\'ll count {ui.esc(done)}.</span></div>'
+    return f"""<form method="post" action="/check/school" class="card" style="margin-top:22px"><input type="hidden" name="csrf" value="{security.make_csrf('form')}">
+<b>Want NoleCareerShield at your school?</b><p class="small muted" style="margin:4px 0 10px">Tell us which one. We only keep the school name, nothing about you.</p>
+<div class="row" style="flex-wrap:nowrap"><label for="c-school" class="hp">Your school</label><input id="c-school" name="school" maxlength="80" required placeholder="e.g. University of Florida" style="flex:1;min-width:0">
+<button class="b sm" type="submit">Send</button></div></form>"""
 
 
 def _form(text: str = "", sender: str = "", ai_on: bool = False) -> str:
@@ -286,7 +329,7 @@ def check_form(request: Request, m: int = 0):
             if msg and user["id"] in (msg["student_id"], msg["employer_id"]) and msg["sender_id"] != user["id"] and msg["status"] == "delivered":
                 emp = store.employer_profile(conn, msg["sender_id"]) if msg["sender_id"] == msg["employer_id"] else None
                 security.enforce_key_limit(security.check_limiter, f"u{user['id']}", "scam checks")
-                r = check(msg["body"], "", platform_employer=emp)
+                r = check(msg["body"], "", platform_employer=emp)            # someone on the site: always the full view
                 quoted = (f'<div class="card" style="margin-top:6px"><div class="eyebrow">The message you\'re checking</div>'
                           f'<p style="white-space:pre-wrap;margin-top:6px">{ui.esc(msg["body"][:1500])}</p>'
                           f'<a class="small" href="/messages/{int(msg["conversation_id"])}">← Back to the conversation</a></div>')
@@ -297,6 +340,9 @@ def check_form(request: Request, m: int = 0):
 @router.post("/check", response_class=HTMLResponse)
 def check_submit(request: Request, text: str = Form(""), sender: str = Form(""), csrf: str = Form(""), ai_: str = Form("", alias="ai")):
     security.enforce_rate_limit(request, security.check_limiter, "check")
+    user = web.current_user(request)
+    if not user:
+        security.enforce_rate_limit(request, security.public_check_limiter, "check_public")
     if not security.verify_csrf(csrf, "form"):
         return _page(ui.banner("warning", "That page had been open too long. Your text is still here; press Check again.") + _form(text[:8000], sender[:200]), 400)
     text = security._CONTROL_CHARS_RE.sub("", text or "").strip()
@@ -304,8 +350,8 @@ def check_submit(request: Request, text: str = Form(""), sender: str = Form(""),
         return _page(ui.banner("warning", "Paste the message you want checked (at least a sentence).") + _form(text, sender), 400)
     if len(text) > 8000 or len(sender) > 200:
         return _page(ui.banner("warning", "That's longer than 8,000 characters. Paste the main part of the message.") + _form(text[:8000], sender[:200]), 400)
-    user = web.current_user(request)
-    use_ai = bool(ai_) and bool(user) and ai.enabled()
+    full = full_view(user)
+    use_ai = bool(ai_) and full and ai.enabled()
     if use_ai:
         with store.db() as conn:
             if not store.ai_take(conn, user["id"], ai.daily_limit()):
@@ -317,7 +363,19 @@ def check_submit(request: Request, text: str = Form(""), sender: str = Form(""),
 <input type="hidden" name="text" value="{ui.esc(text)}"><input type="hidden" name="sender" value="{ui.esc(sender)}"><input type="hidden" name="band" value="{ui.esc(r['band'])}">
 <div class="row"><button class="b sm" name="label" value="scam">It was a scam</button><button class="b sm sec" name="label" value="unsure">Not sure</button>
 <button class="b sm ghost" name="label" value="legit">It was real</button></div></form></details>"""
-    return _page(render_result(r) + report + '<h3 class="sec">Check another message</h3>' + _form(text, sender, use_ai))
+    extra = "" if user else _school_form()
+    return _page(render_result(r, full) + report + extra + '<h3 class="sec">Check another message</h3>' + _form(text, sender, use_ai))
+
+
+@router.post("/check/school", response_class=HTMLResponse)
+def school_request(request: Request, school: str = Form(""), csrf: str = Form("")):
+    security.enforce_rate_limit(request, security.school_limiter, "school")
+    name = re.sub(r"\s+", " ", security._CONTROL_CHARS_RE.sub("", school or "")).strip()[:80]
+    if not security.verify_csrf(csrf, "form") or len(name) < 3 or not re.search(r"[A-Za-z]{2}", name) or re.search(r"[<>{}]|https?:|www\.|@", name):
+        return _page(ui.banner("warning", "Type your school's name, like University of Florida.") + _school_form() + _form(), 400)
+    with store.db() as conn:
+        conn.execute("INSERT INTO school_requests (school, created_at) VALUES (?, ?)", (name, time.time()))
+    return _page(_school_form(done=name) + '<h3 class="sec">Check another message</h3>' + _form())
 
 
 @router.post("/check/submit", response_class=HTMLResponse)

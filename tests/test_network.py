@@ -541,11 +541,12 @@ def test_every_page_renders(net):
         r = emp.get(path)
         assert r.status_code == 200, (path, r.status_code, r.text[:300])
     a = admin(net)
-    for path in ["/admin", "/admin/employers", "/admin/posts", "/admin/messages", "/admin/reports", "/admin/checks", "/admin/live"]:
+    for path in ["/admin", "/admin/employers", "/admin/posts", "/admin/messages", "/admin/reports", "/admin/checks", "/admin/live", "/admin/schools"]:
         assert a.get(path).status_code == 200, path
     v = net.client()
-    for path in ["/", "/jobs", "/check", "/about", "/privacy", "/feed"]:
+    for path in ["/", "/check", "/about", "/privacy", "/feed", "/employers"]:
         assert v.get(path).status_code == 200, path
+    assert v.get("/jobs").status_code == 303 and v.get(f"/job/{job}").status_code == 303
     js = v.get("/static/app.js")
     assert js.status_code == 200 and js.headers["content-type"].startswith("text/javascript")
     assert "script-src 'self'" in v.get("/").headers["content-security-policy"]

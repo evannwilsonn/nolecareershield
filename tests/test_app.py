@@ -90,8 +90,13 @@ def login(client, pw="correct-horse-battery"):
 
 
 def test_public_pages_ok(client):
-    for path in ("/", "/jobs", "/post", "/about", "/privacy", "/report", "/healthz", "/robots.txt"):
+    for path in ("/", "/post", "/about", "/privacy", "/report", "/healthz", "/robots.txt", "/employers", "/check", "/login"):
         assert client.get(path).status_code == 200, path
+    # The board itself is for signed-in FSU students and employers: visitors go to sign-in and come back after.
+    for path, nxt in (("/jobs", "/jobs"), ("/job/1", "/job/1")):
+        r = client.get(path)
+        assert r.status_code == 303 and r.headers["location"] == f"/login?next={nxt}", path
+    assert "Disallow: /job/" in client.get("/robots.txt").text
 
 
 def test_docs_disabled(client):
@@ -574,11 +579,11 @@ def test_forgot_and_reset_password(client):
 def test_reset_logs_out_other_devices(client):
     make_verified(client, "student", "jane@fsu.edu")
     assert user_login(client, "student", "jane@fsu.edu").status_code == 303
-    assert "Log out" in client.get("/jobs").text
+    assert "Log out" in client.get("/about").text
     with closing(sqlite3.connect(client.appmod.DB_PATH)) as db:
         uid = client.accounts.get_user(db, "jane@fsu.edu", "student")["id"]
         client.accounts.set_password(db, uid, "N3w!Password")
-    assert "Log out" not in client.get("/jobs").text and "Log in" in client.get("/jobs").text
+    assert "Log out" not in client.get("/about").text and "Log in" in client.get("/about").text
 
 
 def test_tokens_and_sessions_are_stored_hashed(client):
@@ -690,10 +695,12 @@ def _approved_job(client):
 
 def test_apply_link_is_hidden_from_visitors_and_employers(client):
     _approved_job(client)
-    page = client.get("/job/1").text
-    assert "Data Analyst" in page and "Log in as an FSU student to apply" in page
-    assert "secret-apply-link" not in page and "hr@acme.example" not in page
+    r = client.get("/job/1")
+    assert r.status_code == 303 and "secret-apply-link" not in r.text                     # visitors don't see listings at all
+    home = client.get("/").text                                                           # only a teaser: title, company, category
+    assert "Data Analyst" in home and 'href="/login?next=/job/1"' in home and "secret-apply-link" not in home and "hr@acme.example" not in home
     make_verified(client, "employer", "other@corp.example"); user_login(client, "employer", "other@corp.example")
+    assert "Log in as an FSU student to apply" in client.get("/job/1").text
     assert "secret-apply-link" not in client.get("/job/1").text
 
 
@@ -742,7 +749,15 @@ def test_unknown_role_is_404(client):
 def test_login_button_and_email_first_start(client):
     assert 'href="/login">Log in</a>' in client.get("/").text
     page = client.get("/login").text
-    assert "Log in or sign up" in page and "Continue with email" in page and 'href="/signup/employer"' in page
+    assert "Log in or sign up" in page and "Continue with email" in page and 'href="/employers"' in page
+    emp = client.get("/employers").text
+    assert "Create an employer account" in emp and 'href="/signup/employer"' in emp and 'href="/login/employer"' in emp
+    # Students and employers have separate pages that point at each other, with no tabs between them.
+    st, em = client.get("/login/student").text, client.get("/signup/employer").text
+    assert "Student log in" in st and 'href="/employers"' in st and 'class="tabs"' not in st
+    assert "Create your employer account" in em and 'href="/login">Log in with your @fsu.edu email' in em and 'class="tabs"' not in em
+    head = client.get("/").text
+    assert 'href="/employers">For employers</a>' in head and "Join or log in with your @fsu.edu email" in head
     tok = csrf_from(page)
     r = client.post("/login", data={"csrf": tok, "email": "Jane@FSU.edu"})         # no SSO configured: straight to the student password page
     assert r.status_code == 200 and 'action="/login/student"' in r.text and 'value="jane@fsu.edu"' in r.text
