@@ -47,8 +47,15 @@ MAX_POST, MAX_COMMENT = 1500, 500
 HIDE_AFTER_REPORTS = 3
 MAX_SAVES = 300
 PAGE = 20
-TABS = [("feed", "Feed", "/feed"), ("foryou", "For you", "/feed?tab=foryou"), ("saved", "Saved", "/feed?tab=saved")]
-PILLS = [("all", "All"), ("major", "Your major"), ("employers", "Employers")]
+PILLS = [("all", "All"), ("major", "My major"), ("employers", "Employers")]     # the f= filters behind the Showing menu
+# The one "Showing:" menu: (key, label, hint, tab, f). Employers get no For you or My major.
+SHOWS = [("everyone", "Everyone", "Every post, newest first", "feed", "all"),
+         ("foryou", "For you", "Ranked by your major and skills", "foryou", "all"),
+         ("major", "My major", "Students in your major", "feed", "major"),
+         ("employers", "Employers", "Posts from approved employers", "feed", "employers"),
+         ("saved", "Saved", "Posts you bookmarked", "saved", "all")]
+EMPLOYER_GUIDELINES = ["Post opportunities, events or advice for FSU students.", "No ads, promotions or pay-to-apply offers.",
+                       "A reviewer approves every employer post.", "Never ask students for passwords, SSNs or bank details."]
 GUIDELINES = ["Be kind and specific. Help each other out.", "No ads, spam or pay-to-apply offers.",
               "Never share passwords, SSNs or bank details.", "Report anything that feels like a scam."]
 _STOP = set("""about above after again also always another anyone around because before being between both come could does doing done down
@@ -132,15 +139,6 @@ def saved_ids(conn, uid: int) -> set[int]:
     return {r[0] for r in conn.execute("SELECT post_id FROM post_saves WHERE user_id = ?", (uid,))}
 
 
-def _author(conn, uid: int) -> str:
-    name, sub, kind = web.display_name(conn, uid)
-    href = f"/company/{uid}" if kind == "emp" else f"/u/{uid}"
-    av = f'<span class="avatar{" emp" if kind == "emp" else ""}">{ui.initials(name)}</span>'
-    badge = ' <span class="pill accent fd-tag">Employer</span>' if kind == "emp" else ""
-    return (f'<div class="person">{av}<div style="min-width:0"><div class="nm"><a href="{esc(href)}" style="text-decoration:none">{esc(name)}</a>{badge}</div>'
-            f'<div class="sub">{esc(sub)}</div></div></div>')
-
-
 def _link(link: str) -> str:
     if not link:
         return ""
@@ -148,13 +146,17 @@ def _link(link: str) -> str:
             f'<span class="faint">(opens another site)</span></p>')
 
 
+KIND_CLASS = {"opportunity": "k-opp", "event": "k-event", "info_session": "k-event", "question": "k-q", "win": "k-win", "advice": "k-adv"}
+
+
 def post_html(conn, p: dict, user: dict, *, full: bool = False, saved: set[int] | None = None, next_: str = "/feed") -> str:
+    """One post on the timeline: initials in the left gutter, name / major / time on one line, a subtle kind tag,
+    small text actions and the bookmark at the right."""
     csrf = ui.user_csrf_input()
     if saved is None:
         saved = saved_ids(conn, user["id"])
     is_saved = p["id"] in saved
     kind = KINDS.get(p["kind"], p["kind"])
-    kcls = {"opportunity": "accent", "event": "gold", "info_session": "gold", "question": "info", "win": "ok"}.get(p["kind"], "")
     mine = p["author_id"] == user["id"]
     helped = conn.execute("SELECT 1 FROM post_helpful WHERE post_id = ? AND user_id = ?", (p["id"], user["id"])).fetchone()
     status = ""
@@ -176,7 +178,7 @@ def post_html(conn, p: dict, user: dict, *, full: bool = False, saved: set[int] 
     acts = ""
     if p["status"] == "published":
         acts = (f'<form method="post" action="/feed/{int(p["id"])}/helpful">{csrf}<button type="submit"{" class=on" if helped else ""} aria-pressed="{"true" if helped else "false"}">'
-                f'{ui.icon("check", 14) if helped else ""}Helpful · {int(p["helpful_count"])}</button></form>'
+                f'Helpful · {int(p["helpful_count"])}</button></form>'
                 f'<a href="/feed/{int(p["id"])}">Comments · {int(p["comment_count"])}</a>')
         if not mine:
             acts += f'<form method="post" action="/feed/{int(p["id"])}/report">{csrf}<button type="submit">Report</button></form>'
@@ -186,16 +188,21 @@ def post_html(conn, p: dict, user: dict, *, full: bool = False, saved: set[int] 
         acts += f'<form method="post" action="/feed/{int(p["id"])}/delete">{csrf}<button type="submit">Delete</button></form>'
     flag = ""
     if p["scan_band"] in ("review", "caution") and p["status"] == "published":
-        flag = ('<div class="scanbox" style="max-width:none;margin-bottom:8px">Heads up: our scanner found something worth checking in this post. '
+        flag = ('<div class="scanbox fd-flag">Heads up: our scanner found something worth checking in this post. '
                 'Verify before sharing personal details.</div>')
     save = ""
     if p["status"] == "published":
         action, label = ("unsave", "Remove from saved posts") if is_saved else ("save", "Save post")
         save = (f'<form method="post" action="/feed/{int(p["id"])}/{action}" class="fd-save">{csrf}<input type="hidden" name="next" value="{esc(next_)}">'
-                f'<button type="submit" aria-label="{label}" title="{label}" aria-pressed="{"true" if is_saved else "false"}">{bookmark_icon(is_saved)}</button></form>')
-    return f"""<article class="post fd-post" id="post-{int(p["id"])}"><div class="fd-head">{_author(conn, p["author_id"])}<div class="fd-meta">{status}<span class="pill {kcls} fd-tag">{esc(kind)}</span>
-<span class="fd-time">{esc(web.ago(p["created_at"]))}</span>{save}</div></div>{flag}<div class="body">{esc(p["body"])}</div>{_link(p["link"])}
-<div class="acts">{acts}</div>{comments}</article>"""
+                f'<button type="submit" aria-label="{label}" title="{label}" aria-pressed="{"true" if is_saved else "false"}">{bookmark_icon(is_saved, 18)}</button></form>')
+    name, sub, who = web.display_name(conn, p["author_id"])
+    href = f"/company/{int(p['author_id'])}" if who == "emp" else f"/u/{int(p['author_id'])}"
+    emp = " emp" if who == "emp" else ""
+    badge = '<span class="fd-emp">Employer</span>' if who == "emp" else ""
+    return f"""<article class="fd-post" id="post-{int(p["id"])}"><div class="fd-gut"><a class="avatar{emp}" href="{esc(href)}" aria-hidden="true" tabindex="-1">{ui.initials(name)}</a></div>
+<div class="fd-body"><div class="fd-line"><span class="fd-who"><a class="fd-nm" href="{esc(href)}">{esc(name)}</a>{badge}<span class="fd-sub">{esc(sub)}</span><span class="fd-time">· {esc(web.ago(p["created_at"]))}</span></span>
+<span class="fd-kind {KIND_CLASS.get(p["kind"], "")}">{esc(kind)}</span>{status}{save}</div>{flag}<div class="fd-text">{esc(p["body"])}</div>{_link(p["link"])}
+<div class="fd-acts">{acts}</div>{comments}</div></article>"""
 
 
 def _role(conn, uid: int) -> str:
@@ -204,6 +211,7 @@ def _role(conn, uid: int) -> str:
 
 
 def _composer(conn, user: dict, values: dict | None = None, error: str = "") -> str:
+    """The "Write a post" button: a <details> whose summary sits in the header row and whose form opens below it."""
     ok, why = can_post(conn, user)
     if not ok:
         return ui.banner("info", why)
@@ -216,12 +224,18 @@ def _composer(conn, user: dict, values: dict | None = None, error: str = "") -> 
     err = ui.banner("warning", error) if error else ""
     name = web.display_name(conn, user["id"])[0]
     av = f'<span class="avatar{" emp" if user["role"] == "employer" else ""}" aria-hidden="true">{ui.initials(name)}</span>'
-    form = f"""<form method="post" action="/feed/post" class="composer-card">{ui.user_csrf_input()}{err}
-<label for="f-body" class="hp">Post</label><textarea id="f-body" name="body" required maxlength="{MAX_POST}" data-count placeholder="{esc(rule)}">{esc(v.get('body', ''))}</textarea>
-<div class="row" style="margin-top:8px"><label for="f-kind" class="hp">Type</label><select id="f-kind" name="kind" style="width:auto">{opts}</select>
-<label for="f-link" class="hp">Link</label><input id="f-link" name="link" maxlength="300" placeholder="Link (optional)" value="{esc(v.get('link', ''))}" style="flex:1;min-width:180px">
+    form = f"""<form method="post" action="/feed/post" class="fd-form">{ui.user_csrf_input()}{err}<div class="fd-form-top">{av}
+<label for="f-body" class="hp">Post</label><textarea id="f-body" name="body" required maxlength="{MAX_POST}" data-count placeholder="{esc(rule)}">{esc(v.get('body', ''))}</textarea></div>
+<div class="row fd-form-row"><label for="f-kind" class="hp">Type</label><select id="f-kind" name="kind">{opts}</select>
+<label for="f-link" class="hp">Link</label><input id="f-link" name="link" maxlength="300" placeholder="Link (optional)" value="{esc(v.get('link', ''))}">
 <button class="b" type="submit">Post</button></div>{f'<p class="small faint" style="margin-top:6px">{esc(rule)}</p>' if user["role"] == "employer" else ""}</form>"""
-    return f'<details class="fd-comp"{" open" if (error or v.get("body")) else ""}><summary>{av}<span>Share something with the community…</span></summary>{form}</details>'
+    return (f'<details class="fd-comp"{" open" if (error or v.get("body")) else ""}><summary class="b sm fd-write">'
+            f'<span class="fd-w-o">{ui.icon("plus", 15)} Write a post</span><span class="fd-w-c">Close</span></summary>{form}</details>')
+
+
+def _bar(show_menu: str, composer: str, extra: str = "") -> str:
+    """The slim header row: title, the Showing menu, and the Write a post button (the composer's summary)."""
+    return f'<div class="fd-top"><div class="fd-bar"><h1>Feed</h1>{show_menu}</div>{composer}{extra}</div>'
 
 
 def _teaser() -> HTMLResponse:
@@ -306,47 +320,104 @@ def _url(tab: str = "feed", f: str = "all", q: str = "", before: int = 0) -> str
     return "/feed" + ("?" + "&".join(parts) if parts else "")
 
 
-def _rail(conn, user: dict, next_: str) -> str:
-    people = ""
+def _mini(conn, uid: int, kind: str, action: str = "") -> str:
+    """A compact person/company row for the circle column: initials, name, one line of detail, an optional button."""
+    name, sub, k = web.display_name(conn, uid, kind)
+    href = f"/company/{int(uid)}" if k == "emp" else f"/u/{int(uid)}"
+    return (f'<div class="fd-row"><a class="fd-mini" href="{esc(href)}"><span class="avatar{" emp" if k == "emp" else ""}" aria-hidden="true">{ui.initials(name)}</span>'
+            f'<span class="fd-mini-t"><b>{esc(name)}</b><small>{esc(sub)}</small></span></a>{action}</div>')
+
+
+def _sec(title: str, inner: str, count: str = "", more: str = "") -> str:
+    c = f' <span class="fd-count">{esc(count)}</span>' if count else ""
+    return f'<section class="fd-sec"><h3>{esc(title)}{c}</h3>{inner}{more}</section>'
+
+
+def _approved_employers(conn, exclude: list[int], limit: int) -> list[int]:
+    ex = list(exclude) or [0]
+    return [r[0] for r in conn.execute(
+        f"SELECT user_id FROM employer_profiles WHERE status = 'approved' AND user_id NOT IN ({','.join('?' * len(ex))}) "
+        "ORDER BY updated_at DESC LIMIT ?", (*ex, limit))]
+
+
+def _circle(conn, user: dict, next_: str) -> str:
+    """The right column, "Your circle". Students: connections, classmates in their major, companies they follow and
+    suggested ones. Employers: who is engaging with their posts and which companies are active. Then topics and rules."""
+    secs = ""
     if user["role"] == "student":
-        rows = ""
-        for p, why in network.suggestions(conn, user["id"], 3):
-            sid = int(p["user_id"])
-            name, sub, kind = web.display_name(conn, sid, "student")
-            rows += (f'<div class="fd-person">{web.person(name, sub, kind, "/u/" + str(sid))}'
-                     f'{network.connect_button(sid, "none", next_)}</div>')
-        for (eid,) in conn.execute("SELECT e.user_id FROM employer_profiles e WHERE e.status = 'approved' AND e.user_id NOT IN "
-                                   "(SELECT employer_id FROM follows WHERE student_id = ?) ORDER BY e.updated_at DESC LIMIT 2", (user["id"],)):
-            name, sub, kind = web.display_name(conn, eid, "employer")
-            rows += (f'<div class="fd-person">{web.person(name, sub, kind, "/company/" + str(int(eid)))}'
-                     f'{network.follow_button(int(eid), False, next_)}</div>')
-        people = (f'<section class="fd-card" aria-label="Suggested people"><h3>People to follow</h3>{rows}'
-                  '<p style="margin:8px 0 0"><a class="small" href="/network?tab=discover">See more in your network</a></p></section>') if rows else ""
+        me = user["id"]
+        cids = [i for i in network.connection_ids(conn, me) if (store.student_profile(conn, i) or {}).get("display_name")]
+        rows = "".join(_mini(conn, i, "student") for i in cids[:5])
+        secs += _sec("Your connections", rows or '<p class="fd-quiet">No connections yet. Classmates below are a good start.</p>',
+                     str(len(cids)) if cids else "",
+                     f'<a class="fd-more" href="/network">{"See all on Network" if len(cids) > 5 else "Open Network"} →</a>')
+        major = (_viewer_profile(conn, user).get("major") or "").strip()
+        sugg = network.suggestions(conn, me, 12)
+        same = [s for s in sugg if major and "Same major" in s[1]]
+        pick = (same + [s for s in sugg if s not in same])[:3]
+        if pick:
+            rows = "".join(_mini(conn, int(p["user_id"]), "student", network.connect_button(int(p["user_id"]), "none", next_)) for p, _ in pick)
+            secs += _sec(f"In {major}" if same else "People you may know", rows, "",
+                         '<a class="fd-more" href="/network?tab=discover">More classmates →</a>')
+        followed = [e for e in network.followed_ids(conn, me) if store.employer_approved(conn, e)]
+        rows = "".join(_mini(conn, e, "employer") for e in followed[:4])
+        rows = (f'<p class="fd-sub-h">Following</p>{rows}' if rows else "")
+        sug = _approved_employers(conn, followed, 2)
+        if sug:
+            rows += '<p class="fd-sub-h">Suggested</p>' + "".join(_mini(conn, e, "employer", network.follow_button(e, False, next_)) for e in sug)
+        if rows:
+            secs += _sec("Companies", rows, str(len(followed)) if followed else "",
+                         '<a class="fd-more" href="/network?tab=following">Companies you follow →</a>')
+    else:
+        me = user["id"]
+        stats = conn.execute(
+            "SELECT (SELECT COUNT(*) FROM posts WHERE author_id = ? AND status = 'published'),"
+            " (SELECT COUNT(DISTINCT t.uid) FROM (SELECT h.user_id AS uid FROM post_helpful h JOIN posts p ON p.id = h.post_id WHERE p.author_id = ?"
+            "   UNION SELECT c.author_id FROM post_comments c JOIN posts p ON p.id = c.post_id WHERE p.author_id = ? AND c.status = 'published') t"
+            "   JOIN users u ON u.id = t.uid WHERE u.role = 'student'),"
+            " (SELECT COUNT(DISTINCT author_id) FROM posts p JOIN users u ON u.id = p.author_id WHERE u.role = 'student' AND p.status = 'published' AND p.created_at > ?)",
+            (me, me, me, time.time() - 7 * 86400)).fetchone()
+        nums = (f'<div class="fd-stats"><div><b>{network.follower_count(conn, me)}</b><small>followers</small></div>'
+                f'<div><b>{int(stats[0])}</b><small>posts live</small></div><div><b>{int(stats[1])}</b><small>students engaged</small></div></div>'
+                f'<p class="fd-quiet">{web.plural(int(stats[2]), "student")} posted on the feed this week.</p>')
+        secs += _sec("Your reach", nums)
+        active = [r[0] for r in conn.execute(
+            "SELECT p.author_id FROM posts p JOIN employer_profiles e ON e.user_id = p.author_id WHERE e.status = 'approved' AND p.status = 'published' "
+            "AND p.author_id != ? GROUP BY p.author_id ORDER BY MAX(p.id) DESC LIMIT 4", (me,))]
+        if active:
+            secs += _sec("Employers posting", "".join(_mini(conn, e, "employer") for e in active))
     topics = trending(conn)
-    tcard = ""
     if topics:
-        chips = "".join(f'<a href="{esc(_url(q=w))}">{esc(w)}<small>{n}</small></a>' for w, n in topics)
-        tcard = f'<section class="fd-card" aria-label="Trending topics"><h3>Trending topics</h3><div class="fd-topics">{chips}</div></section>'
-    rules = "".join(f"<li>{esc(g)}</li>" for g in GUIDELINES)
-    return (f'<aside class="fd-rail" aria-label="Feed sidebar">{people}{tcard}'
-            f'<section class="fd-card" aria-label="Community guidelines"><h3>Community guidelines</h3><ul class="fd-rules">{rules}</ul></section></aside>')
+        chips = "".join(f'<a href="{esc(_url(q=w))}">#{esc(w)}<small>{n}</small></a>' for w, n in topics)
+        secs += _sec("Trending topics",f'<div class="fd-topics">{chips}</div>')
+    rules = "".join(f"<li>{esc(g)}</li>" for g in (GUIDELINES if user["role"] == "student" else EMPLOYER_GUIDELINES))
+    secs += _sec("Community guidelines", f'<ul class="fd-rules">{rules}</ul>')
+    return f'<aside class="fd-rail" aria-labelledby="fd-circle-h"><h2 id="fd-circle-h" class="fd-rail-h">Your circle</h2>{secs}</aside>'
 
 
-def _tabs(tab: str) -> str:
-    return '<nav class="fd-tabs" aria-label="Feed sections">' + "".join(
-        f'<a href="{href}"{" aria-current=page" if k == tab else ""}>{label}</a>' for k, label, href in TABS) + "</nav>"
+def _show_key(tab: str, f: str) -> str:
+    if tab in ("saved", "foryou"):
+        return tab
+    return f if f in ("major", "employers") else "everyone"
 
 
-def _pills(conn, user: dict, tab: str, f: str, q: str) -> str:
-    out = ""
-    for k, label in PILLS:
-        if k == "major" and user["role"] != "student":
+def _show_menu(user: dict, cur: str, q: str) -> str:
+    """ "Showing: Everyone" — a no-JS <details> menu of links that replaces the old tabs and pills."""
+    items, label = "", "Everyone"
+    for key, lab, hint, tab, f in SHOWS:
+        if user["role"] != "student" and key in ("foryou", "major"):
             continue
-        cur = " aria-current=true" if k == f else ""
-        out += f'<a class="fd-pill" href="{esc(_url(tab, k, q))}"{cur}>{ui.icon("check", 15) if k == f else ""}{esc(label)}</a>'
-    if q:
-        out += f'<a class="fd-pill" href="{esc(_url(tab, f))}">Topic: {esc(q)} ✕</a>'
-    return f'<div class="fd-pills" role="group" aria-label="Filter posts">{out}</div>'
+        on = key == cur
+        if on:
+            label = lab
+        href = _url(tab, f, "" if key == "saved" else q)
+        cur_attr = ' aria-current="true"' if on else ""
+        items += (f'<a href="{esc(href)}"{cur_attr}>'
+                  f'<span class="fd-chk">{ui.icon("check", 15) if on else ""}</span><span><b>{esc(lab)}</b><small>{esc(hint)}</small></span></a>')
+    chev = ('<svg class="ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" '
+            'stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>')
+    return (f'<details class="fd-show"><summary><span class="fd-show-l">Showing:</span> <b>{esc(label)}</b>{chev}</summary>'
+            f'<nav class="fd-menu" aria-label="Show posts from">{items}</nav></details>')
 
 
 # ---------- routes ----------
@@ -377,7 +448,6 @@ def feed(request: Request, tab: str = "feed", f: str = "all", q: str = "", befor
             empty = ('<div class="fd-empty">' + bookmark_icon(False, 44) + '<h2>No saved posts yet</h2>'
                      '<p>Tap the bookmark on any post to save it here for later.</p>'
                      f'<a class="b sec" href="/feed">Browse the feed</a></div>')
-            lead = ""
         else:
             fsql, fparams = _filter_sql(conn, user, f, q)
             base = f"SELECT p.* FROM posts p WHERE {_VISIBLE}{fsql}"
@@ -412,11 +482,13 @@ def feed(request: Request, tab: str = "feed", f: str = "all", q: str = "", befor
                 empty = '<div class="fd-empty"><h2>No employer posts yet</h2><p>Approved employers share opportunities and advice for FSU students here.</p></div>'
             else:
                 empty = '<div class="fd-empty"><h2>Nothing here yet</h2><p>Start the conversation.</p></div>'
-            lead = _pills(conn, user, tab, f, q) + _composer(conn, user)
         items = "".join(post_html(conn, p, user, saved=saved, next_=here) for p in posts)
-        rail = _rail(conn, user, "/feed")
-    main = f'<div class="fd-main">{note}{lead}{items or empty}{nxt}</div>'
-    body = f'<div class="fd">{_tabs(tab)}<div class="fd-grid">{main}{rail}</div></div>'
+        topic = (f'<p class="fd-topic">Topic: {esc(q)} <a href="{esc(_url(tab, f))}" aria-label="Clear topic">✕ Clear</a></p>'
+                 if q and tab != "saved" else "")
+        top = _bar(_show_menu(user, _show_key(tab, f), q), _composer(conn, user), topic + note)
+        rail = _circle(conn, user, "/feed")
+    main = f'<div class="fd-main">{top}<div class="fd-list">{items or empty}</div>{nxt}</div>'
+    body = f'<div class="fd"><div class="fd-grid">{main}{rail}</div></div>'
     return web.page(body, "FSU feed", active="/feed", js=True)
 
 
@@ -427,7 +499,8 @@ def one_post(pid: int, request: Request):
         p = store.row(conn, "SELECT * FROM posts WHERE id = ?", (pid,))
         if not can_view(conn, user) or not p or (p["status"] != "published" and p["author_id"] != user["id"]):
             return web.page('<p class="empty" style="margin:40px 0">That post isn\'t available.</p>', "Post", active="/feed", status=404)
-        body = '<a class="back" href="/feed">← Feed</a>' + post_html(conn, p, user, full=True, next_=f"/feed/{int(pid)}")
+        body = ('<div class="fd fd-one"><a class="back" href="/feed">← Feed</a><div class="fd-list">'
+                + post_html(conn, p, user, full=True, next_=f"/feed/{int(pid)}") + "</div></div>")
     return web.page(body, "Post", active="/feed", js=True)
 
 
@@ -439,7 +512,7 @@ def create(request: Request, body: str = Form(""), kind: str = Form(""), link: s
 
     def again(msg: str, status: int = 400):
         with store.db() as conn:
-            page = (ui.page_head("The FSU feed", num="Community") + _composer(conn, user, values, msg))
+            page = '<div class="fd">' + _bar("", _composer(conn, user, values, msg)) + "</div>"
         return web.page(page, "FSU feed", active="/feed", js=True, status=status)
 
     if not web.csrf_ok(request, csrf):

@@ -1,4 +1,4 @@
-"""The Handshake-style feed: tabs, pill filters, For you ranking, bookmark saves, the right rail."""
+"""The timeline feed: the Showing menu, For you ranking, bookmark saves, the Your circle column."""
 import re
 import sqlite3
 import sys
@@ -35,17 +35,70 @@ def publish_employer_post(n, emp, needle):
     return pid
 
 
-def test_layout_has_tabs_pills_composer_and_rail(net):
+def show_menu(page):
+    return re.search(r'<details class="fd-show">.*?</details>', page, re.S).group(0)
+
+
+def test_layout_has_showing_menu_composer_and_circle(net):
     s, sid = student(net)
     page = s.get("/feed").text
-    for label in ("Feed", "For you", "Saved"):
-        assert f">{label}</a>" in page
-    assert 'aria-current=page>Feed' in page.replace('"', "")
-    for pill in ("All", "Your major", "Employers"):
-        assert pill in page
-    assert "Share something with the community" in page
-    assert 'name="body"' in page and "Community guidelines" in page
+    menu = show_menu(page)
+    assert "Showing:</span> <b>Everyone</b>" in menu
+    for label, href in (("Everyone", "/feed"), ("For you", "/feed?tab=foryou"), ("My major", "/feed?f=major"),
+                        ("Employers", "/feed?f=employers"), ("Saved", "/feed?tab=saved")):
+        assert f'href="{href}"' in menu and f"<b>{label}</b>" in menu
+    assert menu.count('aria-current="true"') == 1 and 'href="/feed" aria-current="true"' in menu
+    assert "fd-tabs" not in page and "fd-pill" not in page                            # the old tabs and pills are gone
+    assert "<h1>Feed</h1>" in page and "Write a post" in page and 'class="fd-comp"' in page
+    assert 'name="body"' in page and "Community guidelines" in page and "Your circle" in page
     assert ".fd-grid" in page                                                         # feed css is appended to the shared stylesheet
+    assert "<script>" not in page.split("</head>", 1)[1]                              # no inline scripts (strict CSP)
+    assert "Showing:</span> <b>Saved</b>" in show_menu(s.get("/feed?tab=saved").text)
+    assert "Showing:</span> <b>For you</b>" in show_menu(s.get("/feed?tab=foryou").text)
+    assert "Showing:</span> <b>My major</b>" in show_menu(s.get("/feed?f=major").text)
+
+
+def test_timeline_post_markup(net):
+    s, sid = student(net)
+    post(s, "Has anyone taken the Python for data science elective at FSU? Worth it?")
+    pid = post_id(net, "Python for data")
+    page = s.get("/feed").text
+    art = re.search(rf'<article class="fd-post" id="post-{pid}">.*?</article>', page, re.S).group(0)
+    assert 'class="fd-gut"' in art and 'class="fd-line"' in art and "fd-kind k-q" in art and ">Question<" in art
+    assert "Helpful · 0" in art and "Comments · 0" in art and f"/feed/{pid}/save" in art and "Delete" in art
+    assert 'class="post' not in art                                                   # no boxed card
+    one = s.get(f"/feed/{pid}").text
+    assert f'id="post-{pid}"' in one and "No comments yet" in one
+
+
+def test_circle_shows_connections_major_peers_and_companies(net):
+    s, sid = student(net)                                                            # Statistics
+    peer, peer_id = student(net, "peer@fsu.edu", "Peer Person")                      # Statistics too
+    art, aid = student(net, "art@fsu.edu", "Art A.")
+    set_major(net, aid, "Studio Art")
+    emp, eid = employer(net)
+    page = s.get("/feed").text
+    rail = page[page.index('<aside class="fd-rail"'):]
+    assert "No connections yet" in rail and 'href="/network"' in rail
+    assert "In Statistics" in rail and "Peer Person" in rail and "/network/connect" in rail
+    major = rail.split("In Statistics", 1)[1].split("</section>", 1)[0]
+    assert "Art A." not in major or major.index("Peer Person") < major.index("Art A.")   # same major ranks first
+    assert "Suggested" in rail and "/network/follow" in rail
+    # Connect and follow, and the circle lists them.
+    with closing(sqlite3.connect(net.app.DB_PATH)) as db:
+        a, b = sorted((sid, peer_id))
+        db.execute("INSERT INTO connections (user_a, user_b, requested_by, status, created_at, updated_at) VALUES (?,?,?,?,0,0)", (a, b, sid, "accepted"))
+        db.execute("INSERT INTO follows (student_id, employer_id, created_at) VALUES (?,?,0)", (sid, eid))
+        db.commit()
+    rail = s.get("/feed").text.split('<aside class="fd-rail"', 1)[1]
+    conns = rail.split("Your connections", 1)[1].split("</section>", 1)[0]
+    assert "Peer Person" in conns and f'href="/u/{peer_id}"' in conns
+    comps = rail.split("<h3>Companies", 1)[1].split("</section>", 1)[0]
+    assert "Following" in comps and f'href="/company/{eid}"' in comps
+    # Employers get their reach instead.
+    ep = emp.get("/feed").text
+    assert "Your reach" in ep and "students engaged" in ep and "Your connections" not in ep
+    assert "For you" not in show_menu(ep) and "My major" not in show_menu(ep)
 
 
 def test_save_unsave_and_saved_tab(net):
@@ -125,13 +178,13 @@ def test_your_major_and_employers_pills(net):
     assert "ceramics" not in major and "Acme is hosting" not in major
     emps = s.get("/feed?f=employers").text
     assert "Acme is hosting" in emps and "ceramics" not in emps and "stats electives" not in emps
-    assert 'aria-current=true' in emps.replace('"', "")
-    # Art major sees only art posts under Your major; the pill filters For you too.
+    assert 'href="/feed?f=employers" aria-current="true"' in emps
+    # Art major sees only art posts under My major; the filter applies to For you too.
     assert "ceramics" in other.get("/feed?f=major").text and "stats electives" not in other.get("/feed?f=major").text
     assert "stats electives" not in s.get("/feed?tab=foryou&f=employers").text
-    # Employers have no major pill and a bogus filter falls back to All.
+    # Employers have no My major option and a bogus filter falls back to Everyone.
     ep = emp.get("/feed?f=major").text
-    assert "Your major" not in ep and "ceramics" in ep
+    assert "My major" not in ep and "ceramics" in ep and "Showing:</span> <b>Everyone</b>" in ep
 
 
 def test_for_you_ranks_by_major_skills_and_recency(net):

@@ -1146,10 +1146,15 @@ function sendMessage(c, text) {
 
 // ---- feed ----
 const KINDS = {question: "Question", advice: "Advice", opportunity: "Opportunity", event: "Event", win: "Win", info_session: "Info session"};
-const KIND_PILL = {question: "info", advice: "gold", opportunity: "accent", event: "gold", win: "ok", info_session: "gold"};
-// Mirrors feed.py: tabs (Feed / For you / Saved), pills (All / Your major / Employers), bookmark saves, for-you ranking, right rail.
-const FEED_TABS = [["feed", "Feed"], ["foryou", "For you"], ["saved", "Saved"]], FEED_PILLS = [["all", "All"], ["major", "Your major"], ["employers", "Employers"]];
+// Mirrors feed.py: one "Showing:" menu (Everyone / For you / My major / Employers / Saved), a timeline of posts with the
+// author's initials in a left gutter, bookmark saves, for-you ranking, and the "Your circle" column.
+const FEED_PILLS = [["all", "All"], ["major", "My major"], ["employers", "Employers"]];
+const FEED_SHOWS = [["everyone", "Everyone", "Every post, newest first", "feed", "all"], ["foryou", "For you", "Ranked by your major and skills", "foryou", "all"],
+  ["major", "My major", "Students in your major", "feed", "major"], ["employers", "Employers", "Posts from approved employers", "feed", "employers"],
+  ["saved", "Saved", "Posts you bookmarked", "saved", "all"]];
 const FEED_RULES = ["Be kind and specific. Help each other out.", "No ads, spam or pay-to-apply offers.", "Never share passwords, SSNs or bank details.", "Report anything that feels like a scam."];
+const FEED_EMP_RULES = ["Post opportunities, events or advice for FSU students.", "No ads, promotions or pay-to-apply offers.", "A reviewer approves every employer post.", "Never ask students for passwords, SSNs or bank details."];
+const KIND_CLASS = {opportunity: "k-opp", event: "k-event", info_session: "k-event", question: "k-q", win: "k-win", advice: "k-adv"};
 const FEED_STOP = new Set(("about above after again also always another anyone around because before being between both come could does doing done down each even ever every from get going good great have having here hello help how into just know like look make many more most much need only other over please really should some someone something still such take than thank thanks that their them then there these they thing think this those through today want week were what when where which while will with would year your students student fsu florida state university apply hiring internship internships").split(" "));
 const MAX_SAVES = 300;
 const bookmark = (filled, size) => `<svg class="ic" viewBox="0 0 24 24" width="${size || 20}" height="${size || 20}" fill="${filled ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h12v17l-6-4.2L6 21z"/></svg>`;
@@ -1168,19 +1173,50 @@ function feedTrending() {
   S.posts.filter(p => p.status === "published" && p.at > since).slice(-300).forEach(p => new Set((p.body.match(/#?[A-Za-z][A-Za-z+#.-]{3,24}/g) || []).map(w => w.toLowerCase().replace(/^#/, "")).filter(w => !FEED_STOP.has(w))).forEach(w => { seen[w] = (seen[w] || 0) + 1; }));
   return Object.entries(seen).filter(([, n]) => n >= 2).sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1)).slice(0, 5);
 }
-function feedAuthor(id) {
-  const [n, sub, kind] = who(id), nm = `<a href="#" data-go="${kind === "emp" ? "company" : "u"}?id=${id}" style="text-decoration:none">${esc(n)}</a>`;
-  return `<div class="person"><span class="avatar${kind === "emp" ? " emp" : ""}">${initials(n)}</span><div style="min-width:0"><div class="nm">${nm}${kind === "emp" ? ' <span class="pill accent fd-tag">Employer</span>' : ""}</div><div class="sub">${esc(sub)}</div></div></div>`;
+function feedMini(id, action) {   // twin of feed._mini
+  const [n, sub, kind] = who(id);
+  return `<div class="fd-row"><a class="fd-mini" href="#" data-go="${kind === "emp" ? "company" : "u"}?id=${id}"><span class="avatar${kind === "emp" ? " emp" : ""}" aria-hidden="true">${initials(n)}</span><span class="fd-mini-t"><b>${esc(n)}</b><small>${esc(sub)}</small></span></a>${action || ""}</div>`;
 }
-function feedRail() {
-  let people = "";
+const feedSec = (title, inner, count, more) => `<section class="fd-sec"><h3>${esc(title)}${count ? ` <span class="fd-count">${esc(count)}</span>` : ""}</h3>${inner}${more || ""}</section>`;
+function feedCircle() {   // twin of feed._circle: "Your circle"
+  let secs = ""; const meId = me().id;
   if (isStudent()) {
-    const rows = suggestions(me().id).slice(0, 3).map(([uid]) => `<div class="fd-person">${person(uid)}${connectButton(uid, "none", "feed", false)}</div>`)
-      .concat(Object.keys(S.employers).map(Number).filter(e => approvedEmp(e) && !isFollowing(me().id, e)).slice(0, 2).map(e => `<div class="fd-person">${person(e)}${followButton(e, false, "feed")}</div>`)).join("");
-    if (rows) people = `<section class="fd-card" aria-label="Suggested people"><h3>People to follow</h3>${rows}<p style="margin:8px 0 0"><a class="small" href="#" data-go="network?tab=discover">See more in your network</a></p></section>`;
+    const cids = connIds(meId).filter(i => (SP(i) || {}).display_name);
+    secs += feedSec("Your connections", cids.slice(0, 5).map(i => feedMini(i)).join("") || '<p class="fd-quiet">No connections yet. Classmates below are a good start.</p>',
+      cids.length ? String(cids.length) : "", `<a class="fd-more" href="#" data-go="network">${cids.length > 5 ? "See all on Network" : "Open Network"} →</a>`);
+    const major = ((SP(meId) || {}).major || "").trim(), sugg = suggestions(meId), same = sugg.filter(s => major && s[1].includes("Same major"));
+    const pick = same.concat(sugg.filter(s => !same.includes(s))).slice(0, 3);
+    if (pick.length) secs += feedSec(same.length ? "In " + major : "People you may know", pick.map(([uid]) => feedMini(uid, connectButton(uid, "none", "feed", false))).join(""), "",
+      '<a class="fd-more" href="#" data-go="network?tab=discover">More classmates →</a>');
+    const followed = followedIds(meId).filter(e => approvedEmp(e));
+    let rows = followed.slice(0, 4).map(e => feedMini(e)).join("");
+    if (rows) rows = '<p class="fd-sub-h">Following</p>' + rows;
+    const sug = Object.keys(S.employers).map(Number).filter(e => approvedEmp(e) && !followed.includes(e)).slice(0, 2);
+    if (sug.length) rows += '<p class="fd-sub-h">Suggested</p>' + sug.map(e => feedMini(e, followButton(e, false, "feed"))).join("");
+    if (rows) secs += feedSec("Companies", rows, followed.length ? String(followed.length) : "", '<a class="fd-more" href="#" data-go="network?tab=following">Companies you follow →</a>');
+  } else {
+    const mine = S.posts.filter(p => p.author === meId && p.status === "published"), engaged = new Set();
+    mine.forEach(p => { p.helpful.forEach(u => engaged.add(u)); p.comments.forEach(c => engaged.add(c.author)); });
+    const students = [...engaged].filter(u => U(u) && U(u).role === "student").length;
+    const week = new Set(S.posts.filter(p => p.status === "published" && p.at > NOW() - 7 * 864e5 && U(p.author) && U(p.author).role === "student").map(p => p.author)).size;
+    secs += feedSec("Your reach", `<div class="fd-stats"><div><b>${followerCount(meId)}</b><small>followers</small></div><div><b>${mine.length}</b><small>posts live</small></div><div><b>${students}</b><small>students engaged</small></div></div><p class="fd-quiet">${week} student${week === 1 ? "" : "s"} posted on the feed this week.</p>`);
+    const active = [];
+    S.posts.filter(p => p.status === "published" && p.author !== meId && U(p.author) && U(p.author).role === "employer" && approvedEmp(p.author)).sort((a, b) => b.at - a.at).forEach(p => { if (!active.includes(p.author)) active.push(p.author); });
+    if (active.length) secs += feedSec("Employers posting", active.slice(0, 4).map(e => feedMini(e)).join(""));
   }
-  const topics = feedTrending(), tcard = topics.length ? `<section class="fd-card" aria-label="Trending topics"><h3>Trending topics</h3><div class="fd-topics">${topics.map(([w, n]) => `<a href="#" data-go="${feedUrl("feed", "all", w)}">${esc(w)}<small>${n}</small></a>`).join("")}</div></section>` : "";
-  return `<aside class="fd-rail" aria-label="Feed sidebar">${people}${tcard}<section class="fd-card" aria-label="Community guidelines"><h3>Community guidelines</h3><ul class="fd-rules">${FEED_RULES.map(g => `<li>${esc(g)}</li>`).join("")}</ul></section></aside>`;
+  const topics = feedTrending();
+  if (topics.length) secs += feedSec("Trending topics", `<div class="fd-topics">${topics.map(([w, n]) => `<a href="#" data-go="${feedUrl("feed", "all", w)}">#${esc(w)}<small>${n}</small></a>`).join("")}</div>`);
+  secs += feedSec("Community guidelines", `<ul class="fd-rules">${(isStudent() ? FEED_RULES : FEED_EMP_RULES).map(g => `<li>${esc(g)}</li>`).join("")}</ul>`);
+  return `<aside class="fd-rail" aria-labelledby="fd-circle-h"><h2 id="fd-circle-h" class="fd-rail-h">Your circle</h2>${secs}</aside>`;
+}
+function feedShowMenu(cur, q) {   // twin of feed._show_menu
+  let items = "", label = "Everyone";
+  for (const [key, lab, hint, tab, f] of FEED_SHOWS) {
+    if (!isStudent() && (key === "foryou" || key === "major")) continue;
+    const on = key === cur; if (on) label = lab;
+    items += `<a href="#" data-go="${feedUrl(tab, f, key === "saved" ? "" : q)}"${on ? ' aria-current="true"' : ""}><span class="fd-chk">${on ? icon("check", 15) : ""}</span><span><b>${esc(lab)}</b><small>${esc(hint)}</small></span></a>`;
+  }
+  return `<details class="fd-show"><summary><span class="fd-show-l">Showing:</span> <b>${esc(label)}</b><svg class="ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><nav class="fd-menu" aria-label="Show posts from">${items}</nav></details>`;
 }
 P.feed = () => {
   if (!me()) return pageHead("The FSU feed", "Questions, advice and opportunities from verified FSU students and employers our reviewers approved.", "Community") +
@@ -1191,7 +1227,7 @@ P.feed = () => {
   const q = /^[A-Za-z0-9+#. -]{1,40}$/.test((rq.q || "").trim()) ? rq.q.trim() : "";
   const viewer = isStudent() ? (SP(meId) || {}) : {}, vmajor = (viewer.major || "").trim().toLowerCase();
   const visible = p => p.status === "published" || (p.author === meId && ["pending", "held", "rejected"].includes(p.status));
-  let posts, lead = "", note = "", empty;
+  let posts, note = "", empty;
   if (tab === "saved") {
     posts = S.saves.filter(x => x.user === meId).sort((a, b) => b.at - a.at).map(x => S.posts.find(p => p.id === x.post)).filter(p => p && p.status === "published").slice(0, 100);
     empty = `<div class="fd-empty">${bookmark(false, 44)}<h2>No saved posts yet</h2><p>Tap the bookmark on any post to save it here for later.</p><a class="b sec" href="#" data-go="feed">Browse the feed</a></div>`;
@@ -1209,27 +1245,28 @@ P.feed = () => {
       : f === "major" ? '<div class="fd-empty"><h2>No posts from your major yet</h2><p>When students in your major share something, it will show up here.</p></div>'
       : f === "employers" ? '<div class="fd-empty"><h2>No employer posts yet</h2><p>Approved employers share opportunities and advice for FSU students here.</p></div>'
       : '<div class="fd-empty"><h2>Nothing here yet</h2><p>Start the conversation.</p></div>';
-    const pills = FEED_PILLS.filter(x => !(x[0] === "major" && !isStudent())).map(([k, label]) => `<a class="fd-pill" href="#" data-go="${feedUrl(tab, k, q)}"${k === f ? ' aria-current="true"' : ""}>${k === f ? icon("check", 15) : ""}${label}</a>`).join("")
-      + (q ? `<a class="fd-pill" href="#" data-go="${feedUrl(tab, f)}">Topic: ${esc(q)} ✕</a>` : "");
-    const kinds = isStudent() ? ["question", "advice", "opportunity", "event", "win"] : ["opportunity", "advice", "event", "info_session"];
-    const d = S.feedDraft || {}, rule = isStudent() ? "Share a question, advice, a win, or an opportunity with other Noles." : "Employer posts must be opportunities, events or advice for FSU students. Ads and promotions are declined. A reviewer approves each post.";
-    const canPost = isStudent() ? studentReady(SP(meId)) : true, [nm] = who(meId);
-    const composer = canPost ? `<details class="fd-comp"${d.body ? " open" : ""}><summary><span class="avatar${isEmployer() ? " emp" : ""}" aria-hidden="true">${initials(nm)}</span><span>Share something with the community…</span></summary><form id="feedForm" class="composer-card">${takeFlash()}<label for="f-body" class="hp">Post</label><textarea id="f-body" name="body" required maxlength="1500" placeholder="${esc(rule)}">${esc(d.body || "")}</textarea>
-<div class="row" style="margin-top:8px"><label for="f-kind" class="hp">Type</label><select id="f-kind" name="kind" style="width:auto">${kinds.map(k => `<option value="${k}"${d.kind === k ? " selected" : ""}>${KINDS[k]}</option>`).join("")}</select>
-<label for="f-link" class="hp">Link</label><input id="f-link" name="link" maxlength="300" placeholder="Link (optional)" value="${esc(d.link || "")}" style="flex:1;min-width:160px"><button class="b" type="submit">Post</button></div>${isEmployer() ? `<p class="small faint" style="margin-top:6px">${esc(rule)}</p>` : ""}</form></details>` : banner("info", "Set up your profile (name and major) before posting.");
-    lead = `<div class="fd-pills" role="group" aria-label="Filter posts">${pills}</div>${composer}`;
   }
+  const kinds = isStudent() ? ["question", "advice", "opportunity", "event", "win"] : ["opportunity", "advice", "event", "info_session"];
+  const d = S.feedDraft || {}, rule = isStudent() ? "Share a question, advice, a win, or an opportunity with other Noles." : "Employer posts must be opportunities, events or advice for FSU students. Ads and promotions are declined. A reviewer approves each post.";
+  const canPost = isStudent() ? studentReady(SP(meId)) : true, [nm] = who(meId), flashed = takeFlash();
+  const composer = canPost ? `<details class="fd-comp"${d.body ? " open" : ""}><summary class="b sm fd-write"><span class="fd-w-o">${icon("plus", 15)} Write a post</span><span class="fd-w-c">Close</span></summary><form id="feedForm" class="fd-form"><div class="fd-form-top"><span class="avatar${isEmployer() ? " emp" : ""}" aria-hidden="true">${initials(nm)}</span><label for="f-body" class="hp">Post</label><textarea id="f-body" name="body" required maxlength="1500" placeholder="${esc(rule)}">${esc(d.body || "")}</textarea></div>
+<div class="row fd-form-row"><label for="f-kind" class="hp">Type</label><select id="f-kind" name="kind">${kinds.map(k => `<option value="${k}"${d.kind === k ? " selected" : ""}>${KINDS[k]}</option>`).join("")}</select>
+<label for="f-link" class="hp">Link</label><input id="f-link" name="link" maxlength="300" placeholder="Link (optional)" value="${esc(d.link || "")}"><button class="b" type="submit">Post</button></div>${isEmployer() ? `<p class="small faint" style="margin-top:6px">${esc(rule)}</p>` : ""}</form></details>` : banner("info", "Set up your profile (name and major) before posting.");
+  const cur = tab === "saved" || tab === "foryou" ? tab : (f === "major" || f === "employers" ? f : "everyone");
+  const topic = q && tab !== "saved" ? `<p class="fd-topic">Topic: ${esc(q)} <a href="#" data-go="${feedUrl(tab, f)}" aria-label="Clear topic">✕ Clear</a></p>` : "";
+  const top = `<div class="fd-top"><div class="fd-bar"><h1>Feed</h1>${feedShowMenu(cur, q)}</div>${composer}${flashed}${topic}${note}</div>`;
   const here = tab === "saved" ? "feed?tab=saved" : feedUrl(tab, f, q);
   const items = posts.map(p => {
     const st = p.status !== "published" ? `<span class="pill ${p.status === "rejected" ? "bad" : "warn"}">${{pending: "Waiting for review", held: "Held for a safety check", rejected: "Not approved"}[p.status]}</span>` : "";
     const open = S.openComments === p.id, mine = p.author === meId, helped = p.helpful.has(meId), sv = isSaved(meId, p.id);
-    const save = p.status === "published" ? `<button class="fd-save-b" type="button" data-do="${sv ? "unsave" : "save"}" data-id="${p.id}" data-next="${esc(here)}" aria-label="${sv ? "Remove from saved posts" : "Save post"}" title="${sv ? "Remove from saved posts" : "Save post"}" aria-pressed="${sv}">${bookmark(sv)}</button>` : "";
-    return `<article class="post fd-post"><div class="fd-head">${feedAuthor(p.author)}<div class="fd-meta">${st}<span class="pill ${KIND_PILL[p.kind]} fd-tag">${KINDS[p.kind]}</span><span class="fd-time">${ago(p.at)}</span><span class="fd-save">${save}</span></div></div>
-<div class="body">${esc(p.body)}</div>${p.link ? `<p class="lnk">${icon("jobs", 14)} <a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer nofollow ugc">${esc(p.link.slice(0, 90))}</a> <span class="faint">(opens another site)</span></p>` : ""}
-${p.status === "published" ? `<div class="acts"><button type="button" data-do="helpful" data-id="${p.id}"${helped ? ' class="on"' : ""}>Helpful · ${p.helpful.size}</button><button type="button" data-do="comments" data-id="${p.id}">Comments · ${p.comments.length}</button>${mine ? "" : `<button type="button" data-do="report-post" data-id="${p.id}">${p.reports.has(meId) ? "Reported" : "Report"}</button>`}${!mine && isStudent() && U(p.author).role === "employer" && approvedEmp(p.author) ? `<a href="#" data-go="newmsg?to=${p.author}">Message</a>` : ""}${mine ? `<button type="button" data-do="del-post" data-id="${p.id}">Delete</button>` : ""}</div>` : ""}
-${open ? `<div class="comments">${p.comments.map(c => `<div class="comment"><b>${esc(who(c.author)[0])}</b> ${esc(c.body)} <span class="small faint">${ago(c.at)}</span></div>`).join("") || '<p class="faint small">No comments yet.</p>'}<form class="commentForm row" data-id="${p.id}" style="margin-top:8px"><label for="cm-${p.id}" class="hp">Comment</label><input id="cm-${p.id}" name="body" maxlength="500" required placeholder="Add a comment" style="flex:1;min-width:160px"><button class="b sm" type="submit">Comment</button></form></div>` : ""}</article>`; }).join("");
-  const tabs = `<nav class="fd-tabs" aria-label="Feed sections">${FEED_TABS.map(([k, label]) => `<a href="#" data-go="${feedUrl(k)}"${k === tab ? " aria-current=page" : ""}>${label}</a>`).join("")}</nav>`;
-  return `<div class="fd">${tabs}<div class="fd-grid"><div class="fd-main">${note}${lead}${items || empty}</div>${feedRail()}</div></div>`;
+    const save = p.status === "published" ? `<span class="fd-save"><button type="button" data-do="${sv ? "unsave" : "save"}" data-id="${p.id}" data-next="${esc(here)}" aria-label="${sv ? "Remove from saved posts" : "Save post"}" title="${sv ? "Remove from saved posts" : "Save post"}" aria-pressed="${sv}">${bookmark(sv, 18)}</button></span>` : "";
+    const [n, sub, kind] = who(p.author), go = `${kind === "emp" ? "company" : "u"}?id=${p.author}`;
+    return `<article class="fd-post" id="post-${p.id}"><div class="fd-gut"><a class="avatar${kind === "emp" ? " emp" : ""}" href="#" data-go="${go}" aria-hidden="true" tabindex="-1">${initials(n)}</a></div>
+<div class="fd-body"><div class="fd-line"><span class="fd-who"><a class="fd-nm" href="#" data-go="${go}">${esc(n)}</a>${kind === "emp" ? '<span class="fd-emp">Employer</span>' : ""}<span class="fd-sub">${esc(sub)}</span><span class="fd-time">· ${ago(p.at)}</span></span><span class="fd-kind ${KIND_CLASS[p.kind] || ""}">${KINDS[p.kind]}</span>${st}${save}</div>
+<div class="fd-text">${esc(p.body)}</div>${p.link ? `<p class="lnk">${icon("jobs", 14)} <a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer nofollow ugc">${esc(p.link.slice(0, 90))}</a> <span class="faint">(opens another site)</span></p>` : ""}
+<div class="fd-acts">${p.status === "published" ? `<button type="button" data-do="helpful" data-id="${p.id}"${helped ? ' class="on"' : ""} aria-pressed="${helped}">Helpful · ${p.helpful.size}</button><button type="button" data-do="comments" data-id="${p.id}">Comments · ${p.comments.length}</button>${mine ? "" : `<button type="button" data-do="report-post" data-id="${p.id}">${p.reports.has(meId) ? "Reported" : "Report"}</button>`}${!mine && isStudent() && U(p.author).role === "employer" && approvedEmp(p.author) ? `<a href="#" data-go="newmsg?to=${p.author}">Message</a>` : ""}` : ""}${mine ? `<button type="button" data-do="del-post" data-id="${p.id}">Delete</button>` : ""}</div>
+${open ? `<div class="comments">${p.comments.map(c => `<div class="comment"><b>${esc(who(c.author)[0])}</b> ${esc(c.body)} <span class="small faint">${ago(c.at)}</span></div>`).join("") || '<p class="faint small">No comments yet.</p>'}<form class="commentForm row" data-id="${p.id}" style="margin-top:8px"><label for="cm-${p.id}" class="hp">Comment</label><input id="cm-${p.id}" name="body" maxlength="500" required placeholder="Add a comment" style="flex:1;min-width:160px"><button class="b sm" type="submit">Comment</button></form></div>` : ""}</div></article>`; }).join("");
+  return `<div class="fd"><div class="fd-grid"><div class="fd-main">${top}<div class="fd-list">${items || empty}</div></div>${feedCircle()}</div></div>`;
 };
 
 // ---- profiles ----
