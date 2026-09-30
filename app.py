@@ -396,6 +396,14 @@ def _score_pill(j: dict) -> str:
     return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
 
 
+def _scan_chip(j: dict) -> str:
+    """The job card's scan-status chip (ui.scan_chip): Secure / Caution / Threat and the shown score. The older
+    "Scam risk N · status" wording stays as screen-reader text."""
+    lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
+    sc = ui.shown_score(j["score"], lead_gen)
+    return ui.scan_chip(ui.scan_state(j["scam_status"]), sc, label=f"Scam risk {sc} · {j['scam_status']}")
+
+
 def _risk(j: dict) -> str:
     lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
     return ui.risk_meter(int(j["score"]), j["scam_status"], aggregator=lead_gen)
@@ -491,7 +499,7 @@ def static_app_js():
 
 _FX_JS = (Path(__file__).resolve().parent / "static" / "fx.js").read_bytes()
 ui.FX_JS_VERSION = hashlib.sha256(_FX_JS).hexdigest()[:10]
-_FONT = (Path(__file__).resolve().parent / "static" / "fonts" / "archivo.woff2").read_bytes()
+_FONTS = {f: (Path(__file__).resolve().parent / "static" / "fonts" / f).read_bytes() for f in ui.FONT_FILES}
 
 
 @app.get("/static/fx.js")
@@ -514,10 +522,14 @@ def static_media(name: str):
     return Response(data, media_type="image/webp", headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
-@app.get("/static/fonts/archivo.woff2")
-def static_font():
-    # Archivo, SIL Open Font License 1.1 (static/fonts/OFL.txt). Self-hosted: no third-party font requests.
-    return Response(_FONT, media_type="font/woff2", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+@app.get("/static/fonts/{name}")
+def static_font(name: str):
+    # Playfair Display, Inter and JetBrains Mono, SIL Open Font License 1.1 (static/fonts/OFL.txt). Self-hosted: no
+    # third-party font requests. Only the files in ui.FONT_FILES can be named.
+    data = _FONTS.get(name)
+    if data is None:
+        raise StarletteHTTPException(status_code=404)
+    return Response(data, media_type="font/woff2", headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 _ERROR_TEXT = {
@@ -613,7 +625,7 @@ def jobs_feed(request: Request):
         return RedirectResponse(f"/job/{old}", status_code=301)
     # Query params are attacker-controlled input same as form fields: jobboard.parse_params drops anything unexpected.
     with store.db() as conn:
-        body = jobboard.board(conn, viewer, dict(request.query_params), query_public(), pill=_score_pill, risk=_risk)
+        body = jobboard.board(conn, viewer, dict(request.query_params), query_public(), pill=_scan_chip, risk=_risk)
     return shell(body, title="Browse jobs — NoleCareerShield", active="/jobs")
 
 
@@ -1268,7 +1280,7 @@ def _resume_draft(request: Request, user: dict, background: BackgroundTasks) -> 
 # --- one place to start: email first, like Handshake ---
 
 def _start_shell(inner: str, title: str, status: int = 200) -> HTMLResponse:
-    return HTMLResponse(shell(f'<div class="auth start"><div class="startmark" aria-hidden="true">{EMBLEM}</div>{inner}</div>',
+    return HTMLResponse(shell(f'<div class="auth start"><div class="startmark" aria-hidden="true">{ui.crest(56)}</div>{inner}</div>',
                               title=title + " — NoleCareerShield", scripts=True), status_code=status)
 
 

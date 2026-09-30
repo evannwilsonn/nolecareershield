@@ -70,7 +70,7 @@ stand, what was decided and why, and what's next.
     about 9.7 of Evan's 10 free credits). They show no real FSU buildings, people, logos or marks.
   - Reduced motion, Save-Data, slow connections and no-JS all get a still photo with the first caption and nothing
     pinned. Photos are served from `/static/media/` with a year-long cache; the page policy needed no change.
-- **Type:** Archivo (variable, self-hosted in `static/fonts/`, OFL). Condensed uppercase for big statements
+- **Theme (Oct 2026, "elite"):** dark everywhere: midnight navy, gold foil, garnet. Fonts are self-hosted in `static/fonts/` (OFL): Playfair Display (headings, brand, big numbers), Inter (body), JetBrains Mono (small-caps labels). Tokens are in `ui.CSS`; shared components and overrides of older page styles are in `ui.THEME_CSS` (rendered after everything). Helpers: `ui.crest(size)` (the gold shield, also the favicon), `ui.verified_badge()`, `ui.scan_chip(state, score, label)`, `ui.stat_row()`, `ui.page_head(..., em=)`; each has a twin in `demo/app.js`.
   (`.display`), normal width for body.
 - **The listing scanner** (one effect, merging this chat's teardown with the `scan-hero` branch from another chat,
   commit 583902f): a fake listing on the student home ("Know it's real before you apply"). As you scroll, a gold

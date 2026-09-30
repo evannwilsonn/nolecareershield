@@ -222,7 +222,7 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
     jobs = store.rows(conn, f"SELECT id, title, category, work_type, location FROM jobs WHERE employer_id = ? AND {store.live_where()} "
                             "ORDER BY created_at DESC LIMIT 20", (uid,))
     hires_for, perks = store.jload(p.get("hires_for"), []), store.jload(p.get("perks"), [])
-    status_pill = {"approved": '<span class="pill ok">✓ Approved employer</span>', "pending": '<span class="pill warn">Waiting for review</span>',
+    status_pill = {"approved": ui.verified_badge(), "pending": '<span class="pill warn">Waiting for review</span>',
                    "rejected": '<span class="pill bad">Not approved</span>', "suspended": '<span class="pill bad">Suspended</span>',
                    "draft": '<span class="pill">Profile not finished</span>'}.get(p.get("status") or "draft", "")
     meta = " · ".join(esc(x) for x in (p.get("industry"), p.get("size") and f"{p['size']} people", p.get("location"),

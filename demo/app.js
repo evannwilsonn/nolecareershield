@@ -279,7 +279,41 @@ function riskPosition(score, status, agg) {
 }
 const riskMeter = (score, status, agg) => { const [zone, pos] = riskPosition(score, status, agg);
   return `<div class="risk z${zone}" style="--pos:${pos}%"><span class="end">0</span><span class="gauge" role="img" aria-label="Scam risk ${pos} of 100">${[0, 1, 2, 3].map(i => `<i class="z${i}"></i>`).join("")}<b></b></span><span class="end">100</span><span class="rl">${pos}</span></div>`; };
-const pageHead = (t, lede, num) => `<div class="page-head">${num ? `<div class="num">${esc(num)}</div>` : ""}<h1>${esc(t)}</h1>${lede ? `<p>${lede}</p>` : ""}</div>`;
+const pageHead = (t, lede, num, em) => `<div class="page-head">${num ? `<div class="num">${esc(num)}</div>` : ""}<h1>${esc(t)}${em ? ` <em>${esc(em)}</em>` : ""}</h1>${lede ? `<p>${lede}</p>` : ""}</div>`;
+// Twins of ui.crest, ui.verified_badge, ui.scan_chip, ui.scan_state, ui.stat_row, ui.shield_status and ui.me_pill (same markup).
+let crestN = 0;
+function crest(size, label) {
+  size = size || 36; const n = "d" + (++crestN), h = Math.round(size * 1.1), sw = size >= 28 ? 2.6 : 3;
+  const a11y = label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"';
+  return `<svg class="crest" viewBox="0 0 40 44" width="${size}" height="${h}" ${a11y} focusable="false"><defs><linearGradient id="ncsf${n}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FBE7AE"/><stop offset=".35" stop-color="#E2BE6A"/><stop offset=".62" stop-color="#A9812F"/><stop offset="1" stop-color="#EBCB7F"/></linearGradient></defs>`
+    + `<path d="M20 1.5 37 7v13.5C37 31 29.6 39 20 42.5 10.4 39 3 31 3 20.5V7z" fill="url(#ncsf${n})" stroke="#8A6526" stroke-width="1.4"/><path d="M20 7.2 31.8 11v9.3C31.8 27.8 26.8 33.3 20 36.2 13.2 33.3 8.2 27.8 8.2 20.3V11z" fill="none" stroke="#08111F" stroke-opacity=".5" stroke-width="1.1"/>`
+    + `<path d="m13.6 21.2 4.5 4.5 8.6-9" fill="none" stroke="#08111F" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+const SEAL = '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M6 .8 7.3 2l1.7-.2.4 1.7 1.5.9-.7 1.6.7 1.6-1.5.9-.4 1.7-1.7-.2L6 11.2 4.7 10l-1.7.2-.4-1.7L1.1 7.6 1.8 6 1.1 4.4l1.5-.9.4-1.7 1.7.2z" fill="#3A2A08"/><path d="m3.9 6 1.4 1.4L8.2 4.6" fill="none" stroke="#F6DE9E" stroke-width="1.1" stroke-linecap="round"/></svg>';
+const verifiedBadge = (text, go, title) => { const inner = SEAL + esc(text || "Verified employer"), t = esc(title || "A reviewer approved this employer");
+  return go ? `<a class="ver" href="#" data-go="${go}" title="${t}">${inner}</a>` : `<span class="ver" title="${t}">${inner}</span>`; };
+const scanState = st => ({clear: "safe", flagged: "caution", held: "threat"})[st] || "idle";
+function scanChip(state, score, label, go) {
+  const cls = ({idle: "idle", safe: "safe", caution: "caution", threat: "bad"})[state] || "idle";
+  const sr = label ? `<span class="sr">${esc(label)}</span>` : "", hide = label ? ' aria-hidden="true"' : "";
+  let vis = "<span>Run scan</span>", seg = "";
+  if (cls !== "idle") {
+    const sc = Math.max(0, Math.min(100, Math.round(score || 0))), on = cls === "bad" ? 5 : Math.max(1, Math.min(5, Math.ceil(sc / 20)));
+    vis = `<span>${({safe: "Secure", caution: "Caution", bad: "Threat"})[cls]}</span><b>${String(sc).padStart(2, "0")}</b>`;
+    seg = '<span class="bars">' + [0, 1, 2, 3, 4].map(i => `<i${i < on ? " class=on" : ""}></i>`).join("") + "</span>";
+  }
+  const [tag, attr] = go ? ["a", ` href="#" data-go="${go}"`] : ["span", ""];
+  return `<${tag} class="scanchip ${cls}"${attr}>${sr}<span class="rad" aria-hidden="true"></span><span class="scanchip-t"${hide}>${vis}${seg}</span></${tag}>`;
+}
+const statRow = items => `<div class="statrow">${items.map(([label, value, tone, go]) => { const b = `<b${tone ? ` class=${tone}` : ""}>${esc(value)}</b>`;
+  return go ? `<a href="#" data-go="${go}"><span>${esc(label)}</span>${b}</a>` : `<div><span>${esc(label)}</span>${b}</div>`; }).join("")}</div>`;
+function shieldStatus(role) {
+  if (role === "student") return '<div class="vault" aria-label="Shield status"><div class="t">Shield status</div><div class="l"><span><span class="led" aria-hidden="true"></span>Scanner</span><b>ONLINE</b></div><div class="l"><span>Listings reviewed</span><b class="n">ALL</b></div><div class="l"><span>Session</span><b>@FSU.EDU</b></div>'
+    + '<p><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. <a href="#" data-go="scam?kind=message">Check a message</a>.</p></div>';
+  return '<div class="vault" aria-label="Hiring desk"><div class="t">Hiring desk</div><div class="l"><span><span class="led" aria-hidden="true"></span>Scanner</span><b>ONLINE</b></div><div class="l"><span>Students</span><b class="n">@FSU.EDU</b></div>'
+    + '<p><b>Tip:</b> listings with pay, hours and a named contact get more applicants. <a href="#" data-go="profile">Your company page</a>.</p></div>';
+}
+const mePill = u => `<a class="me" href="#" data-go="profile" title="${esc(u.email)}"><span class="av" aria-hidden="true">${initials(u.email.split("@")[0].replace(/\./g, " "))}</span><span class="me-t"><b>${esc(u.email)}</b><small>${u.role === "student" ? "FSU student" : "Employer"}</small></span></a>`;
 const takeFlash = () => { const f = S.flash; S.flash = null; return f ? banner(f.kind, f.text, f.raw) : ""; };
 const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
 
@@ -432,14 +466,13 @@ function sidebar(active) {
     if (grp) out.push(`<div class="grp">${esc(grp)}</div>`);
     for (const [ic, go, label] of items) out.push(`<a href="#" data-go="${go}"${go === active ? ' class="on" aria-current="page"' : ""}>${icon(ic)}<span>${esc(label)}</span>${go === "messages" && n ? `<span class="count" aria-label="${n} unread">${n}</span>` : go === "network" && reqs ? `<span class="count" aria-label="${reqs} connection requests">${reqs}</span>` : go === "emails" && mails ? `<span class="count" aria-label="${mails} unread emails">${mails}</span>` : ""}</a>`);
   }
-  const tip = isStudent() ? '<div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. <a href="#" data-go="scam?kind=message">Check a message</a>.</div>'
-    : '<div class="tip"><b>Tip:</b> listings with pay, hours and a named contact get more applicants. <a href="#" data-go="profile">Your company page</a>.</div>';
-  return `<aside class="side"><nav aria-label="Main">${out.join("")}</nav>${tip}</aside>`;
+  const brand = `<a class="brand side-brand" href="#" data-go="home">${crest(40)}<span class="brand-name">NoleCareerShield<small>Members only</small></span></a>`;
+  return `<aside class="side">${brand}<nav aria-label="Main">${out.join("")}</nav>${shieldStatus(me().role)}</aside>`;
 }
 function nav() {
   $("#inboxBtn").textContent = "Demo inbox" + (S.inbox.length ? ` (${S.inbox.length})` : "");
   const extra = S.admin ? '<a class="ghost" href="#" data-go="admin">Review queue</a>' : "";
-  if (me()) $("#navActions").innerHTML = extra + `<span class="who">${esc(me().email)}</span><button class="ghostbtn" type="button" data-do="logout">Log out</button>` + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "");
+  if (me()) $("#navActions").innerHTML = extra + '<button class="ghostbtn" type="button" data-do="logout">Log out</button>' + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "") + mePill(me());
   else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="employers">For employers</a>';
 }
 const APP_PAGES = {hiring: "hiring", hjob: "hiring", applicants: "hiring", hedit: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages", interview: "messages", templates: "messages", team: "team", tailor: "resume", standout: "resume", optimized: "resume",
@@ -621,7 +654,8 @@ function jbVerdict(j) {
 }
 function jbCard(j, p, fitpct, saved) {
   const match = fitpct !== null && fitpct !== undefined ? `<span class="jc-match ${jbLevel(fitpct)}">${fitpct}% match</span>` : "";
-  const tags = `<span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span>` + match + (j.easy_apply ? '<span class="jc-tag q">Quick apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="jc-tag n">New</span>' : "");
+  const lg = j.findings.some(f => f.rule_id === "lead_gen"), sc = shownScore(j.score, lg);
+  const tags = scanChip(scanState(j.scam_status), sc, `Scam risk ${sc} · ${j.scam_status}`) + match + (j.easy_apply ? '<span class="jc-tag q">Quick apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="jc-tag n">New</span>' : "");
   const place = jbWhere(j), setting = cap(j.work_type);
   const facts = [place, place === setting ? "" : setting, jbKinds(j).slice(0, 2).map(k => JB_KIND_LABEL[k]).join(", ")].filter(Boolean).join(" · ");
   return `<article class="jc ${jbVerdict(j)}"><span class="jc-logo" aria-hidden="true">${initials(j.company)}</span><div class="jc-body"><h3 class="jc-title"><a class="jc-link" href="#" data-go="job?id=${j.id}">${esc(j.title)}</a></h3>`
@@ -761,7 +795,7 @@ function jbDetail(j, prof, next, record, saved, extra) {   // twin of jobboard.d
   const own = isEmployer() && j.employer_id === me().id ? `<div class="banner info">This is your listing. <a href="#" data-go="hjob?id=${j.id}">See ranked student matches, candidates and stats →</a></div>` : "";
   const f = student && jbHasProfile(prof) ? N.fitScore(j, prof) : null;
   const sub = [jbWhere(j), jbWhere(j) === cap(j.work_type) ? "" : cap(j.work_type), jbPosted(j)].filter(Boolean).join(" · "), note = student && j.easy_apply && !done ? QUICK_NOTE : "";
-  const top = `<div class="jd-top"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">${initials(j.company)}</span><div class="jd-h"><div class="jd-co">${co}</div><h1 class="jd-title">${esc(j.title)}</h1><div class="jd-sub">${esc(sub)}</div>${trust ? `<div class="jd-trust">${trust}</div>` : ""}</div></div>${own}<div class="jd-acts">${acts}</div>${note}${banr}</div>`;
+  const top = `<div class="jd-top"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">${initials(j.company)}</span><div class="jd-h"><div class="jd-co">${co}</div><h1 class="jd-title">${esc(j.title)}</h1><div class="jd-sub">${esc(sub)}</div>${trust ? `<div class="jd-trust">${verifiedBadge()} ${trust}</div>` : ""}</div></div>${own}<div class="jd-acts">${acts}</div>${note}${banr}</div>`;
   const side = `<aside class="jd-side" aria-label="Scam check and fit">${jbScam(j)}${student ? jbMatch(j, f) : ""}${jbQuals(j, f, !!f)}${posterBlock(j, empOk)}</aside>`;
   const body = `<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">${esc(j.description)}</div></section>${jbGlance(j)}${extra || ""}</div>`;
   return `<a class="back jd-back" href="#" data-go="jobs">← All jobs</a><article class="jd ${jbVerdict(j)}">${top}${side}${body}</article>`;
@@ -2231,7 +2265,7 @@ ${owner && t.tips.length ? `<h4 class="small" style="margin:14px 0 6px">Raise yo
 function companyHtml(p, uid, notice) {
   const owner = me().id === uid, s = trustSignals(uid), t = N.trustFromSignals(s), med = median(s.reply_hours);
   const jobs = approvedJobs().filter(j => j.employer_id === uid).slice().reverse();
-  const statusPill = {approved: '<span class="pill ok">✓ Approved employer</span>', pending: '<span class="pill warn">Waiting for review</span>', rejected: '<span class="pill bad">Not approved</span>', suspended: '<span class="pill bad">Suspended</span>', draft: '<span class="pill">Profile not finished</span>'}[p.status || "draft"] || "";
+  const statusPill = {approved: verifiedBadge(), pending: '<span class="pill warn">Waiting for review</span>', rejected: '<span class="pill bad">Not approved</span>', suspended: '<span class="pill bad">Suspended</span>', draft: '<span class="pill">Profile not finished</span>'}[p.status || "draft"] || "";
   const meta = [p.industry, p.size && p.size + " people", p.location, p.founded && "Founded " + p.founded].filter(Boolean).map(esc).join(" · ");
   const links = [["website", "Website"], ["linkedin", "LinkedIn"]].filter(([k]) => p[k]).map(([k, l]) => `<a href="${esc(p[k])}" target="_blank" rel="noopener noreferrer nofollow">${l} ↗</a>`).join("");
   const actions = owner ? '<div class="row"><a class="b sm sec" href="#" data-go="setup?step=1">Edit profile</a><a class="b sm ghost" href="#" data-go="team">Team</a><a class="b sm ghost" href="#" data-go="hiring">Your listings</a></div>'
@@ -2966,7 +3000,7 @@ P.report = () => `${pageHead("Report a listing")}<div class="prose"><p>See somet
 
 
 // ---- sign in: one email box first, like Handshake (same as app.login_start) ----
-const startShell = inner => `<div class="auth start"><div class="startmark" aria-hidden="true">${document.querySelector(".brand svg") ? document.querySelector(".brand svg").outerHTML : ""}</div>${inner}</div>`;
+const startShell = inner => `<div class="auth start"><div class="startmark" aria-hidden="true">${crest(56)}</div>${inner}</div>`;
 P.start = () => {
   const nx = okNext(S.route.q.next);
   return startShell(`<h2 class="auth-title">Log in or sign up</h2><p class="auth-sub">Students use their @fsu.edu address.</p>${nx.startsWith("job-") ? banner("info", "Log in with your FSU student account to see how to apply.") : ""}${takeFlash()}
@@ -3451,6 +3485,7 @@ function render(keepScroll) {
   const hero = out && out.hero ? out.hero : "", body = out && out.body !== undefined ? out.body : out;
   const inApp = me() && name in APP_PAGES && !(name === "home" && !me());
   const main = $("#app");
+  document.body.classList.toggle("inapp", !!inApp);
   if (inApp) main.innerHTML = `<div class="app">${sidebar(APP_PAGES[name])}<main class="main" id="main"><div class="wrap">${body}</div>${FOOTER}</main></div>`;
   else if (out && out.wide) main.innerHTML = `<main id="main">${hero}${body}</main>${FOOTER}`;
   else main.innerHTML = `${hero}<div class="wrap"><main id="main">${body}</main></div>${FOOTER}`;

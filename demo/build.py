@@ -3,7 +3,7 @@
     python demo/build.py
 
 It is assembled from the real site's pieces so it can't drift:
-  * the stylesheet from ui.py (the Kami x Notion x Bento design system)
+  * the stylesheet from ui.py (ui.CSS + ui.THEME_CSS, the midnight navy and gold theme) and its self-hosted fonts
   * the scam rules from scam_detector/rulepack/core.json
   * demo/engine.js, a port of the Python engines checked by tests/test_demo_engine.py
   * demo/app.js, the pages, driven by in-memory sample data
@@ -38,26 +38,16 @@ import css_team  # noqa: E402,F401  (appends the team page styles to ui.CSS)
 TITLE = "NoleCareerShield Demo"
 
 
-def themed_css(css: str) -> str:
-    """ui.py switches to dark with prefers-color-scheme only. The demo also honours an explicit
-    light/dark choice from the page that hosts it (data-theme on the root element)."""
-    m = re.search(r"@media \(prefers-color-scheme:dark\)\{:root\{(.*?)\}\}", css, re.S)
-    if not m:
-        raise SystemExit("dark-theme block not found in ui.CSS")
-    tokens = m.group(1)
-    dark = ('@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){' + tokens + "}}\n"
-            ':root[data-theme="dark"]{' + tokens + "}")
-    return css[:m.start()] + dark + css[m.end():]
-
-
 DEMO_CSS = """
-.demo{background:var(--ink);color:var(--canvas);font-size:13px;padding:8px 16px;display:flex;gap:8px 12px;justify-content:center;align-items:center;flex-wrap:wrap;text-align:center}
-.demo .lbl{opacity:.85;max-width:64ch}
+.demo{position:relative;z-index:30;background:linear-gradient(90deg,#050A14,#0C1729 50%,#050A14);color:#AEB9C9;border-bottom:1px solid var(--hair-2);font-size:12.5px;padding:8px 16px;display:flex;gap:8px 14px;justify-content:center;align-items:center;flex-wrap:wrap;text-align:center}
+.demo::before{content:"Demo";font:500 10px/1 var(--mono);letter-spacing:.24em;text-transform:uppercase;color:#1B1406;background:var(--foil);padding:5px 8px;border-radius:5px}
+.demo .lbl{max-width:70ch;color:#AEB9C9}
 .demo .grp{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center}
-.demo button{background:transparent;color:inherit;border:1px solid color-mix(in srgb,var(--canvas) 45%,transparent);border-radius:999px;padding:3px 11px;font:500 12px var(--sans);cursor:pointer}
-.demo button:hover{background:color-mix(in srgb,var(--canvas) 14%,transparent)}
+.demo .grp>span{font:500 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.demo button{background:rgba(226,190,106,.06);color:var(--gold-2);border:1px solid var(--hair-2);border-radius:999px;padding:4px 12px;font:500 12px var(--sans);cursor:pointer}
+.demo button:hover{background:rgba(226,190,106,.14);border-color:var(--gold)}
 header{top:env(safe-area-inset-top,0px)}
-.side{top:calc(57px + env(safe-area-inset-top,0px))}
+@media(min-width:901px){.inapp .demo{margin-left:var(--side-w)}}
 body{background:var(--canvas)}
 a[href="#"]{cursor:pointer}
 .b,.chipf,.job,.side a,.seg a,.tabs a{cursor:pointer}
@@ -71,7 +61,7 @@ SHELL = """<title>{title}</title>
 <div class="demo" id="demo" role="region" aria-label="Demo controls"><span class="lbl">Interactive demo with sample data. The scam checks, matches and resume scores run the real detector and rules in your browser; nothing is saved or sent. Students: log in with jordan@fsu.edu.</span>
 <span class="grp"><span>Explore as:</span><button type="button" data-do="as-student">Student</button><button type="button" data-do="as-employer">Employer</button><button type="button" data-do="as-reviewer">Reviewer</button></span>
 <span class="grp"><button type="button" data-go="inbox" id="inboxBtn">Demo inbox</button><button type="button" data-do="reset">Reset demo</button></span></div>
-<header><div class="nav"><a class="brand" href="#" data-go="home" aria-label="NoleCareerShield home">{emblem}<span class="brand-name">Nole<b>CareerShield</b></span></a>
+<header><div class="nav"><a class="brand" href="#" data-go="home" aria-label="NoleCareerShield home">{emblem}{brandName}</a>
 <div class="nav-actions" id="navActions"></div></div></header>
 <div id="app"></div>
 <script>var NCS_RULEPACK = {rules};
@@ -111,14 +101,18 @@ def build() -> tuple[Path, Path]:
     extra_media = {"office-960.webp": uri("office-960.webp")}      # the employer home's photo
     if "/static/media/" in "".join(v for v in blocks.values()).replace("/static/media/arch-{n}", ""):
         raise SystemExit("a media link in the landing blocks was not embedded")
-    # The font is embedded, since the demo is one self-contained file.
-    font = base64.b64encode((ROOT / "static" / "fonts" / "archivo.woff2").read_bytes()).decode()
-    css = themed_css(ui.CSS + css_assist.CSS).replace("url(/static/fonts/archivo.woff2) format(\"woff2-variations\"),url(/static/fonts/archivo.woff2) format(\"woff2\")",
-                                     f"url(data:font/woff2;base64,{font}) format(\"woff2\")")
-    if "data:font/woff2" not in css:
-        raise SystemExit("font-face not found in ui.CSS")
+    # The fonts are embedded, since the demo is one self-contained file: each @font-face src becomes a data: URL.
+    css = ui.CSS + ui.THEME_CSS
+    for f in ui.FONT_FILES:
+        src = f"url(/static/fonts/{f})"
+        if src not in css:
+            raise SystemExit(f"@font-face for {f} not found in ui.CSS")
+        data = base64.b64encode((ROOT / "static" / "fonts" / f).read_bytes()).decode()
+        css = css.replace(src, f"url(data:font/woff2;base64,{data})")
+    if "/static/fonts/" in css:
+        raise SystemExit("a font link in ui.CSS was not embedded")
     body = SHELL
-    for key, val in {"title": TITLE, "css": css + DEMO_CSS, "emblem": ui.EMBLEM, "rules": safe(rules), "seed": safe(seed),
+    for key, val in {"title": TITLE, "css": css + DEMO_CSS, "emblem": ui.crest(30, key="hdr"), "brandName": ui.BRAND_NAME, "rules": safe(rules), "seed": safe(seed),
                      "blocks": safe(blocks), "frames": safe(frames), "media": safe(extra_media), "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text(),
                      "fx": (ROOT / "static" / "fx.js").read_text()}.items():
         body = body.replace("{" + key + "}", val)
@@ -127,7 +121,8 @@ def build() -> tuple[Path, Path]:
     full = HERE / "index.html"
     full.write_text('<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n'
                     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
-                    '<meta name="color-scheme" content="light dark"></head><body style="margin:0">\n' + body + "</body></html>\n")
+                    '<meta name="color-scheme" content="dark"><meta name="theme-color" content="#050A14">'
+                    f'<link rel="icon" href="{ui.FAVICON}"></head><body style="margin:0">\n' + body + "</body></html>\n")
     return art, full
 
 

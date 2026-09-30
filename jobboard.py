@@ -518,7 +518,7 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
     note = QUICK_NOTE if (is_student and easyapply.is_easy(j) and not done) else ""
     top = (f'<div class="jd-top"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">{ui.initials(j["company"])}</span><div class="jd-h">'
            f'<div class="jd-co">{co}</div><h1 class="jd-title">{esc(j["title"])}</h1><div class="jd-sub">{esc(sub)}</div>'
-           f'{f"<div class=jd-trust>{trust}</div>" if trust else ""}</div></div>{own}<div class="jd-acts">{acts}</div>{note}{banner}</div>')
+           f'{f"<div class=jd-trust>{ui.verified_badge()} {trust}</div>" if trust else ""}</div></div>{own}<div class="jd-acts">{acts}</div>{note}{banner}</div>')
     side = f'<aside class="jd-side" aria-label="Scam check and fit">{scam_block(j, pill(j), risk(j))}{match}{q}{poster_block(conn, viewer, j, emp_ok)}</aside>'
     body = (f'<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">{esc(j["description"])}</div></section>'
             f'{glance(j)}{extra}</div>')
