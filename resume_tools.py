@@ -395,7 +395,7 @@ def _studio(conn, user, tab: str = "optimize", extra: str = "", notice: str = ""
         ranked = matching.rank_jobs(with_jobs, p, limit=40) if with_jobs else []
         opts = "".join(f'<option value="{int(r["job"]["id"])}"{" selected" if int(r["job"]["id"]) == job else ""}>{esc(r["job"]["title"])} · {esc(r["job"]["company"])} (fit {r.get("fit", {}).get("score", r["score"])})</option>' for r in ranked)
         if job and auto:
-            jrow = store.row(conn, "SELECT * FROM jobs WHERE id = ? AND review_status = 'approved'", (job,))
+            jrow = store.row(conn, f"SELECT * FROM jobs WHERE id = ? AND {store.live_where()}", (job,))
             extra += _tailor_html(conn, user, p, job, jrow["title"], jrow["description"], None, x, ok) if jrow else ui.banner("warning", "That listing isn't available anymore.")
         body += f"""<form method="get" action="/resume/tailor-go" class="card rs-tpick"><div class="form-field"><label for="t-job">A job on the board</label>
 <p class="hint">You'll get a new resume made for that listing: a preview, every change listed with Undo, and PDF or Word downloads.</p>
@@ -521,7 +521,7 @@ def accept(request: Request, ctx: str = Form(""), kind: str = Form(""), old: str
         vid = int(m.group(2)) if m.group(2) else 0
         jid = int(m.group(3)) if m.group(3) else 0
         if jid:
-            j = store.row(conn, "SELECT * FROM jobs WHERE id = ? AND review_status = 'approved'", (jid,))
+            j = store.row(conn, f"SELECT * FROM jobs WHERE id = ? AND {store.live_where()}", (jid,))
             if not j or not p.get("resume_text"):
                 return RedirectResponse("/resume?tab=tailor", status_code=303)
             text, v = _working(conn, user, p, jid)
@@ -754,7 +754,7 @@ def tailor_route(request: Request, job_id: str = Form(""), title: str = Form("")
             return RedirectResponse("/resume?tab=tailor", status_code=303)
         jid = int(job_id) if job_id.isdigit() else 0
         if jid:
-            j = store.row(conn, "SELECT * FROM jobs WHERE id = ? AND review_status = 'approved'", (jid,))
+            j = store.row(conn, f"SELECT * FROM jobs WHERE id = ? AND {store.live_where()}", (jid,))
             if not j:
                 return _studio(conn, user, "tailor", extra=ui.banner("warning", "That listing isn't available anymore."), status=404)
             title, description = j["title"], j["description"]
@@ -861,7 +861,7 @@ def _q(params: dict) -> str:
 
 
 def _live_job(conn, jid: int) -> dict | None:
-    return store.row(conn, "SELECT * FROM jobs WHERE id = ? AND review_status = 'approved'", (jid,))
+    return store.row(conn, f"SELECT * FROM jobs WHERE id = ? AND {store.live_where()}", (jid,))
 
 
 def _me(conn, user, p: dict) -> dict:

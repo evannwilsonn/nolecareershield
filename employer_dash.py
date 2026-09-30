@@ -215,7 +215,7 @@ def data(conn, user: dict, now: float | None = None) -> dict:
     return {"company": p.get("company") or "", "status": p.get("status") or "draft", "status_note": p.get("status_note") or "",
             "new_apps": len(new_apps), "new_job": new_apps[0]["job_id"] if new_apps and len({c["job_id"] for c in new_apps}) == 1 else None,
             "awaiting": awaiting_reply(conn, uid), "expiring": expiring, "gap": profile_gap(t["tips"]),
-            "pending": sum(1 for j in jobs if j["review_status"] == "pending"), "live": sum(1 for j in jobs if j["review_status"] == "approved"),
+            "pending": sum(1 for j in jobs if j["review_status"] == "pending"), "live": sum(1 for j in jobs if store.visible_listing(j)),
             "stages": stages, "rows": rows, "more": max(0, len(jobs) - ROWS_MAX), "events": _events(conn, uid, now)}
 
 

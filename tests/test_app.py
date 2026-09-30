@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 LOCAL_MODULES = ("security", "app", "ui", "web", "store", "accounts", "mailer", "ai", "matching", "resume_engine",
                  "profiles", "messaging", "msgcheck", "assistant", "resume_tools", "feed", "admin_extra", "profile_page", "hiring",
                  "employer_page", "sso", "fit", "jobfit", "easyapply", "network", "quals", "emails", "jobboard", "css_feed", "css_jobs", "css_resume", "css_assist",
-                 "scheduling", "msg_templates", "css_msg", "employer_dash", "css_employer", "events", "css_events")
+                 "scheduling", "msg_templates", "css_msg", "employer_dash", "css_employer", "events", "css_events", "css_hiring")
 
 
 @pytest.fixture()
@@ -212,8 +212,14 @@ def test_listing_expires(client):
     csrf = csrf_from(client.get("/admin").text)
     client.post("/admin/approve/1", data={"csrf": csrf})
     import sqlite3
+    assert client.appmod.public_count() == 1
+    # Approval sets jobs.expires_at (60 days by default); past it, the listing is off the board.
     with sqlite3.connect(client.appmod.DB_PATH) as db:
-        db.execute("UPDATE jobs SET created_at='2000-01-01T00:00:00'")
+        db.execute("UPDATE jobs SET expires_at = 1000")
+    assert client.appmod.public_count() == 0
+    # Listings approved before expiry dates existed fall back to LISTING_TTL_DAYS after posting.
+    with sqlite3.connect(client.appmod.DB_PATH) as db:
+        db.execute("UPDATE jobs SET expires_at = NULL, created_at='2000-01-01T00:00:00'")
     assert client.appmod.public_count() == 0
 
 

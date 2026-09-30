@@ -47,6 +47,7 @@ import json
 import base64
 import hashlib
 import secrets
+import time
 import sqlite3
 import contextvars
 import datetime as dt
@@ -108,8 +109,13 @@ MAINTENANCE_HOURS = float(os.environ.get("MAINTENANCE_HOURS", "24"))
 
 
 def daily_maintenance():
-    """Purge expired data and take a database backup. Runs at startup and then every MAINTENANCE_HOURS."""
+    """Purge expired data, remind employers about listings about to expire, and take a database backup.
+    Runs at startup and then every MAINTENANCE_HOURS."""
     purge_old()
+    try:
+        send_expiry_reminders()
+    except Exception:                      # noqa: BLE001 - a failed reminder must never take the site down
+        log.exception("expiry reminders failed")
     try:
         backup.run_backup(DB_PATH)
     except Exception:                      # noqa: BLE001 - a failed backup must never take the site down
@@ -146,7 +152,10 @@ _EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_a
                   "easy_apply": "INTEGER NOT NULL DEFAULT 0", "questions": "TEXT NOT NULL DEFAULT '[]'",
                   "requirements": "TEXT NOT NULL DEFAULT '[]'",
                   "poster_name": "TEXT NOT NULL DEFAULT ''", "poster_title": "TEXT NOT NULL DEFAULT ''",
-                  "show_email": "INTEGER NOT NULL DEFAULT 0"}
+                  "show_email": "INTEGER NOT NULL DEFAULT 0",
+                  # Listing controls (hiring.py): open | paused | closed, and when an approved listing drops off the board.
+                  "listing_status": "TEXT NOT NULL DEFAULT 'open'", "expires_at": "REAL",
+                  "expiry_days": f"INTEGER NOT NULL DEFAULT {store.LISTING_DAYS_DEFAULT}", "expiry_reminded": "REAL"}
 REVIEW_REASONS = ["scam", "lead_gen", "other"]
 
 
@@ -201,7 +210,11 @@ def purge_old():
     events.send_event_reminders()          # the day-before reminder; each RSVP is reminded once
 
 
-def add_job(data: dict, employer_id: int | None = None) -> dict:
+visible_listing = store.visible_listing       # the one rule for what students can see (store.live_where is the SQL twin)
+
+
+def _scan(data: dict) -> tuple:
+    """Scam-scan a listing. Returns (result, scam_status, findings)."""
     result = score_posting(
         title=data["title"], description=data["description"] + ("\n" + easyapply.questions_text(data.get("questions") or [])
                                                                 if data.get("questions") else ""), company=data["company"],
@@ -231,15 +244,20 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
         findings.append(second)
         if scam_status == "clear":
             scam_status = "flagged"
+    return result, scam_status, findings
 
+
+def add_job(data: dict, employer_id: int | None = None) -> dict:
+    result, scam_status, findings = _scan(data)
+    days = _expiry_days(data.get("expiry_days"))
     with closing(sqlite3.connect(DB_PATH)) as db:
         cur = db.execute("""
             INSERT INTO jobs (title, company, category, work_type, location,
                               description, apply_url, contact, score, band,
                               scam_status, review_status, findings_json, created_at,
                               ruleset_version, employer_id, easy_apply, questions, requirements,
-                              poster_name, poster_title, show_email)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                              poster_name, poster_title, show_email, expiry_days)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data["title"], data["company"], data.get("category","Other"),
             data["work_type"], data.get("location",""), data["description"],
@@ -249,7 +267,7 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             result.ruleset_version, employer_id,
             1 if data.get("easy_apply") else 0, json.dumps(data.get("questions") or []),
             json.dumps(data.get("requirements") or []),
-            data.get("poster_name", ""), data.get("poster_title", ""), 1 if data.get("show_email") else 0,
+            data.get("poster_name", ""), data.get("poster_title", ""), 1 if data.get("show_email") else 0, days,
         ))
         db.commit()
         job_id = cur.lastrowid
@@ -257,10 +275,18 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             "band": result.band, "findings": findings}
 
 
+def _expiry_days(v) -> int:
+    try:
+        d = int(v)
+    except (TypeError, ValueError):
+        return store.LISTING_DAYS_DEFAULT
+    return max(store.LISTING_DAYS_MIN, min(store.LISTING_DAYS_MAX, d))
+
+
 def query_public(search="", category="", work_type="") -> list:
-    """Only APPROVED listings are ever shown publicly."""
-    q = "SELECT * FROM jobs WHERE review_status = 'approved' AND created_at >= ? "
-    params = [_cutoff(LISTING_TTL_DAYS)]
+    """Only approved listings that aren't paused, closed or expired are ever shown (store.live_where)."""
+    q = f"SELECT * FROM jobs WHERE {store.live_where(ttl_days=LISTING_TTL_DAYS)} "
+    params = []
     if search.strip():
         q += "AND (title LIKE ? ESCAPE '\\' OR company LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\') "
         term = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -305,8 +331,14 @@ def set_review(job_id: int, status: str, label: str | None = None, only_from: tu
 
     `only_from` limits which current states may change, so a stale browser tab cannot
     re-approve a listing someone else already rejected or removed. Returns True if a row changed."""
-    sql = "UPDATE jobs SET review_status = ?, review_label = ?, reviewed_at = ? WHERE id = ?"
-    params = [status, label, dt.datetime.utcnow().isoformat(), job_id]
+    sql = "UPDATE jobs SET review_status = ?, review_label = ?, reviewed_at = ?"
+    params = [status, label, dt.datetime.utcnow().isoformat()]
+    if status == "approved":
+        # Approval starts the clock: the listing drops off the board expiry_days (default 60) from now.
+        sql += ", expires_at = ? + 86400 * COALESCE(expiry_days, ?), expiry_reminded = NULL"
+        params += [time.time(), store.LISTING_DAYS_DEFAULT]
+    sql += " WHERE id = ?"
+    params.append(job_id)
     if only_from:
         sql += " AND review_status IN (%s)" % ",".join("?" * len(only_from))
         params += list(only_from)
@@ -338,8 +370,7 @@ def agreement_stats() -> dict:
 
 def public_count() -> int:
     with closing(sqlite3.connect(DB_PATH)) as db:
-        return db.execute("SELECT COUNT(*) FROM jobs WHERE review_status='approved' AND created_at >= ?",
-                          (_cutoff(LISTING_TTL_DAYS),)).fetchone()[0]
+        return db.execute(f"SELECT COUNT(*) FROM jobs WHERE {store.live_where(ttl_days=LISTING_TTL_DAYS)}").fetchone()[0]
 
 
 def pending_count() -> int:
@@ -580,7 +611,7 @@ def job_detail(job_id: int, request: Request):
     if not viewer:
         return RedirectResponse(f"/login?next=/job/{int(job_id)}", status_code=303)
     j = get_job(job_id)
-    if not j or j["review_status"] != "approved":
+    if not visible_listing(j):
         return HTMLResponse(shell('<p class="empty" style="margin:40px 0">That listing isn\'t available.</p>'), status_code=404)
     after = ""
     with store.db() as conn:
@@ -598,7 +629,7 @@ def job_apply(job_id: int, request: Request):
     """Counts a student's Apply click (once per student, for the employer's totals), then goes to the apply link."""
     viewer = getattr(request.state, "user", None)
     j = get_job(job_id)
-    if not j or j["review_status"] != "approved" or not j["apply_url"] or not (viewer and viewer["role"] == "student"):
+    if not visible_listing(j) or not j["apply_url"] or not (viewer and viewer["role"] == "student"):
         return RedirectResponse(f"/job/{int(job_id)}", status_code=303)
     enforce_rate_limit(request, general_limiter, "job_apply")
     with store.db() as conn:
@@ -606,9 +637,10 @@ def job_apply(job_id: int, request: Request):
     return RedirectResponse(j["apply_url"], status_code=303)
 
 
-def _post_form_page(values: dict | None = None, error: str = "", status: int = 200) -> HTMLResponse:
+def _post_form_page(values: dict | None = None, error: str = "", status: int = 200, edit_id: int = 0) -> HTMLResponse:
     """The submit form. On a rejected submission it is shown again with everything the
-    poster typed still in place and the reason at the top, so nobody retypes a long posting."""
+    poster typed still in place and the reason at the top, so nobody retypes a long posting.
+    With edit_id it is the edit form for that listing (prefilled, posts to /hiring/{id}/edit)."""
     v = values or {}
 
     def val(name):
@@ -637,10 +669,23 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
         f'<label class="sr" for="f-rmust{i}">Required or preferred for qualification {i + 1}</label><select id="f-rmust{i}" name="rmust"><option value="0">Preferred</option><option value="1"{" selected" if r.get("must") else ""}>Required</option></select></div>'
         for i, r in enumerate(rv[:quals.MAX_ITEMS]))
     easy_on = " checked" if v.get("easy_apply") in (1, True, "1", "on") else ""
-    body = f"""<a class="back" href="/">← Home</a>
-<h2 class="page">Submit a job</h2>
-<p class="lead">Submitting isn't publishing. Every listing is scam-scanned and then reviewed by a human before it appears — only vetted postings go live.</p>
-{err}<form method="post" action="/post">
+    if edit_id:
+        top = (f'<a class="back" href="/hiring/{int(edit_id)}">← Back to the listing</a>\n<h2 class="page">Edit listing</h2>\n'
+               '<p class="lead">Changing the title, company, description, apply URL, contact or questions scans the listing again and sends it back '
+               'to a reviewer; it is off the board until they approve it. Category, work type, location, qualifications and who\'s posting '
+               'change right away.</p>')
+        action, button, expiry = f"/hiring/{int(edit_id)}/edit", "Save changes", ""
+    else:
+        top = ('<a class="back" href="/">← Home</a>\n<h2 class="page">Submit a job</h2>\n<p class="lead">Submitting isn\'t publishing. '
+               'Every listing is scam-scanned and then reviewed by a human before it appears — only vetted postings go live.</p>')
+        action, button = "/post", "Submit for review"
+        cur_days = _expiry_days(v.get("expiry_days"))
+        expiry = ('<div class="form-field"><label for="f-expiry">Keep it up for</label><p class="hint">Counted from the day a reviewer approves it. '
+                  'You can extend, pause or close it any time from Your listings. We email you 5 days before it ends.</p>'
+                  '<select id="f-expiry" name="expiry_days">' + "".join(
+                      f'<option value="{d}"{" selected" if d == cur_days else ""}>{d} days</option>' for d in (7, 14, 30, 45, 60, 90, 120)) + '</select></div>')
+    body = f"""{top}
+{err}<form method="post" action="{action}">
 <input type="hidden" name="csrf" value="{make_csrf('form')}">
 <div class="hp" aria-hidden="true"><label for="f-website">Leave this empty</label><input id="f-website" name="website" tabindex="-1" autocomplete="off"></div>
 <div class="form-field"><label for="f-title">Job title</label><input id="f-title" name="title" required maxlength="200" placeholder="e.g. Marketing Data Analyst" value="{val('title')}"></div>
@@ -651,6 +696,7 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
 <div class="form-field"><label for="f-description">Description</label><p class="hint">The full posting — responsibilities, requirements, and pay if you can share it.</p><textarea id="f-description" name="description" required maxlength="8000">{val('description')}</textarea></div>
 <div class="form-field"><label for="f-apply_url">Apply URL</label><p class="hint">Where applicants should go. The scanner checks this link too.</p><input id="f-apply_url" name="apply_url" maxlength="2000" placeholder="https://..." value="{val('apply_url')}"></div>
 <div class="form-field"><label for="f-contact">Contact (optional)</label><p class="hint">Shown publicly if approved. Use a role or company address, not a personal one.</p><input id="f-contact" name="contact" maxlength="200" placeholder="careers@company.com" value="{val('contact')}"></div>
+{expiry}
 <fieldset class="form-field easyset"><legend>Who's posting</legend>
 <p class="hint">Your name appears on the listing so students know who they'd be talking to. Students who apply can message you on NoleCareerShield.</p>
 <div class="form-field"><label for="f-poster_name">Your name</label><input id="f-poster_name" name="poster_name" maxlength="80" placeholder="e.g. Dana Whitfield" value="{val('poster_name')}"></div>
@@ -662,8 +708,9 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
 <fieldset class="form-field easyset"><legend>Quick apply</legend>
 <label class="toggle" for="f-easy"><input id="f-easy" type="checkbox" name="easy_apply" value="1"{easy_on}><span><b>Collect applications on NoleCareerShield.</b> Students apply from their profile in one step, and you get their answers in your candidate tracker. Leave it off to send them to your Apply URL.</span></label>
 <p class="hint" style="margin-top:10px">Optional questions for applicants (up to {easyapply.MAX_QUESTIONS}). Nothing that asks for an SSN, bank or card details or a password.</p>{q_rows}</fieldset>
-<button class="submit-btn" type="submit">Submit for review</button>{under}</form>"""
-    return HTMLResponse(shell(body, title="Submit a job — NoleCareerShield", active="/post"), status_code=status)
+<button class="submit-btn" type="submit">{button}</button>{"" if edit_id else under}</form>"""
+    return HTMLResponse(shell(body, title=("Edit listing" if edit_id else "Submit a job") + " — NoleCareerShield",
+                              active="/hiring" if edit_id else "/post"), status_code=status)
 
 
 @app.get("/post", response_class=HTMLResponse)
@@ -726,6 +773,7 @@ def _clean_listing(f: dict, form: bool = False) -> dict:
         "poster_name": clean_text(f.get("poster_name", ""), "poster_name", required=False),
         "poster_title": clean_text(f.get("poster_title", ""), "poster_title", required=False),
         "show_email": 1 if f.get("show_email") in (1, True, "1", "on", "yes") else 0,
+        "expiry_days": _expiry_days(f.get("expiry_days")),
     }
 
 
@@ -749,9 +797,10 @@ def post_submit(
     poster_name: str = Form(""), poster_title: str = Form(""), show_email: str = Form(""), direct: str = Form(""),
     rkind: list[str] = Form([]), rlabel: list[str] = Form([]), rmust: list[str] = Form([]),
     easy_apply: str = Form(""), qtext: list[str] = Form([]), qkind: list[str] = Form([]), qreq: list[str] = Form([]),
+    expiry_days: str = Form(""),
 ):
     enforce_rate_limit(request, submit_limiter, "post_submit")
-    typed = {"title": title, "company": company, "category": category, "work_type": work_type,
+    typed = {"expiry_days": expiry_days,"title": title, "company": company, "category": category, "work_type": work_type,
              "location": location, "description": description, "apply_url": apply_url, "contact": contact,
              "easy_apply": easy_apply, "poster_name": poster_name, "poster_title": poster_title,
              "show_email": show_email, "direct": direct,
@@ -792,6 +841,137 @@ def post_submit(
     # Same confirmation regardless of scam score: the submitter is not told the internal verdict
     # (that is for the reviewer), only that it is in review.
     return HTMLResponse(shell(_SUBMITTED_BODY))
+
+
+# ---------- listing controls that need the scanner: edit and duplicate (pause/close/expiry live in hiring.py) ----------
+
+# Changing any of these re-scans the listing and sends it back to a reviewer; the rest change right away.
+_REVIEW_FIELDS = ("title", "company", "description", "apply_url", "contact")
+
+
+def _listing_values(j: dict) -> dict:
+    """A stored listing as form values (for the edit form and for duplicating)."""
+    v = {k: j.get(k) or "" for k in ("title", "company", "category", "work_type", "location", "description", "apply_url",
+                                      "contact", "poster_name", "poster_title")}
+    v.update(easy_apply=int(j.get("easy_apply") or 0), show_email=int(j.get("show_email") or 0), direct="1",
+             questions=store.jload(j.get("questions"), []), requirements=store.jload(j.get("requirements"), []),
+             expiry_days=int(j.get("expiry_days") or store.LISTING_DAYS_DEFAULT))
+    return v
+
+
+def _own_listing(user: dict, job_id: int) -> dict | None:
+    j = get_job(job_id)
+    return j if j and j.get("employer_id") == user["id"] else None
+
+
+@app.get("/hiring/{job_id}/edit", response_class=HTMLResponse)
+def listing_edit_form(job_id: int, request: Request):
+    user = web.require_user(request, "employer")
+    enforce_rate_limit(request, general_limiter, "listing_edit")
+    j = _own_listing(user, job_id)
+    if not j or j["review_status"] in ("rejected", "removed"):
+        return web.page(ui.page_head("Listing can't be edited") + '<a class="b sec" href="/hiring">Your listings</a>', "Not found", active="/hiring", status=404)
+    return _post_form_page(_listing_values(j), edit_id=job_id)
+
+
+@app.post("/hiring/{job_id}/edit", response_class=HTMLResponse)
+async def listing_edit_save(job_id: int, request: Request):
+    user = web.require_user(request, "employer")
+    enforce_rate_limit(request, submit_limiter, "listing_edit")
+    f = await request.form()
+    one = lambda k: str(f.get(k) or "")                                       # noqa: E731
+    many = lambda k: [str(x) for x in f.getlist(k)]                           # noqa: E731
+    rkind, rlabel, rmust, qtext, qkind, qreq = (many(k) for k in ("rkind", "rlabel", "rmust", "qtext", "qkind", "qreq"))
+    typed = {k: one(k) for k in ("title", "company", "category", "work_type", "location", "description", "apply_url", "contact",
+                                  "easy_apply", "poster_name", "poster_title", "show_email", "direct")}
+    typed["requirements"] = [{"kind": (rkind[i] if i < len(rkind) else "skill"), "label": t, "must": (rmust[i] if i < len(rmust) else "0") == "1"}
+                             for i, t in enumerate(rlabel[:quals.MAX_ITEMS])]
+    typed["questions"] = [{"q": t, "kind": (qkind[i] if i < len(qkind) else "short"), "required": (qreq[i] if i < len(qreq) else "0") == "1"}
+                          for i, t in enumerate(qtext[:easyapply.MAX_QUESTIONS])]
+    j = _own_listing(user, job_id)
+    if not j or j["review_status"] in ("rejected", "removed"):
+        return web.page(ui.page_head("Listing can't be edited") + '<a class="b sec" href="/hiring">Your listings</a>', "Not found", active="/hiring", status=404)
+    if not verify_csrf(one("csrf"), "form"):
+        return _post_form_page(typed, "That form had been open too long. Your changes are still here: press Save again.", status=400, edit_id=job_id)
+    try:
+        clean = _clean_listing(typed, form=True)
+    except ValidationError as e:
+        return _post_form_page(typed, str(e), status=400, edit_id=job_id)
+    with store.db() as conn:
+        ep = store.employer_profile(conn, user["id"]) or {}
+    if company_mismatch(ep.get("company", ""), clean["company"]):
+        return _post_form_page(typed, f"You can only post jobs for your own organization ({ep['company']}). " + RECRUITER_MSG, status=400, edit_id=job_id)
+    _poster_defaults(clean, ep)
+    old_q = store.jload(j.get("questions"), [])
+    review = any(clean[k] != (j.get(k) or "") for k in _REVIEW_FIELDS) or clean["questions"] != old_q
+    minor = {"category": clean["category"], "work_type": clean["work_type"], "location": clean["location"],
+             "requirements": json.dumps(clean["requirements"]), "easy_apply": clean["easy_apply"],
+             "poster_name": clean["poster_name"], "poster_title": clean["poster_title"], "show_email": clean["show_email"]}
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        if review:
+            result, scam_status, findings = _scan(clean)
+            full = dict(minor, title=clean["title"], company=clean["company"], description=clean["description"], apply_url=clean["apply_url"],
+                        contact=clean["contact"], questions=json.dumps(clean["questions"]), score=result.score, band=result.band,
+                        scam_status=scam_status, findings_json=json.dumps(findings), ruleset_version=result.ruleset_version,
+                        review_status="pending", review_label=None, reviewed_at=None, expires_at=None, expiry_reminded=None)
+            if j.get("expires_at") and j["review_status"] == "approved":
+                # Keep the time it had left, so a re-approved listing doesn't quietly run longer than chosen.
+                left = max(store.LISTING_DAYS_MIN, round((float(j["expires_at"]) - time.time()) / 86400))
+                full["expiry_days"] = min(store.LISTING_DAYS_MAX, left)
+        else:
+            full = minor
+        db.execute(f"UPDATE jobs SET {', '.join(k + ' = ?' for k in full)} WHERE id = ? AND employer_id = ?",
+                   list(full.values()) + [job_id, user["id"]])
+        db.commit()
+    return RedirectResponse(f"/hiring/{job_id}?done={'review' if review else 'saved'}", status_code=303)
+
+
+@app.post("/hiring/{job_id}/duplicate")
+def listing_duplicate(job_id: int, request: Request, background: BackgroundTasks, csrf: str = Form("")):
+    """A new listing with the same fields (requirements, questions, poster). It is scanned and reviewed like any new one."""
+    user = web.require_user(request, "employer")
+    if not web.csrf_ok(request, csrf):
+        return RedirectResponse(f"/hiring/{job_id}", status_code=303)
+    enforce_rate_limit(request, submit_limiter, "listing_duplicate")
+    j = _own_listing(user, job_id)
+    if not j or j["review_status"] == "removed":
+        return RedirectResponse("/hiring", status_code=303)
+    try:
+        clean = _clean_listing(_listing_values(j))
+    except ValidationError:
+        return RedirectResponse(f"/hiring/{job_id}/edit", status_code=303)
+    new = add_job(clean, employer_id=user["id"])
+    background.add_task(_mail_listing_received, user["email"], clean["title"])
+    return RedirectResponse(f"/hiring/{int(new['id'])}?done=copied", status_code=303)
+
+
+def send_expiry_reminders(now: float | None = None) -> int:
+    """Email each employer once, REMIND_DAYS before a live listing expires. Idempotent: jobs.expiry_reminded holds the
+    expiry date the reminder was sent for, so re-running sends nothing new, and extending the listing re-arms it.
+    Runs from daily_maintenance (startup, then every MAINTENANCE_HOURS). Returns how many were sent."""
+    now = now or time.time()
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        db.row_factory = sqlite3.Row
+        due = [dict(r) for r in db.execute(
+            f"SELECT j.id, j.title, j.expires_at, u.email FROM jobs j JOIN users u ON u.id = j.employer_id "
+            f"WHERE {store.live_where('j')} AND j.expires_at IS NOT NULL AND j.expires_at <= ? "
+            "AND (j.expiry_reminded IS NULL OR j.expiry_reminded != j.expires_at)", (now + store.REMIND_DAYS * 86400,)).fetchall()]
+    sent = 0
+    for j in due:
+        days = max(1, round((j["expires_at"] - now) / 86400))
+        with closing(sqlite3.connect(DB_PATH)) as db:           # claim it first, so two runs can't both send
+            claimed = db.execute("UPDATE jobs SET expiry_reminded = expires_at WHERE id = ? AND "
+                                 "(expiry_reminded IS NULL OR expiry_reminded != expires_at)", (j["id"],)).rowcount
+            db.commit()
+        if not claimed:
+            continue
+        mailer.send(j["email"], f'Your listing "{j["title"]}" ends in {days} day{"s" if days != 1 else ""}',
+                    f'Your NoleCareerShield listing "{j["title"]}" comes off the board on '
+                    f'{time.strftime("%B %d, %Y", time.gmtime(j["expires_at"]))}. Students who applied stay in your tracker.\n\n'
+                    f'To keep it up, open it and choose Extend: {BASE_URL}/hiring/{int(j["id"])}\n'
+                    "If you've filled the role, you can close it there too.\n\nNoleCareerShield")
+        sent += 1
+    return sent
 
 
 mailer.copy_hook = emails.keep
@@ -899,7 +1079,7 @@ def privacy():
 <ul><li>You need an employer account: an email address (confirmed by a link) and a password, stored the same way as above, plus a company profile that a reviewer approves before you can message students or post to the feed.</li>
 <li>We store what you type into the listing form, the account that sent it, the automated scam score and the review decision. The contact field is shown publicly if the listing is approved.</li>
 <li>Approved employers get a trust score (0-100, higher is safer) that signed-in students see on the company page and listings. It comes only from what this site can check: reviewer approval, your email domain and website, how your listings were reviewed, scanner flags and reports on your messages, how you answer students, and how complete your profile is. You can see how yours is worked out, and how to raise it, on your company profile.</li>
-<li>Rejected and removed listings are deleted automatically after {PURGE_REJECTED_DAYS} days. Approved listings stop showing after {LISTING_TTL_DAYS} days.</li>
+<li>Rejected and removed listings are deleted automatically after {PURGE_REJECTED_DAYS} days. Approved listings come off the board when they expire ({store.LISTING_DAYS_DEFAULT} days after approval unless the employer picks {store.LISTING_DAYS_MIN} to {store.LISTING_DAYS_MAX}), or when the employer pauses or closes them.</li>
 <li>If you fill in the form before logging in, the listing is kept for up to 3 days so it can be sent when you finish, then deleted.</li></ul>
 <h3>Your data</h3>
 <ul><li>On your profile page you can download everything we store about your account as a file, and delete your account. Deleting removes your profile, resume, versions, posts and comments, and blanks the messages you sent.</li>

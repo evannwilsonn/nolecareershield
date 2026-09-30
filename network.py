@@ -258,7 +258,7 @@ def network_page(request: Request, tab: str = "", msg: str = ""):
                 p = store.employer_profile(conn, eid)
                 if not p or p["status"] != "approved":
                     continue
-                n = conn.execute("SELECT COUNT(*) FROM jobs WHERE employer_id = ? AND review_status = 'approved'", (eid,)).fetchone()[0]
+                n = conn.execute(f"SELECT COUNT(*) FROM jobs WHERE employer_id = ? AND {store.live_where()}", (eid,)).fetchone()[0]
                 cards += (f'<div class="card ncard"><div class="row between" style="align-items:center;gap:12px"><div style="min-width:0">'
                           f'{web.person(p["company"], p["industry"] or "Approved employer", "emp", f"/company/{eid}")}'
                           f'<p class="small muted" style="margin-top:6px">{web.plural(n, "open listing")}</p></div>'

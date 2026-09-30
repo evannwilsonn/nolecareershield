@@ -32,6 +32,7 @@ import css_feed  # noqa: E402,F401  (appends the feed styles to ui.CSS)
 import css_msg  # noqa: E402,F401  (appends the interview and template styles to ui.CSS)
 import css_employer  # noqa: E402,F401  (appends the employer dashboard styles to ui.CSS)
 import css_events  # noqa: E402,F401  (appends the event styles to ui.CSS)
+import css_hiring  # noqa: E402,F401  (appends the applicant table and listing-control styles to ui.CSS)
 
 TITLE = "NoleCareerShield Demo"
 

@@ -87,7 +87,7 @@ def _toggle(job_id: int, request: Request, next_: str, csrf: str, on: bool):
     security.enforce_key_limit(security.profile_limiter, f"s{user['id']}", "saving jobs")
     with store.db() as conn:
         if on:
-            row = conn.execute("SELECT 1 FROM jobs WHERE id = ? AND review_status = 'approved'", (job_id,)).fetchone()
+            row = conn.execute(f"SELECT 1 FROM jobs WHERE id = ? AND {store.live_where()}", (job_id,)).fetchone()
             have = conn.execute("SELECT COUNT(*) FROM saved_jobs WHERE user_id = ?", (user["id"],)).fetchone()[0]
             if row and have < MAX_SAVED:
                 conn.execute("INSERT OR IGNORE INTO saved_jobs (user_id, job_id, created_at) VALUES (?,?,?)", (user["id"], job_id, time.time()))

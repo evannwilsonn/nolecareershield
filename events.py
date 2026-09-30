@@ -411,7 +411,7 @@ def _detail(conn, ev: dict, user: dict, notice: str = "") -> str:
              ("people", "Spots", esc(_spots_long(ev, c)))]
     if ev["majors"] or ev["class_years"]:
         facts.append(("user", "For", esc(", ".join(ev["majors"] + [f"Class of {y}" for y in ev["class_years"]]))))
-    job = store.row(conn, "SELECT id, title FROM jobs WHERE id = ? AND review_status = 'approved'", (ev["job_id"],)) if ev["job_id"] else None
+    job = store.row(conn, "SELECT id, title FROM jobs WHERE id = ? AND " + store.live_where(), (ev["job_id"],)) if ev["job_id"] else None
     if job:
         facts.append(("jobs", "Related listing", f'<a href="/job/{int(job["id"])}">{esc(job["title"])}</a>'))
     fact_html = "".join(f'<div class="ev-fact">{ui.icon(i, 16)}<div><small>{esc(k)}</small><span>{v}</span></div></div>' for i, k, v in facts)
@@ -519,7 +519,7 @@ def _form(conn, uid: int, v: dict, error: str = "", eid: int = 0) -> str:
     kind_opts = "".join(f'<option value="{k}"{" selected" if v.get("kind") == k else ""}>{esc(t)}</option>' for k, t in KINDS.items())
     dur_opts = "".join(f'<option value="{d}"{" selected" if str(v.get("duration", "60")) == str(d) else ""}>{_DUR_LABEL[d]}</option>' for d in DURATIONS)
     fmt = v.get("format") or "in_person"
-    jobs = store.rows(conn, "SELECT id, title FROM jobs WHERE employer_id = ? AND review_status = 'approved' ORDER BY created_at DESC LIMIT 50", (uid,))
+    jobs = store.rows(conn, "SELECT id, title FROM jobs WHERE employer_id = ? AND " + store.live_where() + " ORDER BY created_at DESC LIMIT 50", (uid,))
     job_opts = '<option value="">None</option>' + "".join(f'<option value="{int(j["id"])}"{" selected" if str(v.get("job_id")) == str(j["id"]) else ""}>{esc(j["title"])}</option>' for j in jobs)
     years = "".join(f'<label class="chk"><input type="checkbox" name="class_years" value="{y}"{" checked" if y in (v.get("class_years") or []) else ""}><span>Class of {y}</span></label>' for y in _years())
     fmt_radio = "".join(f'<label class="chk"><input type="radio" name="format" value="{k}"{" checked" if fmt == k else ""}><span>{t}</span></label>' for k, t in FORMATS.items())
