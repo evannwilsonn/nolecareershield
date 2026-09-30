@@ -906,5 +906,5 @@ def test_scanner_is_served_finished(client):
     scene = scene[:scene.index("</section>")]
     assert 'class="scan armed' not in scene and "pinned" not in scene
     assert "Here's what the scam check found in it." in scene and 'class="scan-stamp"' in scene
-    assert scene.count('<li class=') == 8 and 'style="--b' not in scene        # flags served apart; fx.js joins them
+    assert scene.count('<li class=') == 8 and "--b" not in scene and "rotate" not in scene
     assert scene.count("<mark") >= len(__import__("ui").SCAN_EXPECTED) - 1

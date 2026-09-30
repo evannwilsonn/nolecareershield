@@ -529,9 +529,8 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .marquee li{font-family:var(--display);font-weight:750;font-stretch:72%;text-transform:uppercase;font-size:clamp(20px,2.4vw,30px);letter-spacing:.005em;color:var(--ink-2);padding:0 22px;white-space:nowrap;display:flex;align-items:center;gap:22px}
 .marquee li::after{content:"";width:9px;height:9px;background:var(--gold);transform:rotate(45deg);flex:none}
 .marquee .cap{font-size:12.5px;color:var(--faint);text-align:center;margin-top:8px}
-/* the scanner: a fake listing read by the real detector as you scroll (static/fx.js drives it). The card stays whole;
-   at the end the flag chips break apart (--b on .scan-flags: 0 joined, 1 apart). With no JS or reduced motion it is
-   shown finished: every phrase marked, the flags apart, the stamp down. */
+/* the scanner: a fake listing read by the real detector as you scroll (static/fx.js drives it). With no JS or reduced
+   motion it is shown finished: every phrase marked, every flag listed, the stamp down. */
 .scan{background:var(--stage);color:var(--on-stage);position:relative}
 .scan-stick{max-width:1160px;margin:0 auto;padding:84px 20px;display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:56px;align-items:center}
 .scan h2.display{font-size:clamp(42px,4.8vw,70px);color:var(--on-stage);margin:12px 0 18px}
@@ -557,14 +556,10 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .scan-line::before{content:"";position:absolute;left:0;right:0;bottom:2px;height:56px;background:linear-gradient(0deg,color-mix(in srgb,var(--gold) 22%,transparent),transparent)}
 .scan-stamp{position:absolute;right:16px;bottom:14px;z-index:3;border:2.5px solid #b91c1c;color:#b91c1c;background:rgba(250,248,243,.94);border-radius:8px;padding:5px 12px;
   font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:21px;letter-spacing:.01em;line-height:1.1;white-space:nowrap;transform:rotate(-3deg)}
-/* the flags: one joined stack while the scan runs, then they break apart */
-.scan-flags{--b:1;list-style:none;padding:0;margin:14px 0 0;display:grid;gap:calc(var(--b) * 7px)}
-.scan-flags li{display:flex;align-items:center;gap:10px;background:var(--stage-2);border:1px solid rgba(243,238,230,.1);padding:8px 12px;font-size:13.5px;font-weight:600;
-  border-radius:calc(var(--b) * 9px);transform:translateX(calc(var(--x) * var(--b) * var(--dx,1))) rotate(calc(var(--r) * var(--b)));
-  box-shadow:0 10px 22px rgba(0,0,0,calc(var(--b) * .35));transition:opacity .4s var(--ease)}
-.scan-flags li:first-child{border-top-left-radius:9px;border-top-right-radius:9px}
-.scan-flags li:last-child{border-bottom-left-radius:9px;border-bottom-right-radius:9px}
-.scan-flags li+li{margin-top:calc((1 - var(--b)) * -1px)}
+/* the flags, filling in as the line reaches each phrase */
+.scan-flags{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:6px}
+.scan-flags li{display:flex;align-items:center;gap:10px;background:var(--stage-2);border:1px solid rgba(243,238,230,.1);border-radius:9px;padding:8px 12px;font-size:13.5px;font-weight:600;
+  transition:opacity .4s var(--ease),transform .4s var(--ease)}
 .scan-flags .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;flex:none;background:#e3b964;color:#2a1f0a}
 .scan-flags li.crit .n{background:#f0a193;color:#3a1410}
 .scan-flags .sev{margin-left:auto;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--on-stage-2);font-weight:700}
@@ -577,14 +572,14 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
   .scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}
   .scan-card{padding:16px 16px 52px}.scan-card .body{font-size:13.5px;line-height:1.7}.scan-card .co{margin-bottom:8px}
   .scan-stamp{bottom:12px;right:12px;font-size:17px}
-  .scan-flags{--dx:.4;margin-top:10px;gap:calc(var(--b) * 5px)}.scan-flags li{padding:6px 10px;font-size:12.5px}.scan-flags .n{width:18px;height:18px}
+  .scan-flags{margin-top:10px;gap:5px}.scan-flags li{padding:6px 10px;font-size:12.5px}.scan-flags .n{width:18px;height:18px}
 }
 /* armed by fx.js: things appear as the scan line reaches them */
 .scan.armed .scan-line{opacity:1}
 .scan.armed .scan-card mark:not(.on){box-shadow:inset 0 -2px 0 transparent;background-color:transparent}
 .scan.armed .scan-card mark.flash{background-color:color-mix(in srgb,var(--sev) 30%,transparent)}
 .scan.armed .scan-card sup:not(.on){opacity:0}
-.scan.armed .scan-flags li:not(.on){opacity:0}
+.scan.armed .scan-flags li:not(.on){opacity:0;transform:translateX(12px)}
 .scan.armed .scan-verdict:not(.on){opacity:0;transform:translateY(10px)}
 .scan.armed .scan-stamp{opacity:0;transform:rotate(-3deg) scale(1.15)}
 .scan.armed .scan-stamp.on{opacity:1;transform:rotate(-3deg) scale(1);transition:opacity .25s,transform .35s var(--ease)}
@@ -967,12 +962,9 @@ def scan_block(cta_html: str) -> str:
     static/fx.js arms it and replays the scan as you scroll."""
     s, r = SCAN_SAMPLE, scan_findings()
     body, _, apply = _scan_text(r["text"], r["findings"]).rpartition("\n")
-    # The flags break apart at the end (the old teardown's effect): each gets a small fixed tilt and drift.
-    tilt = ("-.6deg", ".5deg", "-.3deg", ".6deg", "-.5deg", ".35deg", "-.25deg", ".45deg")
-    drift = ("-4px", "5px", "-2px", "4px", "-5px", "3px", "-2px", "4px")
     crit = lambda f: f["severity"] == "critical"
     flags = "".join(
-        f'<li class="{"crit" if crit(f) else "warn"}" data-f="{i}" style="--r:{tilt[(i - 1) % 8]};--x:{drift[(i - 1) % 8]}">'
+        f'<li class="{"crit" if crit(f) else "warn"}" data-f="{i}">'
         f'<span class="n">{i}</span>{esc(f["title"])}<span class="sev">{"Critical" if crit(f) else "Warning"}</span></li>'
         for i, f in enumerate(r["findings"], 1))
     n = len(r["findings"])

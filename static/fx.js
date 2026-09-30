@@ -1,6 +1,6 @@
 /* NoleCareerShield visual effects. Decoration only: every page works and reads the same without it.
- *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing and lights each flagged
- *      phrase; its flag joins a stack below, the stack breaks apart into separate flags, and the verdict lands.
+ *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing, lights each flagged
+ *      phrase and its flag below, then the stamp and verdict land.
  *   1. Scroll-scrubbed footage: section[data-cine] pins while you scroll and plays a camera move frame by
  *      frame on a canvas (Apple-style image sequence). Sets --p (0 to 1) and data-cap for the captions.
  *   2. Cursor parallax: [data-pan] layers drift a few pixels against the pointer (fine pointers only).
@@ -117,44 +117,33 @@
   var scans = [];
 
   function Scan(sec) {
-    var card = sec.querySelector(".scan-card"), line = sec.querySelector(".scan-line"), stick = sec.querySelector(".scan-stick");
+    var card = sec.querySelector(".scan-card"), line = sec.querySelector(".scan-line");
     var track = sec.querySelector(".scan-track"), board = sec.querySelector(".scan-board");
     var marks = [].slice.call(card.querySelectorAll("mark")), sups = [].slice.call(card.querySelectorAll("sup"));
-    var items = {}, h = 1, done = false, mode = "", played = false, broke = 0;
-    var side = sec.querySelector(".scan-side") || board, extra = 0;
-    var list = sec.querySelector(".scan-flags");
-    [].slice.call(list.querySelectorAll("li")).forEach(function (el) { items[el.getAttribute("data-f")] = el; });
+    var items = {}, h = 1, done = false, mode = "", played = false;
+    var side = sec.querySelector(".scan-side") || board;
+    [].slice.call(sec.querySelectorAll(".scan-flags li")).forEach(function (el) { items[el.getAttribute("data-f")] = el; });
     var verdict = sec.querySelector(".scan-verdict"), stamp = sec.querySelector(".scan-stamp");
     var self = { sec: sec, tick: tick, measure: measure };
 
     function hdr() { var el = document.querySelector("header"); return el ? el.offsetHeight : 0; }
     function decide() {
       var vh = window.innerHeight, next;
-      if (window.innerWidth >= 901) next = side.offsetHeight + extra <= vh - 60 ? "section" : "timed";
-      else next = board.offsetHeight + extra <= vh - hdr() - 24 ? "card" : "timed";
+      if (window.innerWidth >= 901) next = side.offsetHeight <= vh - 60 ? "section" : "timed";
+      else next = board.offsetHeight <= vh - hdr() - 24 ? "card" : "timed";
       if (next === mode) return;
       mode = next;
       sec.classList.toggle("pinned", mode !== "timed");
-      sec.style.setProperty("--bh", board.offsetHeight + extra + "px");
+      sec.style.setProperty("--bh", board.offsetHeight + "px");
       if (mode === "timed") playOnce();
-    }
-    function breakTo(b) {                   // 0 = the flags joined in one stack, 1 = broken apart (.scan-flags in ui.py)
-      b = Math.max(0, Math.min(1, b));
-      if (Math.abs(b - broke) < 0.001) return;
-      broke = b;
-      list.style.setProperty("--b", b.toFixed(3));
     }
     function measure() {
       sec.style.setProperty("--hdr", hdr() + "px");
-      var was = broke; breakTo(1);           // how much taller the flags are once apart...
-      var tall = list.offsetHeight;
-      breakTo(0); extra = tall - list.offsetHeight;   // ...then measure them joined, and put it back after
       var top = card.getBoundingClientRect().top;
       h = card.offsetHeight;
       marks.forEach(function (m) { var r = m.getBoundingClientRect(); m.__y = (r.top + r.bottom) / 2 - top; });
       sups.forEach(function (x) { var r = x.getBoundingClientRect(); x.__y = (r.top + r.bottom) / 2 - top; });
       decide();
-      breakTo(was);
     }
     function at(q) {
       var y = Math.max(0, Math.min(1, q)) * h;
@@ -190,8 +179,7 @@
     function tick() {
       if (mode === "timed") return false;
       var p = Math.min(1, Math.max(0, progress()));
-      at((p - 0.04) / 0.56);                 // the line reads the listing...
-      breakTo((p - 0.62) / 0.14);            // ...the flags break apart...
+      at((p - 0.04) / 0.72);                 // the line reads the listing...
       finish(p > 0.8);                       // ...then the verdict lands
       return false;
     }
@@ -204,20 +192,13 @@
         (function step(now) {
           var q = (now - t0) / D;
           at(q);
-          if (q < 1) return requestAnimationFrame(step);
-          var b0 = performance.now();
-          (function brk(now) {
-            var k = Math.min(1, (now - b0) / 700);
-            breakTo(1 - Math.pow(1 - k, 3));
-            if (k < 1) requestAnimationFrame(brk); else setTimeout(function () { finish(true); }, 150);
-          })(b0);
+          if (q < 1) requestAnimationFrame(step); else setTimeout(function () { finish(true); }, 250);
         })(t0);
       }, { threshold: 0.6 });
       io.observe(card);
     }
 
     sec.classList.add("armed");
-    broke = 1; breakTo(0);
     measure(); at(0);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { measure(); kick(); });
     return self;
