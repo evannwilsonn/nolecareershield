@@ -583,7 +583,8 @@ function posterBlock(j, empOk) {   // twin of jobboard.poster_block
   if (!name) name = "The hiring team";
   const u = j.show_email ? U(j.employer_id) : null;
   const email = u ? `<a class="jp-mail" href="mailto:${esc(u.email)}">${icon("mail", 14)} ${esc(u.email)}</a>` : "";
-  const first = name === "The hiring team" ? "the hiring team" : esc(name.split(" ")[0]);
+  const w = name.split(/\s+/), first = name === "The hiring team" ? "the hiring team"
+    : esc(w.length > 1 && ["dr", "mr", "mrs", "ms", "mx", "prof", "professor"].includes(w[0].replace(/\.$/, "").toLowerCase()) ? `${w[0]} ${w[w.length - 1]}` : w[0]);
   let act = "";
   if (isStudent() && empOk) act = appliedTo(j.id, me().id) ? `<a class="b" href="#" data-go="newmsg?to=${j.employer_id}&amp;job=${j.id}">${icon("chat", 16)} Message ${first}</a>` : `<p class="jp-hint">You can message ${first} once you apply.</p>`;
   const whoTxt = esc(title + (title ? " at " : "") + j.company);

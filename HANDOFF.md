@@ -142,3 +142,17 @@ stand, what was decided and why, and what's next.
 4. Ideas raised but not built: student-to-student messages, employer "requests to connect", a followers-only feed,
    email digests for new listings from followed companies, a "usually replies within a day" badge; applicant-fraud flags for employers (fake or
    duplicate student accounts).
+
+## Round: Handshake/LinkedIn/Indeed-style redesign (Sep 30)
+- **Gauge:** every card shows "Scam risk N · status" (aggregators show 60, no "aggregator" label). Muted palette in ui.py `.risk`.
+- **Qualifications + % match:** `quals.py` (employer-chosen skill/major/cert/standing/gradyear/gpa, required or preferred, max 10, protected-term blocklist) stored in `jobs.requirements`; merged into `fit.fit_score`, which now also returns `percent`, `level` (high ≥75 / medium ≥50 / low), `met`, `total`, and `must` on checklist items. Ported in demo/engine.js (parity test covers a job with requirements). No "top applicant" wording anywhere; numbers only.
+- **Job board:** `jobboard.py` — two-pane list/detail (`/jobs?job=ID`), tabs Jobs/Saved/Resume optimizer, search + chips (incl. Quick apply filter), `saved_jobs` table, match panel, "What they're looking for", "Meet the poster" block. Styles in `css_jobs.py`.
+- **Feed:** tabs Feed/For you/Saved, pills All/Your major/Employers, bookmarks (`post_saves`), right rail. Styles in `css_feed.py`.
+- **Resume studio:** optimizer landing, ATS readiness report with accept/dismiss cards, tailor-to-a-job coverage. Styles in `css_resume.py`.
+- **Career assistant** (was Job assistant): Indeed-Scout-style home, saved chats (`assistant_chats`/`assistant_msgs`), `/assistant/c/{id}`, job cards only from live approved listings. Styles in `css_assist.py`.
+- **Naming:** the one-step apply feature is "Quick apply" in all user-visible text (DB columns still `easy_apply`). Listings with it show the note recommending applying on company sites.
+- **Direct employers only:** post form requires "I work directly for this company"; recruiter/staffing language (`app._RECRUITER`) and a company name that doesn't match the employer's own (`app.company_mismatch`) are rejected.
+- **Poster:** `jobs.poster_name/poster_title/show_email`; listing shows who posted; students can message them after applying (Quick apply or external Apply click); email shown only if the poster opts in.
+- **Emails:** `emails.py` keeps an in-site copy (`emails` table, `/emails`, nav badge) of every email sent to a verified account; one-time sign-in links are redacted. Hooked via `mailer.copy_hook`.
+- **Connections on profiles:** `network.connections_section` on own profile and /u pages.
+- **Employer side:** ranked matches and candidates show "NN% match" and "Meets N of M of your requirements" with ✓/⊘/? per item.

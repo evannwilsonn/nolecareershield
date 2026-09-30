@@ -387,6 +387,15 @@ def applied(conn, job_id: int, student_id: int) -> bool:
                 or conn.execute("SELECT 1 FROM job_apply_clicks WHERE job_id = ? AND user_id = ?", (job_id, student_id)).fetchone())
 
 
+_HONORIFIC = {"dr", "mr", "mrs", "ms", "mx", "prof", "professor"}
+
+
+def short_name(name: str) -> str:
+    """'Dana Whitfield' -> 'Dana'; 'Dr. Priya Shah' -> 'Dr. Shah'."""
+    w = name.split()
+    return f"{w[0]} {w[-1]}" if len(w) > 1 and w[0].rstrip(".").lower() in _HONORIFIC else w[0]
+
+
 def poster_block(conn, viewer: dict, j: dict, emp_ok: bool) -> str:
     """Who posted the listing. Students who applied can message them; the email shows only if the poster chose that."""
     if not j.get("employer_id"):
@@ -401,7 +410,7 @@ def poster_block(conn, viewer: dict, j: dict, emp_ok: bool) -> str:
         r = conn.execute("SELECT email FROM users WHERE id = ?", (j["employer_id"],)).fetchone()
         if r:
             email = f'<a class="jp-mail" href="mailto:{esc(r[0])}">{ui.icon("mail", 14)} {esc(r[0])}</a>'
-    first = "the hiring team" if name == "The hiring team" else esc(name.split(" ")[0])
+    first = "the hiring team" if name == "The hiring team" else esc(short_name(name))
     act = ""
     if viewer["role"] == "student" and emp_ok:
         if applied(conn, int(j["id"]), viewer["id"]):
