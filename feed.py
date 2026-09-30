@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 import ai
 import css_feed  # noqa: F401  (appends the feed styles to ui.CSS)
+import events
 import msgcheck
 import network
 import profiles
@@ -476,7 +477,8 @@ def feed(request: Request, tab: str = "feed", f: str = "all", q: str = "", befor
                 empty = '<div class="fd-empty"><h2>No employer posts yet</h2><p>Approved employers share opportunities and advice for FSU students here.</p></div>'
             else:
                 empty = '<div class="fd-empty"><h2>Nothing here yet</h2><p>Start the conversation.</p></div>'
-        items = "".join(post_html(conn, p, user, saved=saved, next_=here) for p in posts)
+        items = events.feed_mix(conn, user, tab if (f == "all" and not q and not before) else "", posts,
+                                lambda p: post_html(conn, p, user, saved=saved, next_=here))
         topic = (f'<p class="fd-topic">Topic: {esc(q)} <a href="{esc(_url(tab, f))}" aria-label="Clear topic">✕ Clear</a></p>'
                  if q and tab != "saved" else "")
         top = _bar(_show_menu(user, _show_key(tab, f), q), _composer(conn, user), topic + note)

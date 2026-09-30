@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 
 from scam_detector.rules import FREE_MAIL
 
+import events
 import network
 import store
 import ui
@@ -262,5 +263,5 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
     if owner:
         import employer_dash                       # imported here: employer_dash builds on this module
         stats = employer_dash.page_stats_card(employer_dash.page_stats(conn, uid))
-    main = stats + about + fsu + roles + perk_html + listings
+    main = stats + about + fsu + roles + perk_html + events.upcoming_for_employer(conn, uid) + listings
     return notice + hero + f'<div class="pgrid co"><aside class="pside">{side}</aside><div class="pmain">{main}</div></div>'

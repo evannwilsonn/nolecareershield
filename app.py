@@ -86,6 +86,7 @@ import emails
 import quals
 import network
 import employer_page
+import events
 import sso
 import ai
 from ui import esc, EMBLEM, BASE_CSS, PAGE_SCRIPT, PAGE_SCRIPT_HASH, _viewer, shell
@@ -197,6 +198,7 @@ def purge_old():
         db.commit()
         accounts.purge_expired(db)
         store.purge(db)
+    events.send_event_reminders()          # the day-before reminder; each RSVP is reminded once
 
 
 def add_job(data: dict, employer_id: int | None = None) -> dict:
@@ -797,7 +799,8 @@ mailer.copy_hook = emails.keep
 # ---------- student network ----------
 
 for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, assistant.router, resume_tools.router,
-           feed.router, admin_extra.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router):
+           feed.router, admin_extra.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router,
+           events.router):
     app.include_router(_r)
 
 

@@ -52,6 +52,7 @@ def counts(conn) -> dict:
         "reports": one("SELECT COUNT(*) FROM reports WHERE resolved = 0"),
         "checks": one("SELECT COUNT(*) FROM submitted_checks"),
         "schools": one("SELECT COUNT(DISTINCT lower(school)) FROM school_requests"),
+        "events": one("SELECT COUNT(*) FROM events WHERE status = 'pending'"),
     }
 
 
@@ -64,7 +65,7 @@ def tabs(active: str, title: str = "") -> str:
     items = [("/admin", "Listings", "listings"), ("/admin/employers", "Employers", "employers"), ("/admin/posts", "Feed", "posts"),
              ("/admin/messages", "Held messages", "messages"), ("/admin/reports", "Reports", "reports"),
              ("/admin/checks", "Sent-in messages", "checks"), ("/admin/schools", "School requests", "schools"),
-             ("/admin/live", "Live listings", "live")]
+             ("/admin/events", "Events", "events"), ("/admin/live", "Live listings", "live")]
     return ui.desk(title or next((t for h, t, _ in items if h == active), "Review queue"),
                    [(h, t, c[k], h == active) for h, t, k in items])
 
