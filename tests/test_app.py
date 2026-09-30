@@ -12,7 +12,8 @@ sys.path.insert(0, str(ROOT))
 LOCAL_MODULES = ("security", "app", "ui", "web", "store", "accounts", "mailer", "ai", "matching", "resume_engine",
                  "profiles", "messaging", "msgcheck", "assistant", "resume_tools", "feed", "admin_extra", "profile_page", "hiring",
                  "employer_page", "learning", "sso", "fit", "jobfit", "easyapply", "network", "quals", "emails", "jobboard", "css_feed", "css_jobs", "css_resume", "css_assist",
-                 "scheduling", "msg_templates", "css_msg", "employer_dash", "css_employer", "events", "css_events", "css_hiring", "teams", "css_team")
+                 "scheduling", "msg_templates", "css_msg", "employer_dash", "css_employer", "events", "css_events", "css_hiring", "teams", "css_team",
+                 "public_ui", "css_public")
 
 
 @pytest.fixture()
