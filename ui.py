@@ -7,8 +7,9 @@ Design system: a mix of three Open Design systems (github.com/nexu-io/open-desig
   * Notion - warm-neutral greys, whisper borders (1px, ~10% ink), soft multi-layer shadows,
              pill badges, and the quiet left sidebar for the signed-in app.
   * Bento  - the signed-in home is a modular grid of tiles.
-The single accent is garnet; gold appears only as a small highlight. System fonts only
-(no third-party font requests), light and dark themes from the same tokens.
+The single accent is garnet; gold appears only as a small highlight. One self-hosted font (Archivo,
+static/fonts), no third-party requests, light and dark themes from the same tokens. The public landing
+pages are cinematic: full-bleed footage and photography (static/media) with big condensed type.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from __future__ import annotations
 import base64
 import contextvars
 import hashlib
+import json
+from pathlib import Path
 
 import security
 from security import make_csrf
@@ -99,32 +102,12 @@ header{background:color-mix(in srgb,var(--canvas) 88%,transparent);backdrop-filt
 .nav a.btn:hover{background:var(--accent-hover)}
 .who{font-size:13px;color:var(--faint);padding:0 6px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:620px){.nav{padding:10px 14px}.brand-name{font-size:17px}.nav a.ghost,.nav .ghostbtn{padding:7px 8px;font-size:13.5px}.who{display:none}.nav a.opt{display:none}}
-/* ---------- public hero ---------- */
-.hero{padding:64px 20px 56px;border-bottom:1px solid var(--whisper)}
-.hero-in{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}
-@media(max-width:820px){.hero-in{grid-template-columns:1fr;gap:32px}.hero{padding:40px 20px}}
+/* ---------- public pages ---------- */
 .eyebrow{font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-ink)}
-.hero h1{font-family:var(--display);font-weight:650;font-stretch:84%;font-size:clamp(34px,5.4vw,56px);line-height:1.06;letter-spacing:-.02em;margin:14px 0 16px;max-width:15ch}
-.hero h1 em{font-style:normal;color:var(--accent-ink);background:linear-gradient(transparent 72%,var(--gold-tint) 72%)}
-.hero p{font-size:17px;color:var(--muted);max-width:50ch;margin:0 0 26px}
-.hero .cta{display:flex;gap:10px;flex-wrap:wrap}
-.hero .cta a{text-decoration:none;padding:12px 22px;border-radius:9px;font-weight:600;font-size:15px}
 .cta .primary{background:var(--accent);color:var(--on-accent)}
 .cta .primary:hover{background:var(--accent-hover)}
 .cta .secondary{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line-2) inset}
 .cta .secondary:hover{box-shadow:0 0 0 1px var(--accent-ink) inset}
-.hero .count{margin-top:22px;font-size:13px;color:var(--faint)}
-.hero-card{background:var(--surface);border:1px solid var(--whisper);border-radius:16px;box-shadow:var(--shadow-deep);padding:22px;position:relative}
-.hero-card .mini{border:1px solid var(--whisper);border-radius:10px;padding:13px 14px;margin-top:10px;background:var(--canvas)}
-.hero-card .mini b{font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px}.hero-card .mini p{font-size:12.5px;color:var(--muted);margin:2px 0 0}
-.stamp{position:absolute;top:-12px;right:18px;background:var(--gold);color:#3a2f14;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:999px}
-.how{padding:34px 20px}
-.how-inner{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-@media(max-width:700px){.how-inner{grid-template-columns:1fr;gap:12px}}
-.how-item{font-size:14px;background:var(--surface);border:1px solid var(--whisper);border-radius:12px;padding:18px 18px 16px}
-.how-item .n{font-family:var(--display);font-stretch:84%;color:var(--accent-ink);font-size:14px;margin-right:6px}
-.how-item b{font-weight:600}
-.how-item p{color:var(--muted);font-size:13.5px;margin-top:6px}
 /* ---------- signed-in app layout (Notion-style sidebar) ---------- */
 .app{display:grid;grid-template-columns:236px minmax(0,1fr);max-width:1180px;margin:0 auto;min-height:calc(100vh - 60px)}
 .side{border-right:1px solid var(--whisper);padding:18px 12px;position:sticky;top:57px;height:calc(100vh - 57px);overflow:auto}
@@ -472,22 +455,72 @@ footer a{color:var(--muted)}
 .brand-name{font-weight:700;font-stretch:88%;letter-spacing:0}
 .b,.submit-btn,.apply-btn,.cta a,.nav a.btn{transition:background .15s,box-shadow .15s,transform .15s var(--ease)}
 .b:active,.submit-btn:active,.apply-btn:active,.cta a:active,.nav a.btn:active{transform:translateY(1px) scale(.985)}
-/* hero */
-.hero{position:relative;overflow:hidden;isolation:isolate;padding:56px 20px 52px}
-.hero .fxgrid{position:absolute;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
-.hero::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,transparent 55%,var(--canvas))}
-.hero-in{max-width:1080px;align-items:start}
-.hero .hero-top{grid-column:1/-1}
-.hero h1.display{font-size:clamp(46px,9.2vw,118px);max-width:none;margin:14px 0 6px;font-weight:800;font-stretch:68%;letter-spacing:-.005em;line-height:.9}
-.hero h1.display.long{font-size:clamp(40px,7.2vw,94px)}
-.hero h1.display .ln{display:block;overflow:hidden;padding-bottom:.04em}
-.hero h1.display .ln>span{display:inline-block}
-.hero h1.display em{background:none;color:var(--accent-ink)}
-.hero h1.display .dot{color:var(--gold)}
-.hero .hero-copy p{font-size:18px;max-width:40ch;margin:0 0 24px}
-.hero-card{transform:rotate(-1.2deg)}
-.hero-card .quote{font-family:var(--display);font-weight:650;font-stretch:84%;font-size:20px;line-height:1.25}
-@media(max-width:820px){.hero{padding:34px 20px 40px}.hero .hero-card{transform:none;animation-name:fade-up!important}}
+/* display lines that rise into place */
+.display .ln{display:block;overflow:hidden;padding-bottom:.04em}
+.display .ln>span{display:inline-block}
+.display .dot{color:var(--gold)}
+/* ---------- cinematic landing: full-bleed footage and photography with big type over it ----------
+   The student hero is a camera move through a brick archway, scrubbed by scroll: static/fx.js draws
+   the frames onto a canvas and sets --p (0 to 1) on the section. With no JS, reduced motion or a slow
+   connection it is a still photo with the first caption, and nothing is pinned. */
+main>.cine:first-child,main>.chapter.top:first-child{margin-top:calc(-1 * var(--hdr,55px))}
+.cine,.chapter{position:relative;isolation:isolate;background:#120d0c;color:#fff}
+.cine-stage{position:relative;height:100vh;height:100svh;min-height:560px;max-height:1100px;overflow:hidden}
+.cine-media,.ch-media{position:absolute;inset:0;z-index:-1;overflow:hidden}
+.cine-media .pan,.ch-media .pan{position:absolute;inset:-2.5%;will-change:transform}
+.cine-media img,.cine-media canvas,.ch-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:var(--fx,62%) 50%;display:block}
+.cine-media canvas{opacity:0;transition:opacity .6s}
+.cine.ready .cine-media canvas{opacity:1}
+.scrim{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(12,8,7,.5),rgba(12,8,7,0) 22%),linear-gradient(90deg,rgba(12,8,7,.8),rgba(12,8,7,.46) 40%,rgba(12,8,7,0) 74%),linear-gradient(0deg,rgba(12,8,7,.6),rgba(12,8,7,0) 44%)}
+.cine-copy{position:absolute;inset:0;max-width:1180px;margin:0 auto;padding:0 20px clamp(44px,9vh,96px);display:grid;align-items:end}
+.cap{grid-area:1/1;max-width:900px}
+.cine .eyebrow,.chapter .eyebrow{color:var(--gold);letter-spacing:.14em}
+.cine h1.display,.chapter .display{color:#fff;margin:12px 0 18px}
+.cine h1.display{font-size:clamp(50px,10.2vw,146px)}
+.cine .display em,.chapter .display em{color:var(--gold)}
+.cap p,.ch-copy p{font-size:clamp(16px,1.45vw,19px);color:rgba(255,255,255,.84);max-width:44ch;margin:0 0 26px}
+.cap .note{margin:14px 0 0;font-size:clamp(15px,1.3vw,17px)}
+.cap p.big{font-size:clamp(46px,8.8vw,128px);line-height:.9;color:#fff;max-width:none;margin:0}
+.cine .cta,.chapter .cta{display:flex;gap:10px;flex-wrap:wrap}
+.cine .cta a,.chapter .cta a{text-decoration:none;padding:13px 24px;border-radius:9px;font-weight:600;font-size:15px}
+.cine .cta .secondary,.chapter .cta .secondary{background:rgba(255,255,255,.08);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.42) inset;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.cine .cta .secondary:hover,.chapter .cta .secondary:hover{background:rgba(255,255,255,.16);box-shadow:0 0 0 1px #fff inset}
+.cine .cta .primary:hover,.chapter .cta .primary:hover{background:var(--accent-hover)}
+.cap.c1,.cap.c2,.cine-rail{display:none}
+.cine-rail{position:absolute;left:0;right:0;bottom:22px;max-width:1140px;margin:0 auto;padding:0 20px;align-items:center;gap:14px;font-size:11.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.cine-rail .bar{flex:1;height:1px;background:rgba(255,255,255,.22);position:relative;overflow:hidden}
+.cine-rail .bar i{position:absolute;inset:0;background:var(--gold);transform-origin:left;transform:scaleX(var(--p,0))}
+/* live: pinned while the camera moves; captions cross-fade on --p */
+.cine.live{height:340vh}
+.cine.live .cine-stage{position:sticky;top:0}
+.cine.live .cap.c1,.cine.live .cap.c2{display:block}
+.cine.live .cine-rail{display:flex}
+.cine.live .cap{--o:clamp(0,min(calc((var(--p,0) - var(--a)) * 12),calc((var(--b) - var(--p,0)) * 12)),1);opacity:var(--o);transform:translateY(calc((1 - var(--o)) * 30px));pointer-events:none}
+.cine.live .c0{--a:-9;--b:.2}.cine.live .c1{--a:.28;--b:.58}.cine.live .c2{--a:.66;--b:9}
+.cine.live[data-cap="0"] .c0{pointer-events:auto}
+.cine.live:not([data-cap="0"]) .c0{visibility:hidden}
+/* photo chapters */
+.chapter{overflow:hidden;min-height:min(92vh,900px);min-height:min(92svh,900px);display:grid;align-items:end}
+.chapter.top{min-height:100vh;min-height:100svh;max-height:1100px}
+.ch-copy{max-width:1180px;width:100%;margin:0 auto;padding:140px 20px clamp(48px,10vh,104px)}
+.chapter .display{font-size:clamp(46px,8.4vw,124px)}
+.chapter.top h1.display{font-size:clamp(46px,8.8vw,128px)}
+@media(max-width:700px){.scrim{background:linear-gradient(180deg,rgba(12,8,7,.5),rgba(12,8,7,0) 26%),linear-gradient(0deg,rgba(12,8,7,.86),rgba(12,8,7,.5) 46%,rgba(12,8,7,0) 78%)}}
+/* what employers get */
+.gets{max-width:1120px;margin:0 auto;padding:56px 20px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.gets .hb{background:var(--surface);border:1px solid var(--whisper);border-radius:16px;padding:22px 22px 20px}
+.gets .hb .ic{color:var(--accent-ink);margin-bottom:16px}
+.gets h3{font-family:var(--display);font-weight:750;font-stretch:78%;font-size:22px;line-height:1.1;margin-bottom:8px}
+.gets p{color:var(--muted);font-size:14.5px}
+@media(max-width:820px){.gets{grid-template-columns:1fr;padding-top:40px}}
+/* the header floats over the footage until you scroll past it (fx.js adds html.over and header.solid) */
+html.over header{transition:background .35s,border-color .35s}
+html.over header:not(.solid){background:transparent;border-bottom-color:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
+html.over header:not(.solid) .brand-name{color:#fff}
+html.over header:not(.solid) .brand-name b{color:var(--gold)}
+html.over header:not(.solid) .nav a.ghost,html.over header:not(.solid) .nav .ghostbtn,html.over header:not(.solid) .who{color:rgba(255,255,255,.88)}
+html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .nav .ghostbtn:hover{color:#fff;background:rgba(255,255,255,.14)}
 /* marquee (one per page) */
 .marquee{border-block:1px solid var(--whisper);overflow:hidden;background:var(--surface);padding:14px 0;
   -webkit-mask:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
@@ -553,28 +586,35 @@ footer a{color:var(--muted)}
 }}
 @keyframes rv-in{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:no-preference){
-  .hero h1.display .ln>span{animation:ln-up .9s var(--ease) both}
-  .hero h1.display .ln:nth-child(2)>span{animation-delay:.08s}
-  .hero .hero-copy{animation:fade-up .9s var(--ease) .18s both}
+  .cine .c0 .ln>span,.chapter.top .ln>span{animation:ln-up 1s var(--ease) .1s both}
+  .cine .c0 .ln:nth-child(2)>span,.chapter.top .ln:nth-child(2)>span{animation-delay:.18s}
+  .cine .c0 .eyebrow,.cine .c0 p,.cine .c0 .cta,.chapter.top .eyebrow,.chapter.top p,.chapter.top .cta{animation:fade-up 1s var(--ease) .32s both}
+  .chapter.top .ch-media img{animation:settle 2.4s var(--ease) both}
   .marquee .track{animation:marquee 46s linear infinite}
   .marquee:hover .track{animation-play-state:paused}
 }
 @keyframes ln-up{from{transform:translateY(105%)}to{transform:none}}
 @keyframes fade-up{from{opacity:0;transform:translateY(18px)}}
-@media (prefers-reduced-motion:no-preference){.hero .hero-card{animation:card-in .9s var(--ease) .24s both}}
-@keyframes card-in{from{opacity:0;transform:translateY(22px) rotate(-1.2deg)}to{opacity:1;transform:rotate(-1.2deg)}}
+@keyframes settle{from{transform:scale(1.08)}to{transform:none}}
+@supports (animation-timeline:view()){@media (prefers-reduced-motion:no-preference){
+  .chapter:not(.top) .ch-media img{animation:ch-drift linear both;animation-timeline:view();animation-range:cover 0% cover 100%}
+  .chapter:not(.top){view-timeline:--ch block}
+  .chapter:not(.top) .ch-copy>*{animation:rv-in linear both;animation-timeline:--ch;animation-range:entry 35% entry 85%}
+  .chapter:not(.top) .ch-copy>:nth-child(n+3){animation-range:entry 45% entry 95%}
+}}
+@keyframes ch-drift{from{transform:scale(1.16) translateY(-3%)}to{transform:scale(1.03) translateY(3%)}}
 @keyframes marquee{to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion:reduce){.marquee .track{width:auto;flex-wrap:wrap;justify-content:center}.marquee ul[aria-hidden]{display:none}.marquee ul{flex-wrap:wrap;justify-content:center;row-gap:8px}}
 /* a light that follows the cursor around card borders (fine pointers only) */
 @media (hover:hover) and (pointer:fine){
-  .spot,.card,.tile,.job,.hero-card,.hb,.rev-card,.post,.stat{position:relative}
-  .spot::before,.card::before,.tile::before,.job::before,.hero-card::before,.hb::before,.rev-card::before,.post::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1.5px;pointer-events:none;opacity:0;transition:opacity .35s;
+  .spot,.card,.tile,.job,.hb,.rev-card,.post,.stat{position:relative}
+  .spot::before,.card::before,.tile::before,.job::before,.hb::before,.rev-card::before,.post::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1.5px;pointer-events:none;opacity:0;transition:opacity .35s;
     background:radial-gradient(240px circle at var(--mx,50%) var(--my,50%),var(--gold),color-mix(in srgb,var(--accent) 60%,transparent) 35%,transparent 70%);
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)}
-  .spot:hover::before,.card:hover::before,.tile:hover::before,.job:hover::before,.hero-card:hover::before,.hb:hover::before,.rev-card:hover::before,.post:hover::before{opacity:1}
-  .spot::after,.tile::after,.job::after,.hero-card::after,.hb::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .35s;
+  .spot:hover::before,.card:hover::before,.tile:hover::before,.job:hover::before,.hb:hover::before,.rev-card:hover::before,.post:hover::before{opacity:1}
+  .spot::after,.tile::after,.job::after,.hb::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .35s;
     background:radial-gradient(420px circle at var(--mx,50%) var(--my,50%),color-mix(in srgb,var(--gold) 9%,transparent),transparent 60%)}
-  .spot:hover::after,.tile:hover::after,.job:hover::after,.hero-card:hover::after,.hb:hover::after{opacity:1}
+  .spot:hover::after,.tile:hover::after,.job:hover::after,.hb:hover::after{opacity:1}
   .how-bento .hb.lead::after{background:radial-gradient(420px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.08),transparent 60%)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -780,6 +820,98 @@ def how_employers() -> str:
                       ("Get approved", "A person checks your website, email and how you work with FSU students, usually within a business day."),
                       ("Post and match", "Each listing is scam-scanned and reviewed, then shown with your trust score. Your ranked matches are ready as soon as it's live.")],
                      three=True)
+
+
+# ---------- cinematic landing blocks ----------
+# Footage and photos live in static/media (made for this site; no real FSU buildings, people or marks).
+# `links` maps a name to the attributes of each link, so the demo can point them at its own router.
+
+SITE_LINKS = {"join": 'href="/login"', "check": 'href="/check"', "check_msg": 'href="/check?kind=message"',
+              "emp_signup": 'href="/signup/employer"', "emp_login": 'href="/login/employer"'}
+RULE_COUNT = len(json.loads((Path(__file__).resolve().parent / "scam_detector" / "rulepack" / "core.json").read_text())["rules"])
+CINE_FRAMES = 75          # static/media/arch-000.webp .. arch-074.webp, 1280x720
+MEDIA_VERSION = "1"       # app.py sets this from the files, so browsers can cache them for good
+
+
+def media_url(name: str) -> str:
+    return f"/static/media/{name}?v={MEDIA_VERSION}"
+
+
+def _photo(name: str, focus: str = "62%", eager: bool = False) -> str:
+    load = 'fetchpriority="high"' if eager else 'loading="lazy"'
+    return (f'<img src="{media_url(name + "-1920.webp")}" srcset="{media_url(name + "-960.webp")} 960w, '
+            f'{media_url(name + "-1920.webp")} 1920w" sizes="100vw" width="1920" height="1080" alt="" {load} '
+            f'decoding="async" style="--fx:{focus}">')
+
+
+def cine_hero(links: dict | None = None) -> str:
+    """Student landing hero: a camera move through a brick archway into the quad, scrubbed by scroll."""
+    L = links or SITE_LINKS
+    frames = media_url("arch-{n}.webp")
+    return f"""<section class="cine" data-cine data-frames="{frames}" data-count="{CINE_FRAMES}" aria-label="Welcome">
+<div class="cine-stage"><div class="cine-media" aria-hidden="true"><div class="pan" data-pan>
+<img src="{media_url("arch-000.webp")}" width="1280" height="720" alt="" fetchpriority="high"><canvas></canvas></div></div><div class="scrim"></div>
+<div class="cine-copy">
+<div class="cap c0"><div class="eyebrow">For FSU students</div>
+<h1 class="display"><span class="ln"><span>Student jobs.</span></span><span class="ln"><span><em>Checked</em> for scams<span class="dot">.</span></span></span></h1>
+<p>Every listing is scanned, then approved by a person, before an FSU student ever sees it.</p>
+<div class="cta"><a class="primary" {L["join"]}>Join with your FSU email</a><a class="secondary" {L["check"]}>Try the scam check</a></div></div>
+<div class="cap c1"><p class="display big">Scanned for<br><em>scam signals</em><span class="dot">.</span></p>
+<p class="note">Fake checks, gift-card pay, look-alike school emails: {RULE_COUNT} patterns in all.</p></div>
+<div class="cap c2"><p class="display big">Then approved<br>by a <em>person</em><span class="dot">.</span></p>
+<p class="note">Nothing reaches the board on a score alone.</p></div>
+</div>
+<div class="cine-rail" aria-hidden="true"><span>Scroll</span><span class="bar"><i></i></span><span>Checked</span></div>
+</div></section>"""
+
+
+def chapter(photo: str, eyebrow: str, title_html: str, text: str, cta_html: str = "", focus: str = "62%",
+            top: bool = False) -> str:
+    """A full-bleed photo with big type over it. `top` makes it the page's first section (with the h1)."""
+    h = "h1" if top else "h2"
+    return (f'<section class="chapter{" top" if top else ""}"><div class="ch-media" aria-hidden="true"><div class="pan"{" data-pan" if top else ""}>'
+            f'{_photo(photo, focus, eager=top)}</div><div class="scrim"></div></div><div class="ch-copy">'
+            f'<div class="eyebrow">{esc(eyebrow)}</div><{h} class="display">{title_html}</{h}><p>{esc(text)}</p>'
+            f'{f"<div class=cta>{cta_html}</div>" if cta_html else ""}</div></section>')
+
+
+def students_chapters(links: dict | None = None) -> tuple[str, str]:
+    """The two photo chapters on the student landing: before the teardown, and before the listings."""
+    L = links or SITE_LINKS
+    night = chapter("night", "11:48 pm, a new message",
+                    '<span class="ln"><span>Offers come at night.</span></span><span class="ln"><span><em>So do scams</em><span class="dot">.</span></span></span>',
+                    "Paste any message about a job into the scam check. It reads it the way scammers write them, line by line.",
+                    f'<a class="secondary" {L["check_msg"]}>Check a message you got</a>', focus="58%")
+    fair = chapter("fair", "Employers, checked first",
+                   '<span class="ln"><span>Meet employers</span></span><span class="ln"><span>a person <em>vetted</em><span class="dot">.</span></span></span>',
+                   "Every employer is reviewed before they can post a job or message you, and every listing is reviewed again.",
+                   f'<a class="primary" {L["join"]}>Join with your FSU email</a>', focus="50%")
+    return night, fair
+
+
+def employer_hero(links: dict | None = None, reach: str = "") -> str:
+    L = links or SITE_LINKS
+    return chapter("office", "For employers",
+                   '<span class="ln"><span>Hire FSU students.</span></span><span class="ln"><span>On a board they <em>trust</em><span class="dot">.</span></span></span>',
+                   f"{reach}Every student is a confirmed @fsu.edu account, and every employer and listing is reviewed by a person.",
+                   f'<a class="primary" {L["emp_signup"]}>Create an employer account</a><a class="secondary" {L["emp_login"]}>Employer log in</a>',
+                   focus="66%", top=True)
+
+
+def employer_gets() -> str:
+    tiles = [("people", "Ranked matches for every listing", "Each student who opted in, scored against your listing on their whole profile, with the evidence: skills, projects, coursework, GPA."),
+             ("chat", "Invite to apply in one click", "A ready-to-send message about the role. Students see you're an approved employer."),
+             ("jobs", "Candidates and listing stats", "Track students from new to hired, and see how many viewed and clicked Apply.")]
+    cells = "".join(f'<div class="hb rv">{icon(ic, 24)}<h3>{esc(t)}</h3><p>{esc(p)}</p></div>' for ic, t, p in tiles)
+    return f'<section class="gets" aria-label="What employers get">{cells}</section>'
+
+
+def employer_chapter(links: dict | None = None) -> str:
+    L = links or SITE_LINKS
+    return chapter("fair", "Before the career fair",
+                   '<span class="ln"><span>Meet them</span></span><span class="ln"><span>before the <em>fair</em><span class="dot">.</span></span></span>',
+                   "Students answer because every employer here was checked by a person. Your ranked matches are ready the day a listing goes live.",
+                   f'<a class="primary" {L["emp_signup"]}>Create an employer account</a>', focus="50%")
 
 
 # ---------- static script ----------

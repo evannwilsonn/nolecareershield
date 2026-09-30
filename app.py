@@ -437,6 +437,20 @@ def static_fx_js():
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
+# Landing-page footage and photos. Loaded once; only files that exist in static/media can be named.
+_MEDIA_DIR = Path(__file__).resolve().parent / "static" / "media"
+_MEDIA = {f.name: f.read_bytes() for f in sorted(_MEDIA_DIR.glob("*.webp"))} if _MEDIA_DIR.is_dir() else {}
+ui.MEDIA_VERSION = hashlib.sha256(b"".join(k.encode() + v for k, v in _MEDIA.items())).hexdigest()[:10]
+
+
+@app.get("/static/media/{name}")
+def static_media(name: str):
+    data = _MEDIA.get(name)
+    if data is None:
+        raise StarletteHTTPException(status_code=404)
+    return Response(data, media_type="image/webp", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 @app.get("/static/fonts/archivo.woff2")
 def static_font():
     # Archivo, SIL Open Font License 1.1 (static/fonts/OFL.txt). Self-hosted: no third-party font requests.
@@ -505,17 +519,9 @@ def landing(request: Request):
             if not p or not p.get("setup_step"):
                 return RedirectResponse("/profile/setup", status_code=303)
         return HTMLResponse(shell(profiles.dashboard(user), title="Home — NoleCareerShield", active="/", js=True))
-    hero = f"""<section class="hero"><canvas class="fxgrid" data-fx="grid" aria-hidden="true"></canvas><div class="hero-in">
-<div class="hero-top"><div class="eyebrow">For FSU students</div>
-<h1 class="display"><span class="ln"><span>Student jobs.</span></span><span class="ln"><span><em>Checked</em> for scams<span class="dot">.</span></span></span></h1></div>
-<div class="hero-copy"><p>Every listing is scanned, then approved by a person, before an FSU student ever sees it.</p>
-<div class="cta"><a class="primary" href="/login">Join with your FSU email</a><a class="secondary" href="/check">Try the scam check</a></div></div>
-<div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
-<p class="quote">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</p>
-<div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
-<div class="mini"><b>{ui.icon("spark", 15)} Job assistant <span class="pill accent" style="margin-left:4px">FSU students</span></b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
-</div></div></section>{ui.marquee_block()}{ui.teardown_block('<a href="/check?kind=message">Check a message you got →</a>')}
-{ui.how_students()}"""
+    night, fair = ui.students_chapters()
+    hero = (ui.cine_hero() + ui.marquee_block() + night
+            + ui.teardown_block('<a href="/check?kind=message">Check a message you got →</a>') + ui.how_students() + fair)
     jobs = query_public()
     if jobs:
         with store.db() as conn:
@@ -778,17 +784,7 @@ def employers_landing(request: Request):
         n_students = conn.execute("SELECT COUNT(*) FROM student_profiles s JOIN users u ON u.id = s.user_id "
                                   "WHERE u.verified = 1 AND s.setup_step >= 1").fetchone()[0]
     reach = f"{n_students} FSU student{'s' if n_students != 1 else ''} on the board. " if n_students >= 25 else ""
-    hero = f"""<section class="hero emp"><canvas class="fxgrid" data-fx="grid" aria-hidden="true"></canvas><div class="hero-in">
-<div class="hero-top"><div class="eyebrow">For employers</div>
-<h1 class="display long"><span class="ln"><span>Hire FSU students.</span></span><span class="ln"><span>On a board they <em>trust</em><span class="dot">.</span></span></span></h1></div>
-<div class="hero-copy"><p>{reach}Every student is a confirmed @fsu.edu account, and every employer and listing is reviewed by a person.</p>
-<div class="cta"><a class="primary" href="/signup/employer">Create an employer account</a><a class="secondary" href="/login/employer">Employer log in</a></div></div>
-<div class="hero-card" aria-label="What employers get"><span class="stamp">Employers</span>
-<div class="mini"><b>{ui.icon("people", 15)} Ranked matches for every listing</b><p>Each student who opted in, scored against your listing on their whole profile, with the evidence: skills, projects, coursework, GPA.</p></div>
-<div class="mini"><b>{ui.icon("chat", 15)} Invite to apply in one click</b><p>A ready-to-send message about the role. Students see you're an approved employer.</p></div>
-<div class="mini"><b>{ui.icon("jobs", 15)} Candidates and listing stats</b><p>Track students from new to hired, and see how many viewed and clicked Apply.</p></div>
-</div></div></section>
-{ui.how_employers()}"""
+    hero = ui.employer_hero(reach=reach) + ui.employer_gets() + ui.how_employers() + ui.employer_chapter()
     body = """<div class="card rv" style="margin:28px 0 40px"><h3 class="sec" style="margin-top:0">What students see about you</h3><p>Your company page shows your details, open listings and a trust score from 0 to 100 built from what we can check: reviewer approval, your email domain and website, how your listings were reviewed, how you answer students, and how complete your profile is. <a href="/privacy">How we handle data</a>.</p>
 <p style="margin-top:12px"><a href="/post" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Or write your first listing now and sign up when you send it →</a></p></div>"""
     return shell(f'<section class="home-list">{body}</section>', hero=hero, title="For employers — NoleCareerShield", wide=True)

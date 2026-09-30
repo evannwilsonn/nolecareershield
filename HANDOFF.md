@@ -6,12 +6,13 @@ stand, what was decided and why, and what's next.
 ## Where everything lives
 
 - **Code:** github.com/evannwilsonn/nolecareershield (branch `main`). Python / FastAPI / SQLite, deployed on Render (`render.yaml`, `DEPLOY.md`).
-- **Demo:** `demo/index.html` (full page) and `demo/NoleCareerShield_Demo.html` (body only, published as the Claude artifact
-  "NoleCareerShield Demo (Copy)"). Rebuild with `python demo/build.py` after any site change. The demo runs the real
+- **Demo:** `python demo/build.py` writes `demo/index.html` (full page) and `demo/NoleCareerShield_Demo.html` (body only,
+  published as the Claude artifact "NoleCareerShield Demo (Copy)"). Rebuild after any site change. Both embed the
+  footage (about 7 MB), so they are not kept in git. The demo runs the real
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
 - **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
   commit; `tests/test_installer.py` fails if it's out of date.
-- **Tests:** `python -m pytest -q` (138 passing at handoff).
+- **Tests:** `python -m pytest -q` (139 passing at handoff).
 
 ## Rules Evan set (keep them)
 
@@ -37,16 +38,28 @@ stand, what was decided and why, and what's next.
 
 ## Look and motion (Sept 30 redesign)
 
+- **Landing pages are cinematic,** like the reference videos Evan sent: full-bleed footage and photos with huge
+  condensed type over them, and the header floating clear over the footage until you scroll past.
+  - **Student home:** a camera move along a brick walk, through a gothic arch under live oaks, into a sunlit quad.
+    It is pinned and scrubbed by scroll (75 frames in `static/media/arch-*.webp`, drawn on a canvas by
+    `static/fx.js`), with three captions that cross-fade: "Student jobs. Checked for scams." then "Scanned for scam
+    signals." then "Then approved by a person." Then photo chapters around the teardown ("Offers come at night. So
+    do scams.") and before the listings.
+  - **Employer page:** a full-bleed office photo as the hero, three "what you get" tiles, the how-it-works bento, and a
+    career-fair photo chapter.
+  - Footage and photos were generated for this site with Higgsfield (Wan 3.0 video, Seedream and Z-Image stills,
+    about 9.7 of Evan's 10 free credits). They show no real FSU buildings, people, logos or marks.
+  - Reduced motion, Save-Data, slow connections and no-JS all get a still photo with the first caption and nothing
+    pinned. Photos are served from `/static/media/` with a year-long cache; the page policy needed no change.
 - **Type:** Archivo (variable, self-hosted in `static/fonts/`, OFL). Condensed uppercase for big statements
-  (`.display`), normal width for body. Replaced the Charter serif everywhere.
-- **Effects, all in `static/fx.js` + CSS in `ui.py`:** a dot grid in the hero that leans away from the cursor, a light
-  that follows the cursor around card borders, one marquee of scam patterns, and "The teardown": a scam message that
-  comes apart as you scroll, with each red flag labelled. The teardown uses CSS scroll-driven animation (Chrome, Edge,
-  Safari 26); other browsers, phones and reduced-motion users see it already taken apart. No outside scripts or fonts,
-  so the page policy stays strict (`font-src 'self'` was added).
-- **Shared blocks:** `ui.marquee_block()`, `ui.teardown_block()`, `ui.how_students()`, `ui.how_employers()` feed both
-  the site and the demo, so they can't drift.
-- Came from six reference videos Evan sent (React Bits and Originkit effects, scroll-driven food/car sites).
+  (`.display`), normal width for body.
+- **Other effects:** a light that follows the cursor around card borders, a slight cursor parallax on the hero
+  footage, one marquee of scam patterns, and "The teardown": a scam message that comes apart as you scroll, with
+  each red flag labelled (CSS scroll-driven animation; other browsers see it already taken apart).
+- **Shared blocks:** `ui.cine_hero()`, `ui.students_chapters()`, `ui.employer_hero()`, `ui.employer_gets()`,
+  `ui.employer_chapter()`, `ui.marquee_block()`, `ui.teardown_block()`, `ui.how_students()`, `ui.how_employers()`
+  feed both the site and the demo, so they can't drift. Links are passed in, so the demo points them at its router.
+- To swap the footage: replace the files in `static/media/` (same names; `ui.CINE_FRAMES` is the frame count).
 
 ## Decisions and why
 

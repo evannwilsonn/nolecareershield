@@ -859,9 +859,23 @@ def test_font_and_effects_are_self_hosted(client):
 
 def test_landing_pages_carry_the_new_blocks(client):
     home = client.get("/").text
-    assert 'data-fx="grid"' in home and 'class="marquee"' in home and 'class="teardown"' in home and 'class="how-bento"' in home
+    assert "data-cine" in home and 'class="marquee"' in home and 'class="teardown"' in home and 'class="how-bento"' in home
+    assert home.count('class="chapter"') == 2
     # The teardown flags come from real detector rules, and the check link goes to the message tab.
     assert "The fake-check scam" in home and 'href="/check?kind=message"' in home
     assert "—" not in re.sub(r"<title>.*?</title>", "", home)          # no em-dashes in visible copy
     emp = client.get("/employers").text
-    assert 'class="how-bento three"' in emp and 'data-fx="grid"' in emp
+    assert 'class="how-bento three"' in emp and 'class="chapter top"' in emp and 'class="gets"' in emp
+
+
+def test_landing_media_is_served_and_cached(client):
+    import ui
+    home = client.get("/").text
+    for name in ("arch-000.webp", f"arch-{ui.CINE_FRAMES - 1:03d}.webp", "night-1920.webp", "fair-960.webp", "office-1920.webp"):
+        r = client.get(f"/static/media/{name}")
+        assert r.status_code == 200 and r.headers["content-type"] == "image/webp"
+        assert "immutable" in r.headers["cache-control"] and r.content[:4] == b"RIFF"
+    assert f"/static/media/arch-000.webp?v={ui.MEDIA_VERSION}" in home and ui.MEDIA_VERSION != "1"
+    # Only files that exist can be named: no paths, no other folders.
+    for bad in ("../app.py", "..%2Fapp.py", "nope.webp", "arch-000.png"):
+        assert client.get(f"/static/media/{bad}").status_code == 404

@@ -58,14 +58,13 @@ university email templates, so treat this as a sanity check, not a promise.
 
 ## Interactive demo
 
-`demo/index.html` is a single-file, no-server version of the whole site: the job board, profiles and
+`python demo/build.py` writes `demo/index.html`, a single-file, no-server version of the whole site (not kept in git, since it embeds the landing footage): the job board, profiles and
 setup, messaging, the scam check, the job assistant, the resume studio, the FSU feed and every reviewer
 queue, running on sample data in the browser. It uses the real stylesheet (`ui.py`), the real rules
 (`scam_detector/rulepack/core.json`) and `demo/engine.js`, a port of the Python engines. 
 `tests/test_demo_engine.py` runs that port against the Python on every labeled corpus and fails on any
 difference in a score, verdict, finding, resume score, rewrite, parsed resume or job fit score. The demo reads PDFs with
-pdf.js (loaded from cdnjs only when someone uploads one) and Word files with the browser's own zip inflater. Rebuild after changing the site:
-`python demo/build.py`.
+pdf.js (loaded from cdnjs only when someone uploads one) and Word files with the browser's own zip inflater. Rebuild after changing the site.
 
 ## Privacy by design
 

@@ -8,3 +8,7 @@ __pycache__/
 venv/
 .pytest_cache/
 backups/
+
+# built by python demo/build.py (they embed ~6 MB of footage)
+demo/index.html
+demo/NoleCareerShield_Demo.html

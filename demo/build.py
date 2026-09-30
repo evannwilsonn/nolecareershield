@@ -9,7 +9,8 @@ It is assembled from the real site's pieces so it can't drift:
   * demo/app.js, the pages, driven by in-memory sample data
 
 Writes demo/NoleCareerShield_Demo.html (body only, for hosting as a Claude artifact)
-and demo/index.html (a complete page for any static host).
+and demo/index.html (a complete page for any static host). Both embed the landing footage and photos
+(about 6 MB), so they are build outputs and not kept in git.
 """
 from __future__ import annotations
 
@@ -68,7 +69,8 @@ SHELL = """<title>{title}</title>
 <div id="app"></div>
 <script>var NCS_RULEPACK = {rules};
 var NCS_SEED = {seed};
-var NCS_BLOCKS = {blocks};</script>
+var NCS_BLOCKS = {blocks};
+var NCS_FRAMES = {frames};</script>
 <script>{engine}</script>
 <script>{app}</script>
 <script>{fx}</script>
@@ -83,9 +85,23 @@ def build() -> tuple[Path, Path]:
             j.pop(k, None)
     safe = lambda obj: json.dumps(obj, separators=(",", ":")).replace("</", "<\\/")
     # The landing-page blocks are the site's own markup; links point at the demo's router instead.
+    L = {"join": 'href="#" data-go="start"', "check": 'href="#" data-go="scam"', "check_msg": 'href="#" data-go="scam?kind=message"',
+         "emp_signup": 'href="#" data-go="signup?role=employer"', "emp_login": 'href="#" data-go="login?role=employer"'}
+    night, fair = ui.students_chapters(L)
     blocks = {"marquee": ui.marquee_block(),
               "teardown": ui.teardown_block('<a href="#" data-go="scam?kind=message">Check a message you got →</a>'),
-              "howStudents": ui.how_students(), "howEmployers": ui.how_employers()}
+              "howStudents": ui.how_students(), "howEmployers": ui.how_employers(),
+              "cineHero": ui.cine_hero(L), "nightCh": night, "fairCh": fair,
+              "empHero": ui.employer_hero(L), "empGets": ui.employer_gets(), "empCh": ui.employer_chapter(L)}
+    # Footage and photos are embedded too. The hero's frames go in NCS_FRAMES, which static/fx.js reads.
+    media = ROOT / "static" / "media"
+    uri = lambda name: "data:image/webp;base64," + base64.b64encode((media / name).read_bytes()).decode()
+    blocks = {k: re.sub(r"/static/media/([a-z0-9-]+\.webp)\?v=\w+", lambda m: uri(m.group(1)), v) if "{n}" not in v
+              else re.sub(r"/static/media/(?!arch-\{n\})([a-z0-9-]+\.webp)\?v=\w+", lambda m: uri(m.group(1)), v)
+              for k, v in blocks.items()}
+    frames = [uri(f"arch-{i:03d}.webp") for i in range(ui.CINE_FRAMES)]
+    if "/static/media/" in "".join(v for v in blocks.values()).replace("/static/media/arch-{n}", ""):
+        raise SystemExit("a media link in the landing blocks was not embedded")
     # The font is embedded, since the demo is one self-contained file.
     font = base64.b64encode((ROOT / "static" / "fonts" / "archivo.woff2").read_bytes()).decode()
     css = themed_css(ui.CSS).replace("url(/static/fonts/archivo.woff2) format(\"woff2-variations\"),url(/static/fonts/archivo.woff2) format(\"woff2\")",
@@ -94,7 +110,7 @@ def build() -> tuple[Path, Path]:
         raise SystemExit("font-face not found in ui.CSS")
     body = SHELL
     for key, val in {"title": TITLE, "css": css + DEMO_CSS, "emblem": ui.EMBLEM, "rules": safe(rules), "seed": safe(seed),
-                     "blocks": safe(blocks), "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text(),
+                     "blocks": safe(blocks), "frames": safe(frames), "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text(),
                      "fx": (ROOT / "static" / "fx.js").read_text()}.items():
         body = body.replace("{" + key + "}", val)
     art = HERE / "NoleCareerShield_Demo.html"

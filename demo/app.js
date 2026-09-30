@@ -232,16 +232,7 @@ const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs",
 const P = {};
 P.home = () => {
   if (me()) return me().role === "student" ? studentHome() : employerHome();
-  const hero = `<section class="hero"><canvas class="fxgrid" data-fx="grid" aria-hidden="true"></canvas><div class="hero-in">
-<div class="hero-top"><div class="eyebrow">For FSU students</div>
-<h1 class="display"><span class="ln"><span>Student jobs.</span></span><span class="ln"><span><em>Checked</em> for scams<span class="dot">.</span></span></span></h1></div>
-<div class="hero-copy"><p>Every listing is scanned, then approved by a person, before an FSU student ever sees it.</p>
-<div class="cta"><a class="primary" href="#" data-go="start">Join with your FSU email</a><a class="secondary" href="#" data-go="scam">Try the scam check</a></div></div>
-<div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
-<p class="quote">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</p>
-<div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
-<div class="mini"><b>${icon("spark", 15)} Job assistant <span class="pill accent" style="margin-left:4px">FSU students</span></b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
-</div></div></section>${NCS_BLOCKS.marquee}${NCS_BLOCKS.teardown}${NCS_BLOCKS.howStudents}`;
+  const hero = NCS_BLOCKS.cineHero + NCS_BLOCKS.marquee + NCS_BLOCKS.nightCh + NCS_BLOCKS.teardown + NCS_BLOCKS.howStudents + NCS_BLOCKS.fairCh;
   // Visitors see a teaser only: title, company, category. Listings are for signed-in FSU students and employers.
   const all = approvedJobs(), list = all.slice().reverse().slice(0, 3), emps = Object.values(S.employers).filter(p => p.status === "approved").length;
   const teaser = j => `<a class="job teaser" href="#" data-go="start?next=job-${j.id}"><div class="job-top"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="pill">${icon("shield", 13)} Log in to view</span></div><div class="job-meta"><span class="chip">${esc(j.category)}</span></div></a>`;
@@ -1110,16 +1101,7 @@ function needStudent(what) {
 // ---- trust pages ----
 P.employers = () => {
   if (isEmployer()) { go("hiring"); return null; }
-  const hero = `<section class="hero emp"><canvas class="fxgrid" data-fx="grid" aria-hidden="true"></canvas><div class="hero-in">
-<div class="hero-top"><div class="eyebrow">For employers</div>
-<h1 class="display long"><span class="ln"><span>Hire FSU students.</span></span><span class="ln"><span>On a board they <em>trust</em><span class="dot">.</span></span></span></h1></div>
-<div class="hero-copy"><p>Every student is a confirmed @fsu.edu account, and every employer and listing is reviewed by a person.</p>
-<div class="cta"><a class="primary" href="#" data-go="signup?role=employer">Create an employer account</a><a class="secondary" href="#" data-go="login?role=employer">Employer log in</a></div></div>
-<div class="hero-card" aria-label="What employers get"><span class="stamp">Employers</span>
-<div class="mini"><b>${icon("people", 15)} Ranked matches for every listing</b><p>Each student who opted in, scored against your listing on their whole profile, with the evidence: skills, projects, coursework, GPA.</p></div>
-<div class="mini"><b>${icon("chat", 15)} Invite to apply in one click</b><p>A ready-to-send message about the role. Students see you're an approved employer.</p></div>
-<div class="mini"><b>${icon("jobs", 15)} Candidates and listing stats</b><p>Track students from new to hired, and see how many viewed and clicked Apply.</p></div>
-</div></div></section>${NCS_BLOCKS.howEmployers}`;
+  const hero = NCS_BLOCKS.empHero + NCS_BLOCKS.empGets + NCS_BLOCKS.howEmployers + NCS_BLOCKS.empCh;
   return {wide: true, hero, body: `<section class="home-list"><div class="card rv" style="margin:28px 0 40px"><h3 class="sec" style="margin-top:0">What students see about you</h3><p>Your company page shows your details, open listings and a trust score from 0 to 100 built from what we can check: reviewer approval, your email domain and website, how your listings were reviewed, how you answer students, and how complete your profile is. <a href="#" data-go="privacy">How we handle data</a>.</p>
 <p style="margin-top:12px"><a href="#" data-go="post" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Or write your first listing now and sign up when you send it →</a></p></div></section>`};
 };
