@@ -679,16 +679,30 @@ opportunity apply applicants including knowledge excellent good great including 
   const RECQ = /\b(?:recommend|suggest|match(?:es|ing)?|fit(?:s)? me|for me|my (?:resume|skills|profile|major)|should i apply|good fit)\b/i;
   const RESQ = /\bresume\b.*\b(?:review|feedback|improve|better|score|fix|help)\b|\b(?:review|improve|fix)\b.*\bresume\b/i;
   const REC_WORDS = new Set(["recommend", "recommendations", "suggest", "suggestions", "match", "matches", "matching", "fit", "fits", "resume", "skills", "profile", "major", "apply", "should", "good", "me?", "resume?", "skills?", "profile?"]);
+  const MYSKILLS = /\b(?:match(?:es|ing)?|fit(?:s|ting)?|suit(?:s|ed)?|for)\b.{0,24}\b(?:my )?(?:skills|resume|profile|major|background)\b|\bjobs? for me\b/i;
+  const DRAFTQ = /\b(?:draft|write|build|make|create|start|craft)\b.{0,24}\b(?:resume|cv)\b|\bcover letter\b/i;
+  const INTERVIEWQ = /\binterview/i;
   const HELLO = /^\s*(?:hi|hey|hello|yo|sup|help|what can you do)\W*$/i;
   function assistant(question, profile, jobs) {
     const q = question.trim();
-    if (HELLO.test(q)) return {reply: "Hi! I can find jobs on the board for you, recommend ones that fit your skills and resume, and check whether a message from a 'recruiter' is a scam. Try one of the suggestions below.", jobs: []};
+    if (HELLO.test(q)) return {reply: "Hi! I can find jobs on the board for you, recommend ones that fit your skills and resume, point you to Resume studio, share interview tips and check whether a message from a 'recruiter' is a scam. Try one of the suggestions below.", jobs: []};
     if (SCAMQ.test(q) && (q.length > 160 || q.includes("\n") || q.includes('"') || q.includes(":"))) {
       const text = q.slice(0, 80).includes(":") ? q.slice(q.indexOf(":") + 1) : q; const r = check(text);
       const reasons = r.findings.slice(0, 4).map(f => "• " + f.title).join("\n") || "• No known scam patterns matched.";
       return {reply: `Verdict: ${r.title}.\n${r.advice}\n\nWhat I found:\n${reasons}\n\nFor the full breakdown and next steps, use Scam check.`, jobs: [], scam: r};
     }
     if (SCAMQ.test(q)) return {reply: "Paste the whole message after a colon, like: “Is this a scam: Hi, I'm Dr. Lee from the Psychology department…”, and I'll check it. You can also use the Scam check page for the full breakdown.", jobs: []};
+    if (DRAFTQ.test(q) && !RESQ.test(q)) {
+      const have = !!(profile && profile.resume_text);
+      return {reply: "Resume studio is where resumes get built here. " + (have ? "Yours is already saved, so you can edit it, score it and tailor a version to any listing." : "Add or paste what you have and it will score it, rewrite weak lines without inventing anything, and tailor it to any listing.") + " I don't write resumes in chat, so I don't put words about you on paper that you didn't say.", jobs: [], handoff: "resume"};
+    }
+    if (INTERVIEWQ.test(q) && !SCAMQ.test(q)) return {reply: "A simple way to get ready for an interview:\n" +
+      "• Read the listing again and note the three things they ask for most. Have one real example from school, work or a project for each.\n" +
+      "• Look up the company on its own website and be ready to say why you want this role there.\n" +
+      "• Practice a 30-second answer to “Tell me about yourself”: who you are, what you've done, what you want next.\n" +
+      "• Prepare a short story for a challenge, a team moment and something you learned (situation, what you did, result).\n" +
+      "• Have two questions of your own, such as what the first month looks like.\n" +
+      "• Confirm the interview through the employer's own site or email. Real interviews never require you to pay, buy equipment or share bank details.", jobs: [], interview: true};
     if (RESQ.test(q)) {
       if (profile && profile.resume_text) { const rv = review(profile.resume_text); const tips = rv.findings.slice(0, 4).map(f => "• " + f.message).join("\n") || "• It's in good shape.";
         return {reply: `Your resume scores ${rv.score}/100 (${rv.grade}). Top fixes:\n${tips}\n\nOpen Resume studio for line-by-line rewrites and a version tailored to any job.`, jobs: []}; }
@@ -696,15 +710,15 @@ opportunity apply applicants including knowledge excellent good great including 
     }
     if (!jobs.length) return {reply: "There are no approved listings on the board right now. New ones appear as reviewers approve them. Meanwhile, I can review your resume or check a message for scams.", jobs: []};
     const pq = parseQuery(q), specific = pq.keywords.filter(w => !REC_WORDS.has(w));
-    if (RECQ.test(q) && !specific.length && !pq.category && !pq.work_type && !pq.skills.length) {
-      if (!profile || !profile.display_name || !profile.major) return {reply: "Set up your profile (skills, interests, resume) and I'll rank jobs for you. Here are the newest listings meanwhile.", jobs: rankJobs(jobs, null, "", 5)};
-      const ranked = rankJobs(jobs, profile, "", 6).filter(r => r.score > 0).slice(0, 5);
+    if ((RECQ.test(q) && !specific.length && !pq.category && !pq.work_type && !pq.skills.length) || (MYSKILLS.test(q) && !pq.category && !pq.work_type && !pq.skills.length)) {
+      if (!profile || !profile.display_name || !profile.major) return {reply: "Set up your profile (skills, interests, resume) and I'll rank jobs for you. Here are the newest listings meanwhile.", jobs: rankJobs(jobs, null, "", 8)};
+      const ranked = rankJobs(jobs, profile, "", 10).filter(r => r.score > 0).slice(0, 8);
       const sk = (profile.skills || []).slice(0, 4).join(", ");
-      return {reply: `${sk ? `Based on your profile (${sk})` : "Based on your profile"}, these fit you best. Each card says why.`, jobs: ranked};
+      return {reply: `${sk ? `Based on your profile (${sk})` : "Based on your profile"}, these fit you best. Each card shows how well it matches.`, jobs: ranked};
     }
-    const ranked = rankJobs(jobs, profile, q, 5);
+    const ranked = rankJobs(jobs, profile, q, 8);
     if (ranked.length) return {reply: `Here ${ranked.length === 1 ? "is" : "are"} ${ranked.length} listing${ranked.length !== 1 ? "s" : ""} for “${q.slice(0, 80)}”, best match first.`, jobs: ranked};
-    return {reply: `No listing matches “${q.slice(0, 80)}” exactly right now. These are the closest, based on your profile. Try fewer words, or a different job type.`, jobs: rankJobs(jobs, profile, q, 4, false)};
+    return {reply: `No listing matches “${q.slice(0, 80)}” exactly right now. These are the closest, based on your profile. Try fewer words, or a different job type.`, jobs: rankJobs(jobs, profile, q, 6, false)};
   }
 
   // ---------- resume -> profile sections (port of resume_parse.py) ----------

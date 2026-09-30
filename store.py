@@ -272,6 +272,27 @@ CREATE TABLE IF NOT EXISTS follows (
     PRIMARY KEY (student_id, employer_id)
 );
 CREATE INDEX IF NOT EXISTS idx_follow_emp ON follows (employer_id);
+-- Career assistant chats (assistant.py). Only the student who owns a chat can read it. payload holds listing ids
+-- and follow-up chips, never listing text: cards are rebuilt from live, approved listings each time a chat is shown.
+CREATE TABLE IF NOT EXISTS assistant_chats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_achat_user ON assistant_chats (user_id, updated_at);
+CREATE TABLE IF NOT EXISTS assistant_msgs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL,                       -- 'user' | 'assistant'
+    text TEXT NOT NULL DEFAULT '',
+    payload TEXT NOT NULL DEFAULT '{}',
+    feedback INTEGER NOT NULL DEFAULT 0,      -- 1 thumbs up, -1 thumbs down
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_amsg_chat ON assistant_msgs (chat_id, id);
 """
 
 
@@ -310,6 +331,9 @@ def purge(conn) -> None:
     for t in ("job_views", "job_apply_clicks", "candidates", "applications"):
         conn.execute(f"DELETE FROM {t} WHERE job_id NOT IN (SELECT id FROM jobs)")
     conn.execute("DELETE FROM job_views WHERE day < ?", (time.strftime("%Y-%m-%d", time.gmtime(now - 180 * 86400)),))
+    # Assistant chats go after 180 days without a new message.
+    conn.execute("DELETE FROM assistant_chats WHERE updated_at < ?", (now - 180 * 86400,))
+    conn.execute("DELETE FROM assistant_msgs WHERE chat_id NOT IN (SELECT id FROM assistant_chats)")
     conn.commit()
 
 
@@ -339,6 +363,8 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM applications WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
     conn.execute("DELETE FROM connections WHERE user_a = ? OR user_b = ?", (user_id, user_id))
     conn.execute("DELETE FROM follows WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
+    conn.execute("DELETE FROM assistant_msgs WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM assistant_chats WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_tokens WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE jobs SET employer_id = NULL WHERE employer_id = ?", (user_id,))
