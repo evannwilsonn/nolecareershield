@@ -115,8 +115,18 @@ user_login_limiter = RateLimiter(max_attempts=10, window_seconds=15 * 60)
 user_login_email_limiter = RateLimiter(max_attempts=8, window_seconds=15 * 60)
 signup_limiter = RateLimiter(max_attempts=10, window_seconds=60 * 60)
 email_limiter = RateLimiter(max_attempts=3, window_seconds=60 * 60)
+# Network features. Keyed per account (not per IP) where an account exists.
+message_limiter = RateLimiter(max_attempts=60, window_seconds=60 * 60)       # messages sent per hour
+new_convo_limiter = RateLimiter(max_attempts=25, window_seconds=24 * 3600)   # new conversations started per day
+check_limiter = RateLimiter(max_attempts=40, window_seconds=60 * 60)         # scam checks per hour
+ai_limiter = RateLimiter(max_attempts=30, window_seconds=10 * 60)            # AI requests per 10 minutes (burst cap)
+post_limiter = RateLimiter(max_attempts=10, window_seconds=60 * 60)          # feed posts per hour
+comment_limiter = RateLimiter(max_attempts=40, window_seconds=60 * 60)       # comments per hour
+upload_limiter = RateLimiter(max_attempts=20, window_seconds=60 * 60)        # resume uploads per hour
+profile_limiter = RateLimiter(max_attempts=60, window_seconds=60 * 60)       # profile saves per hour
 ALL_LIMITERS = (login_limiter, submit_limiter, general_limiter, user_login_limiter,
-                user_login_email_limiter, signup_limiter, email_limiter)
+                user_login_email_limiter, signup_limiter, email_limiter, message_limiter, new_convo_limiter,
+                check_limiter, ai_limiter, post_limiter, comment_limiter, upload_limiter, profile_limiter)
 
 
 def client_ip(request: Request) -> str:
@@ -142,6 +152,19 @@ def enforce_rate_limit(request: Request, limiter: RateLimiter, bucket: str) -> N
         raise HTTPException(
             status_code=429,
             detail=f"Too many attempts. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    limiter.hit(key)
+
+
+def enforce_key_limit(limiter: RateLimiter, key: str, what: str = "that") -> None:
+    """Rate limit keyed on something other than the IP, such as an account id."""
+    allowed, retry_after = limiter.check(key)
+    if not allowed:
+        mins = max(1, round(retry_after / 60))
+        raise HTTPException(
+            status_code=429,
+            detail=f"You've done {what} a lot in a short time. Try again in about {mins} minute{'s' if mins != 1 else ''}.",
             headers={"Retry-After": str(retry_after)},
         )
     limiter.hit(key)

@@ -1,0 +1,333 @@
+"""
+"Is this message a scam?" for students.
+
+Paste a text, email, LinkedIn/Handshake DM or in-app message and get one of four verdicts,
+with the evidence behind it and what to do next:
+
+    0 ok       No known scam signs      (still verify the employer yourself)
+    1 caution  Be careful               (something is off; verify before replying)
+    2 warn     Likely a scam            (several strong signals; don't send anything)
+    3 bad      Scam. Stop here.         (a pattern that only scams use)
+
+How the verdict is made, so it is consistent:
+  1. The rule-based scam detector scores the text (same rules and bands as job listings).
+  2. The sender address and every link are checked: FSU look-alike domains, personal email
+     claiming to be a school or company, link shorteners, chat-app links, raw IP links.
+  3. Optional AI second opinion (signed-in users, when configured). It can only ADD caution:
+     the rules are a floor the model can never lower. Same text in, same rule verdict out.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+from urllib.parse import urlparse
+
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse
+
+import ai
+import security
+import store
+import ui
+import web
+from scam_detector.rules import FREE_MAIL
+from scam_detector.scorer import score_posting
+
+router = APIRouter()
+
+LEVELS = [
+    ("ok", "No known scam signs", "Nothing here matches a known scam pattern. That isn't a guarantee: confirm the employer through their own website or the FSU Career Center before sharing personal details."),
+    ("caution", "Be careful", "A few things are off. Verify the sender through an official channel you find yourself before you reply or click anything."),
+    ("warn", "Likely a scam", "Several strong scam signals. Don't reply with personal information, don't click links, and don't send or accept money."),
+    ("bad", "Scam. Stop here.", "This matches patterns that only scams use. Don't respond, don't click links, and never send money, gift cards, or bank details."),
+]
+BAND_LEVEL = {"clear": 0, "caution": 1, "review": 2, "block": 3}
+
+SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "rb.gy", "cutt.ly", "shorturl.at", "is.gd", "ow.ly", "buff.ly", "tiny.cc",
+              "rebrand.ly", "s.id", "t.ly", "lnkd.in", "shorturl.com", "bl.ink", "short.io"}
+CHAT_LINKS = {"wa.me", "chat.whatsapp.com", "t.me", "telegram.me", "signal.me", "m.me", "discord.gg"}
+FORM_HOSTS = {"forms.gle", "docs.google.com", "forms.office.com", "jotform.com", "typeform.com"}
+CLAIMS_SCHOOL = re.compile(r"\b(?:professor|prof\.|dr\.|department|dept\.?|university|career (?:center|services)|"
+                           r"fsu|florida state|financial aid|registrar|dean|faculty|student employment)\b", re.IGNORECASE)
+CLAIMS_COMPANY = re.compile(r"\b(?:hr|human resources|recruit(?:er|ing|ment)|talent acquisition|hiring manager|"
+                            r"onboarding)\b", re.IGNORECASE)
+_URL = re.compile(r"(?:https?://|www\.)[^\s<>\"')\]]+", re.IGNORECASE)
+_EMAIL = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)", re.IGNORECASE)
+
+
+def _finding(rule_id, severity, weight, title, why, evidence=()):
+    return {"rule_id": rule_id, "severity": severity, "weight": weight, "title": title, "why": why,
+            "matched": [e for e in evidence if e][:3]}
+
+
+def _is_fsu(domain: str) -> bool:
+    d = domain.lower().rstrip(".")
+    return d == "fsu.edu" or d.endswith(".fsu.edu")
+
+
+def _looks_like_fsu(domain: str) -> bool:
+    d = domain.lower().rstrip(".")
+    if _is_fsu(d):
+        return False
+    flat = re.sub(r"[^a-z0-9]", "", d)
+    return "fsu" in flat or "floridastate" in flat or "seminole" in flat
+
+
+def sender_findings(sender: str, text: str) -> list[dict]:
+    out = []
+    sender = (sender or "").strip()
+    domains = {m.group(1).lower() for m in _EMAIL.finditer(sender + " " + text)}
+    sender_domain = ""
+    m = _EMAIL.search(sender)
+    if m:
+        sender_domain = m.group(1).lower()
+    for d in sorted(domains):
+        if _looks_like_fsu(d):
+            out.append(_finding("fsu_lookalike", "critical", 40, "An address pretends to be FSU",
+                                f"{d} is not an FSU address. Real FSU email ends in exactly @fsu.edu (or a department "
+                                f"subdomain like @cs.fsu.edu). Look-alike domains are a classic phishing move.", ["@" + d]))
+    if sender_domain in FREE_MAIL:
+        claim = CLAIMS_SCHOOL.search(text + " " + sender) or CLAIMS_COMPANY.search(text + " " + sender)
+        if claim:
+            out.append(_finding("personal_sender", "warning", 18, "Official-sounding message from a personal account",
+                                f"It claims to be a {claim.group(0).lower()} but was sent from {sender_domain}. "
+                                "Universities and real companies write from their own domain.", ["@" + sender_domain]))
+    if sender and re.search(r"\b(?:fsu|florida state|career center)\b", sender, re.IGNORECASE) and sender_domain and not _is_fsu(sender_domain):
+        out.append(_finding("display_spoof", "warning", 20, "The sender name says FSU but the address doesn't",
+                            f"The name shown mentions FSU, but the address is at {sender_domain}.", [sender[:80]]))
+    return out
+
+
+def link_findings(text: str) -> list[dict]:
+    out = []
+    seen = set()
+    for raw in _URL.findall(text or ""):
+        url = raw if raw.lower().startswith("http") else "http://" + raw
+        try:
+            host = (urlparse(url).hostname or "").lower()
+        except ValueError:
+            continue
+        host = host[4:] if host.startswith("www.") else host
+        if not host or host in seen:
+            continue
+        seen.add(host)
+        if host in SHORTENERS:
+            out.append(_finding("short_link", "warning", 14, "A shortened link hides where it goes",
+                                f"{host} links hide the real destination. Don't open it; ask for the company's own site instead.", [raw[:80]]))
+        elif host in CHAT_LINKS:
+            out.append(_finding("chat_link", "warning", 18, "Pushes you to a chat app",
+                                "Moving a 'job' to WhatsApp, Telegram or Signal is how scammers avoid the platforms that screen them.", [raw[:80]]))
+        elif re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", host):
+            out.append(_finding("ip_link", "critical", 34, "A link to a bare IP address",
+                                "Real employers don't send links to raw number addresses.", [raw[:80]]))
+        elif _looks_like_fsu(host):
+            out.append(_finding("fsu_lookalike_link", "critical", 40, "A link pretends to be FSU",
+                                f"{host} is not an FSU website. FSU sites end in fsu.edu.", [raw[:80]]))
+        elif host in FORM_HOSTS or host.endswith(".jotform.com"):
+            out.append(_finding("form_link", "note", 8, "Asks you to fill in an outside form",
+                                "Forms are fine for events, but a 'job' that starts with a form asking for your details is a common data-harvesting step.", [raw[:80]]))
+    return out
+
+
+def _ai_opinion(text: str, sender: str) -> dict | None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "verdict": {"type": "string", "enum": ["safe", "suspicious", "scam"]},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "red_flags": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {
+                "flag": {"type": "string"}, "evidence": {"type": "string"}}, "required": ["flag", "evidence"]}},
+            "green_flags": {"type": "array", "maxItems": 4, "items": {"type": "string"}},
+            "summary": {"type": "string"},
+        },
+        "required": ["verdict", "confidence", "red_flags", "summary"],
+    }
+    system = ("You are a job-scam analyst helping a Florida State University student decide whether a message about a job, "
+              "internship, research position, or gig is a scam. Known student scam patterns: fake professors or departments "
+              "offering 'research assistant' or 'personal assistant' jobs; check-cashing or equipment-check schemes; reshipping; "
+              "gift cards; crypto; 'you've been pre-selected'; flat weekly pay for vague part-time work; requests to move to "
+              "personal email, text, WhatsApp or Telegram; requests for bank details, SSN or ID before an interview; upfront fees; "
+              "app-review or 'task' jobs. Legitimate recruiters use their company domain, name a real role, and never ask for "
+              "money. Judge only from the message. Quote the exact words that are your evidence. Keep the summary to two sentences.")
+    content = (ai.tag("message", f"From: {sender or '(not given)'}\n\n{text}", 8000) +
+               "\n\nIs this message a scam? Report red flags with the exact evidence.")
+    try:
+        return ai.structured(system, content, "scam_opinion", schema, max_tokens=900)
+    except ai.AIUnavailable:
+        return None
+
+
+def check(text: str, sender: str = "", *, use_ai: bool = False, platform_employer: dict | None = None) -> dict:
+    text = (text or "").strip()[:8000]
+    sender = (sender or "").strip()[:200]
+    result = score_posting(title="", description=text + ("\n" + sender if sender else ""), company="",
+                           run_network=False)
+    findings = list(result.findings) + sender_findings(sender, text) + link_findings(text)
+    # De-duplicate by rule id, keep the strongest.
+    best: dict[str, dict] = {}
+    for f in findings:
+        if f["rule_id"] not in best or f["weight"] > best[f["rule_id"]]["weight"]:
+            best[f["rule_id"]] = f
+    findings = sorted(best.values(), key=lambda f: ({"critical": 0, "warning": 1, "note": 2}[f["severity"]], -f["weight"]))
+    score = min(100, sum(f["weight"] for f in findings))
+    critical = any(f["severity"] == "critical" for f in findings)
+    band = "block" if critical or score >= 65 else "review" if score >= 35 else "caution" if score >= 15 else "clear"
+    level = BAND_LEVEL[band]
+    lead_gen = result.lead_gen or {}
+    if lead_gen.get("flag") and level < 1:
+        level = 1
+
+    opinion = None
+    if use_ai and ai.enabled():
+        opinion = _ai_opinion(text, sender)
+        if opinion:
+            conf = float(opinion.get("confidence") or 0)
+            if opinion.get("verdict") == "scam" and conf >= 0.7:
+                level = max(level, 2)
+            elif opinion.get("verdict") in ("scam", "suspicious") and conf >= 0.5:
+                level = max(level, 1)
+            # A "safe" opinion never lowers the rules' level.
+
+    key, title, advice = LEVELS[level]
+    return {"level": level, "key": key, "title": title, "advice": advice, "score": score, "band": band,
+            "findings": findings, "lead_gen": lead_gen, "ai": opinion, "platform_employer": platform_employer,
+            "ruleset": result.ruleset_version, "checked_at": time.time()}
+
+
+NEXT_STEPS = {
+    0: ["Look the company up yourself (not through links in the message) and confirm the job is on their careers page.",
+        "Keep the conversation on NoleCareerShield, Handshake or the company's own email.",
+        "Never pay for training, equipment or a background check. Real jobs don't charge you."],
+    1: ["Don't click links or open attachments yet.",
+        "Find the organization's official contact on your own (their website, the FSU directory) and ask if the message is real.",
+        "Don't share your student ID, date of birth, SSN or bank details.",
+        "Check again here if they reply with anything new."],
+    2: ["Don't reply with personal information, and don't click the links.",
+        "If it claims to be from FSU, forward it to FSU's IT security team and delete it.",
+        "Block the sender. If it came through NoleCareerShield, press Report so reviewers can remove them."],
+    3: ["Stop replying. Don't send money, gift cards, crypto, or bank details, and don't deposit any check they send.",
+        "If you already shared banking details or deposited a check, call your bank now.",
+        "Report it: forward FSU look-alikes to FSU's IT security team, and report fraud at reportfraud.ftc.gov.",
+        "If it came through NoleCareerShield, press Report so reviewers can remove the account."],
+}
+
+
+def render_result(r: dict) -> str:
+    items = "".join(
+        f'<li><b>{ui.esc(f["title"])}</b> <span class="pill {"bad" if f["severity"] == "critical" else "warn" if f["severity"] == "warning" else ""}">'
+        f'{ {"critical": "strong signal", "warning": "warning", "note": "note"}[f["severity"]] }</span>'
+        f'<span class="ev">{ui.esc(f["why"])}</span>'
+        + (f'<span class="ev">Found: “{ui.esc("”, “".join(f.get("matched") or []))}”</span>' if f.get("matched") and f["matched"] != ["user-observed"] else "")
+        + "</li>" for f in r["findings"][:8])
+    if r.get("lead_gen", {}).get("flag"):
+        items += (f'<li><b>Looks like a data-harvesting or aggregator ad</b><span class="ev">{ui.esc(r["lead_gen"].get("verdict", ""))}</span></li>')
+    if not items:
+        items = '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns, the sender and every link.</span></li>'
+    platform = ""
+    if r.get("platform_employer"):
+        pe = r["platform_employer"]
+        platform = (f'<p class="small" style="margin-top:8px">Sent through NoleCareerShield by <b>{ui.esc(pe["company"])}</b>, '
+                    f'{"an employer our reviewers approved" if pe.get("status") == "approved" else "an employer our reviewers have not approved"}.</p>')
+    op = ""
+    if r.get("ai"):
+        o = r["ai"]
+        flags = "".join(f'<li><b>{ui.esc(x.get("flag", ""))}</b><span class="ev">“{ui.esc(x.get("evidence", ""))}”</span></li>'
+                        for x in (o.get("red_flags") or [])[:6])
+        greens = "".join(f'<span class="pill ok">{ui.esc(g)}</span> ' for g in (o.get("green_flags") or [])[:4])
+        op = (f'<h3 class="sec">AI second opinion <small>{ui.esc(o.get("verdict", "")).title()} · '
+              f'{round(100 * float(o.get("confidence") or 0))}% confident</small></h3>'
+              f'<div class="card"><p>{ui.esc(o.get("summary", ""))}</p>{f"<ul class=reasons>{flags}</ul>" if flags else ""}'
+              f'{f"<p style=margin-top:10px>{greens}</p>" if greens else ""}'
+              '<p class="small faint" style="margin-top:10px">The AI can make a verdict stricter, never softer. The verdict above always includes the rule check.</p></div>')
+    steps = "".join(f"<li>{ui.esc(s)}</li>" for s in NEXT_STEPS[r["level"]])
+    icon = {"ok": "check", "caution": "shield", "warn": "flag", "bad": "flag"}[r["key"]]
+    return f"""<section class="verdict {r['key']}" aria-live="polite">
+<div class="eyebrow" style="color:inherit">Verdict</div>
+<h2>{ui.icon(icon, 22)}{ui.esc(r['title'])}</h2><p>{ui.esc(r['advice'])}</p>{platform}
+<ul class="reasons">{items}</ul></section>
+{op}<h3 class="sec">What to do next</h3><ol class="next">{steps}</ol>"""
+
+
+def _form(text: str = "", sender: str = "", ai_on: bool = False) -> str:
+    user = ui.viewer()
+    ai_box = ""
+    if user and ai.enabled():
+        ai_box = (f'<label class="toggle"><input type="checkbox" name="ai" value="1"{" checked" if ai_on else ""}>'
+                  '<span><b>Add an AI second opinion.</b> Sends the message to Claude (Anthropic) for a written analysis. '
+                  'It can only make the verdict stricter.</span></label>')
+    return f"""<form method="post" action="/check" class="card">
+<input type="hidden" name="csrf" value="{security.make_csrf('form')}">
+<div class="form-field"><label for="c-text">The message</label>
+<p class="hint">Paste the whole thing: text, email, LinkedIn or Handshake DM. Nothing is saved unless you choose to send it to reviewers.</p>
+<textarea id="c-text" name="text" required maxlength="8000" data-count placeholder="Hi! I'm Dr. Smith from the Psychology Department. I'm looking for a personal assistant, $400 weekly...">{ui.esc(text)}</textarea></div>
+<div class="form-field"><label for="c-sender">Who sent it (optional)</label>
+<p class="hint">The email address or name it came from. It helps spot fake FSU and company addresses.</p>
+<input id="c-sender" name="sender" maxlength="200" value="{ui.esc(sender)}" placeholder="e.g. careers.fsu.edu@gmail.com"></div>
+{ai_box}<button class="submit-btn" type="submit">Check this message</button></form>"""
+
+
+def _page(inner: str, status: int = 200) -> HTMLResponse:
+    head = ui.page_head("Is this message a scam?",
+                        "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.",
+                        num="Scam check")
+    return web.page(head + inner, "Scam check", active="/check", js=True, status=status)
+
+
+@router.get("/check", response_class=HTMLResponse)
+def check_form(request: Request, m: int = 0):
+    security.enforce_rate_limit(request, security.general_limiter, "check_page")
+    user = web.current_user(request)
+    if m and user:
+        # Check a message you received on NoleCareerShield.
+        with store.db() as conn:
+            msg = store.row(conn, """SELECT m.*, c.student_id, c.employer_id FROM messages m
+                                     JOIN conversations c ON c.id = m.conversation_id WHERE m.id = ?""", (m,))
+            if msg and user["id"] in (msg["student_id"], msg["employer_id"]) and msg["sender_id"] != user["id"] and msg["status"] == "delivered":
+                emp = store.employer_profile(conn, msg["sender_id"]) if msg["sender_id"] == msg["employer_id"] else None
+                security.enforce_key_limit(security.check_limiter, f"u{user['id']}", "scam checks")
+                r = check(msg["body"], "", platform_employer=emp)
+                quoted = (f'<div class="card" style="margin-top:6px"><div class="eyebrow">The message you\'re checking</div>'
+                          f'<p style="white-space:pre-wrap;margin-top:6px">{ui.esc(msg["body"][:1500])}</p>'
+                          f'<a class="small" href="/messages/{int(msg["conversation_id"])}">← Back to the conversation</a></div>')
+                return _page(quoted + render_result(r) + '<h3 class="sec">Check another message</h3>' + _form())
+    return _page(_form())
+
+
+@router.post("/check", response_class=HTMLResponse)
+def check_submit(request: Request, text: str = Form(""), sender: str = Form(""), csrf: str = Form(""), ai_: str = Form("", alias="ai")):
+    security.enforce_rate_limit(request, security.check_limiter, "check")
+    if not security.verify_csrf(csrf, "form"):
+        return _page(ui.banner("warning", "That page had been open too long. Your text is still here; press Check again.") + _form(text[:8000], sender[:200]), 400)
+    text = security._CONTROL_CHARS_RE.sub("", text or "").strip()
+    if len(text) < 15:
+        return _page(ui.banner("warning", "Paste the message you want checked (at least a sentence).") + _form(text, sender), 400)
+    if len(text) > 8000 or len(sender) > 200:
+        return _page(ui.banner("warning", "That's longer than 8,000 characters. Paste the main part of the message.") + _form(text[:8000], sender[:200]), 400)
+    user = web.current_user(request)
+    use_ai = bool(ai_) and bool(user) and ai.enabled()
+    if use_ai:
+        with store.db() as conn:
+            if not store.ai_take(conn, user["id"], ai.daily_limit()):
+                use_ai = False
+    r = check(text, sender, use_ai=use_ai)
+    report = f"""<details class="card" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
+<p class="small muted" style="margin:8px 0 12px">Helps the detector learn. We save the message text and your answer, never your name. Remove personal details first if you can.</p>
+<form method="post" action="/check/submit"><input type="hidden" name="csrf" value="{security.make_csrf('form')}">
+<input type="hidden" name="text" value="{ui.esc(text)}"><input type="hidden" name="sender" value="{ui.esc(sender)}"><input type="hidden" name="band" value="{ui.esc(r['band'])}">
+<div class="row"><button class="b sm" name="label" value="scam">It was a scam</button><button class="b sm sec" name="label" value="unsure">Not sure</button>
+<button class="b sm ghost" name="label" value="legit">It was real</button></div></form></details>"""
+    return _page(render_result(r) + report + '<h3 class="sec">Check another message</h3>' + _form(text, sender, use_ai))
+
+
+@router.post("/check/submit", response_class=HTMLResponse)
+def check_contribute(request: Request, text: str = Form(""), sender: str = Form(""), band: str = Form(""),
+                     label: str = Form(""), csrf: str = Form("")):
+    security.enforce_rate_limit(request, security.check_limiter, "check_submit")
+    if not security.verify_csrf(csrf, "form") or label not in ("scam", "unsure", "legit") or not (15 <= len(text) <= 8000):
+        return _page(ui.banner("warning", "That didn't go through. Please try again.") + _form(), 400)
+    user = web.current_user(request)
+    with store.db() as conn:
+        conn.execute("INSERT INTO submitted_checks (user_id, body, sender, band, user_label, created_at) VALUES (?,?,?,?,?,?)",
+                     (user["id"] if user else None, text, sender[:200], band if band in BAND_LEVEL else "", label, time.time()))
+    return _page(ui.banner("verified", "Thanks. A reviewer will look at it, and it helps the detector catch the next one.") + _form())

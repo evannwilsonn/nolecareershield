@@ -1,0 +1,293 @@
+"""
+Storage for the student-network features: profiles, messaging, the feed, resume versions,
+reports and AI usage caps. Same SQLite file as the job board (DB_PATH).
+
+Every table here is keyed to an account in `users` (accounts.py). Deleting an account
+goes through delete_account(), which removes or blanks everything that belongs to it.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import time
+from contextlib import contextmanager
+
+
+def db_path() -> str:
+    return os.environ.get("DB_PATH", "jobs.db")
+
+
+@contextmanager
+def db():
+    conn = sqlite3.connect(db_path(), timeout=10)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def rows(conn, sql: str, params=()) -> list[dict]:
+    return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def row(conn, sql: str, params=()) -> dict | None:
+    r = conn.execute(sql, params).fetchone()
+    return dict(r) if r else None
+
+
+def jload(value, default):
+    try:
+        out = json.loads(value) if value else default
+        return out if isinstance(out, type(default)) else default
+    except (ValueError, TypeError):
+        return default
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS student_profiles (
+    user_id INTEGER PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    pronouns TEXT NOT NULL DEFAULT '',
+    major TEXT NOT NULL DEFAULT '',
+    minor TEXT NOT NULL DEFAULT '',
+    degree TEXT NOT NULL DEFAULT '',
+    grad_term TEXT NOT NULL DEFAULT '',
+    headline TEXT NOT NULL DEFAULT '',
+    bio TEXT NOT NULL DEFAULT '',
+    skills TEXT NOT NULL DEFAULT '[]',
+    interests TEXT NOT NULL DEFAULT '[]',
+    work_types TEXT NOT NULL DEFAULT '[]',
+    job_kinds TEXT NOT NULL DEFAULT '[]',
+    links TEXT NOT NULL DEFAULT '{}',
+    resume_text TEXT NOT NULL DEFAULT '',
+    resume_name TEXT NOT NULL DEFAULT '',
+    resume_updated REAL,
+    visible_to_employers INTEGER NOT NULL DEFAULT 0,
+    share_resume INTEGER NOT NULL DEFAULT 0,
+    allow_messages INTEGER NOT NULL DEFAULT 1,
+    setup_step INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS employer_profiles (
+    user_id INTEGER PRIMARY KEY,
+    company TEXT NOT NULL DEFAULT '',
+    website TEXT NOT NULL DEFAULT '',
+    industry TEXT NOT NULL DEFAULT '',
+    size TEXT NOT NULL DEFAULT '',
+    location TEXT NOT NULL DEFAULT '',
+    about TEXT NOT NULL DEFAULT '',
+    contact_name TEXT NOT NULL DEFAULT '',
+    contact_title TEXT NOT NULL DEFAULT '',
+    fsu_connection TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft',
+    status_note TEXT NOT NULL DEFAULT '',
+    reviewed_at REAL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_emp_status ON employer_profiles (status);
+CREATE TABLE IF NOT EXISTS resume_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    body TEXT NOT NULL,
+    job_id INTEGER,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    employer_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL DEFAULT 0,
+    subject TEXT NOT NULL DEFAULT '',
+    started_by INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    last_at REAL NOT NULL,
+    student_hidden INTEGER NOT NULL DEFAULT 0,
+    employer_hidden INTEGER NOT NULL DEFAULT 0,
+    blocked_by INTEGER,
+    UNIQUE (student_id, employer_id, job_id)
+);
+CREATE INDEX IF NOT EXISTS idx_conv_student ON conversations (student_id, last_at);
+CREATE INDEX IF NOT EXISTS idx_conv_employer ON conversations (employer_id, last_at);
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    sender_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    read_at REAL,
+    scan_band TEXT NOT NULL DEFAULT 'clear',
+    scan_score INTEGER NOT NULL DEFAULT 0,
+    scan_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'delivered'
+);
+CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages (conversation_id, id);
+CREATE INDEX IF NOT EXISTS idx_msg_status ON messages (status);
+CREATE TABLE IF NOT EXISTS posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    author_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    link TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    scan_band TEXT NOT NULL DEFAULT 'clear',
+    scan_json TEXT NOT NULL DEFAULT '[]',
+    relevance_json TEXT NOT NULL DEFAULT '{}',
+    review_note TEXT NOT NULL DEFAULT '',
+    helpful_count INTEGER NOT NULL DEFAULT 0,
+    comment_count INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    reviewed_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_posts_status ON posts (status, created_at);
+CREATE TABLE IF NOT EXISTS post_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    author_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'published',
+    scan_band TEXT NOT NULL DEFAULT 'clear',
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_comments_post ON post_comments (post_id, id);
+CREATE TABLE IF NOT EXISTS post_helpful (
+    post_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    PRIMARY KEY (post_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_id INTEGER NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    resolved INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (reporter_id, target_type, target_id)
+);
+CREATE TABLE IF NOT EXISTS ai_usage (
+    user_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+);
+CREATE TABLE IF NOT EXISTS submitted_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    body TEXT NOT NULL,
+    sender TEXT NOT NULL DEFAULT '',
+    band TEXT NOT NULL,
+    user_label TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notify_log (
+    user_id INTEGER NOT NULL,
+    conversation_id INTEGER NOT NULL,
+    sent_at REAL NOT NULL,
+    PRIMARY KEY (user_id, conversation_id)
+);
+"""
+
+
+def init(conn) -> None:
+    conn.executescript(SCHEMA)
+    conn.commit()
+
+
+def purge(conn) -> None:
+    """Data minimisation for the network features."""
+    now = time.time()
+    conn.execute("DELETE FROM ai_usage WHERE day < ?", (time.strftime("%Y-%m-%d", time.gmtime(now - 3 * 86400)),))
+    # Rejected or removed posts and removed messages keep their text for 30 days (appeals, abuse review), then go.
+    conn.execute("DELETE FROM posts WHERE status IN ('rejected','removed') AND created_at < ?", (now - 30 * 86400,))
+    conn.execute("DELETE FROM post_comments WHERE status = 'removed' AND created_at < ?", (now - 30 * 86400,))
+    conn.execute("UPDATE messages SET body = '' WHERE status = 'removed' AND created_at < ?", (now - 30 * 86400,))
+    conn.execute("DELETE FROM submitted_checks WHERE created_at < ?", (now - 365 * 86400,))
+    conn.commit()
+
+
+def delete_account(conn, user_id: int) -> None:
+    """Everything that belongs to one account. Messages the person sent are blanked (the other side
+    keeps a visible gap, not the words); posts, comments, profile, resume versions and reports go."""
+    conn.execute("DELETE FROM student_profiles WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM employer_profiles WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM resume_versions WHERE user_id = ?", (user_id,))
+    conn.execute("UPDATE messages SET body = '', status = 'removed' WHERE sender_id = ?", (user_id,))
+    conn.execute("UPDATE conversations SET blocked_by = ? WHERE student_id = ? OR employer_id = ?",
+                 (user_id, user_id, user_id))
+    for (pid,) in conn.execute("SELECT id FROM posts WHERE author_id = ?", (user_id,)).fetchall():
+        conn.execute("DELETE FROM post_comments WHERE post_id = ?", (pid,))
+        conn.execute("DELETE FROM post_helpful WHERE post_id = ?", (pid,))
+    conn.execute("DELETE FROM posts WHERE author_id = ?", (user_id,))
+    conn.execute("DELETE FROM post_comments WHERE author_id = ?", (user_id,))
+    conn.execute("DELETE FROM post_helpful WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM reports WHERE reporter_id = ?", (user_id,))
+    conn.execute("DELETE FROM ai_usage WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM submitted_checks WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM notify_log WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM user_tokens WHERE user_id = ?", (user_id,))
+    conn.execute("UPDATE jobs SET employer_id = NULL WHERE employer_id = ?", (user_id,))
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+
+
+# ---------- shared lookups ----------
+
+def live_jobs(conn, ttl_days: int) -> list[dict]:
+    cutoff = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - ttl_days * 86400))
+    return rows(conn, "SELECT * FROM jobs WHERE review_status = 'approved' AND created_at >= ? "
+                      "ORDER BY created_at DESC", (cutoff,))
+
+
+def student_profile(conn, user_id: int) -> dict | None:
+    p = row(conn, "SELECT * FROM student_profiles WHERE user_id = ?", (user_id,))
+    if p:
+        for k in ("skills", "interests", "work_types", "job_kinds"):
+            p[k] = jload(p[k], [])
+        p["links"] = jload(p["links"], {})
+    return p
+
+
+def employer_profile(conn, user_id: int) -> dict | None:
+    return row(conn, "SELECT * FROM employer_profiles WHERE user_id = ?", (user_id,))
+
+
+def employer_approved(conn, user_id: int) -> bool:
+    r = conn.execute("SELECT status FROM employer_profiles WHERE user_id = ?", (user_id,)).fetchone()
+    return bool(r and r[0] == "approved")
+
+
+def unread_count(conn, user_id: int) -> int:
+    r = conn.execute("""
+        SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
+        WHERE (c.student_id = ? OR c.employer_id = ?) AND m.sender_id != ? AND m.read_at IS NULL
+          AND m.status = 'delivered' AND c.blocked_by IS NULL
+          AND NOT (c.student_id = ? AND c.student_hidden = 1) AND NOT (c.employer_id = ? AND c.employer_hidden = 1)
+    """, (user_id, user_id, user_id, user_id, user_id)).fetchone()
+    return int(r[0]) if r else 0
+
+
+def ai_take(conn, user_id: int, daily_limit: int) -> bool:
+    """Count one AI request against today's allowance. False when the allowance is used up."""
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    r = conn.execute("SELECT count FROM ai_usage WHERE user_id = ? AND day = ?", (user_id, day)).fetchone()
+    used = r[0] if r else 0
+    if used >= daily_limit:
+        return False
+    conn.execute("INSERT INTO ai_usage (user_id, day, count) VALUES (?,?,1) "
+                 "ON CONFLICT(user_id, day) DO UPDATE SET count = count + 1", (user_id, day))
+    conn.commit()
+    return True
+
+
+def ai_used_today(conn, user_id: int) -> int:
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    r = conn.execute("SELECT count FROM ai_usage WHERE user_id = ? AND day = ?", (user_id, day)).fetchone()
+    return r[0] if r else 0
