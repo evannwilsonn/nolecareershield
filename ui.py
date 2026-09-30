@@ -1059,7 +1059,7 @@ def students_chapters(links: dict | None = None) -> tuple[str, str]:
     """The two photo chapters on the student landing: before the scanner, and before the listings."""
     L = links or SITE_LINKS
     night = chapter("night", "11:48 pm, a new message",
-                    '<span class="ln"><span>Sounds too good to be true.</span></span><span class="ln"><span><em>It is</em><span class="dot">.</span></span></span>',
+                    '<span class="ln"><span>Not every offer</span></span><span class="ln"><span><em>is an offer</em><span class="dot">.</span></span></span>',
                     "Most fake jobs look almost real. The scam check reads a listing or a message the way scammers write them, line by line.",
                     f'<a class="secondary" {L["check"]}>Check one you got</a>', focus="58%")
     fair = chapter("fair", "Employers, checked first",
