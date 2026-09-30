@@ -880,18 +880,30 @@ def test_landing_media_is_served_and_cached(client):
 
 
 def test_scanner_flags_come_from_the_detector():
-    """The landing-page scanner shows what the real detector finds in the sample listing, nothing written by hand.
-    If a rule change stops the detector catching one of these, this fails: update the sample or the rules."""
-    import ui
-    from scam_detector.scorer import score_posting
+    """The landing-page scanner shows what the public scam check finds in the sample listing, nothing written by hand.
+    Each expected rule must still fire AND underline its own phrase; a rule change that breaks that fails here."""
+    import ui, msgcheck
     r = ui.scan_findings()
-    ids = {f["rule_id"] for f in r["findings"]}
-    assert ui.SCAN_EXPECTED <= ids, f"detector no longer catches {ui.SCAN_EXPECTED - ids}"
-    assert r["band"] == "block"
-    assert all(f["spans"] for f in r["findings"]), "every flag should be underlined somewhere in the sample"
+    by_id = {f["rule_id"]: f for f in r["findings"]}
+    for rid, phrase in ui.SCAN_EXPECTED.items():
+        assert rid in by_id, f"the detector no longer catches {rid}"
+        spans = by_id[rid]["spans"]
+        start = r["text"].lower().index(phrase.lower())
+        assert any(a <= start < b or start <= a < start + len(phrase) for a, b in spans), f"{rid} no longer underlines {phrase!r}"
     s = ui.SCAN_SAMPLE
-    direct = score_posting(s["title"], s["body"] + "\n" + s["apply"], s["company"], run_network=False)
+    direct = msgcheck.check_listing(s["title"], s["body"], s["company"], contact=s["apply"])
     html = ui.scan_block("")
-    for f in direct.findings:                      # every title shown is the detector's own wording
+    for f in direct["findings"]:                     # every title shown is the checker's own wording
         assert ui.esc(f["title"]) in html
-    assert f"Scam risk {direct.score}/100 from {len(direct.findings)} signals" in html
+    assert f"Scam risk {direct['score']}/100 from {len(direct['findings'])} signals" in html
+    assert html.count(ui.esc(direct["title"])) == 2 and ui.esc(direct["steps"][0]) in html   # stamp, verdict, advice
+
+
+def test_scanner_is_served_finished(client):
+    """Without JS (or with reduced motion) the scene must read complete: fx.js alone adds armed/pinned."""
+    home = client.get("/").text
+    scene = home[home.index("<section class=\"scan\""):]
+    scene = scene[:scene.index("</section>")]
+    assert 'class="scan armed' not in scene and "pinned" not in scene
+    assert "Here's what the scam check found in it." in scene and 'class="scan-stamp"' in scene
+    assert scene.count("<mark") >= len(__import__("ui").SCAN_EXPECTED) - 1

@@ -12,7 +12,7 @@ stand, what was decided and why, and what's next.
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
 - **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
   commit; `tests/test_installer.py` fails if it's out of date.
-- **Tests:** `python -m pytest -q` (141 passing at handoff).
+- **Tests:** `python -m pytest -q` (142 passing at handoff).
 
 ## Rules Evan set (keep them)
 
@@ -53,13 +53,21 @@ stand, what was decided and why, and what's next.
     pinned. Photos are served from `/static/media/` with a year-long cache; the page policy needed no change.
 - **Type:** Archivo (variable, self-hosted in `static/fonts/`, OFL). Condensed uppercase for big statements
   (`.display`), normal width for body.
-- **The listing scanner** (replaced "The teardown", idea from another chat): a fake listing on the student home
-  ("Know it's real before you apply"). As you scroll, a gold line runs down it and each phrase the detector caught
-  gets underlined and numbered, then the flags list fills in and a "Scam. Stop here." stamp lands with the real
-  score (100/100 from 8 signals). The flags are not written by hand: `ui.scan_findings()` runs the real detector
-  on `ui.SCAN_SAMPLE`, and `test_scanner_flags_come_from_the_detector` fails if it stops catching any of
-  `ui.SCAN_EXPECTED`. Pinned and scroll-driven on wide screens, plays once when seen on phones, shown finished
-  with reduced motion or no JS. Works in every browser (JS, not the newer CSS scroll feature).
+- **The listing scanner** (one effect, merging this chat's teardown with the `scan-hero` branch from another chat,
+  commit 583902f): a fake listing on the student home ("Know it's real before you apply"). As you scroll, a gold
+  line runs down it; each phrase the detector caught lights up (amber for warnings, red for critical) with a
+  number, its flag slides in below, then a stamp lands and the verdict shows "Scam risk 100/100 from 8 signals".
+  Scrolling back reverses it.
+  - Nothing is hand-written: `ui.scan_findings()` runs `ui.SCAN_SAMPLE` through `msgcheck.check_listing`, the same
+    code as the public scam check's listing tab, and the flag titles, stamp, verdict and advice are its output.
+    `test_scanner_flags_come_from_the_detector` fails if any rule in `ui.SCAN_EXPECTED` stops firing on its phrase.
+  - Driven by JS in `static/fx.js` (not the newer CSS scroll feature), so it works in every browser. Wide screens pin
+    the section; phones let the copy scroll away and pin only the card and flags under the header; if even that
+    won't fit it plays once when seen. No JS or reduced motion shows the finished state (tested).
+  - Taken from the branch: detector verdict/advice, lasting highlights, middle-of-phrase triggers, phone pinning,
+    live/static wording. Left out: Anton (Archivo stays), `static/scan.js` (folded into fx.js), `tools/make_installer.py`
+    (root `make_installer.py` stays), `showcase.py` (ui.scan_findings does this and finds the underlines itself). The
+    scan stays the second act; the cinematic arch footage stays the hero. The `scan-hero` branch can be deleted.
 - **Signed-in pages** (all three roles, site and demo), kept quiet on purpose: nothing loops, numbers count up
   once, rings and bars draw in the first time they reach the screen.
   - Students: a dark welcome band with live listings, best fit and unread counts over a campus photo; fit badges

@@ -539,7 +539,7 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .scan-copy p{color:var(--on-stage-2);font-size:17px;max-width:40ch;margin:0}
 .scan-cta{margin-top:22px!important}
 .scan-cta a{color:var(--gold);font-weight:600;text-decoration:none}.scan-cta a:hover{text-decoration:underline}
-.scan-board{position:relative;min-width:0}
+.scan-board,.scan-side{position:relative;min-width:0}
 .scan-card{position:relative;overflow:hidden;background:#faf8f3;color:#1c1917;border-radius:14px;padding:20px 22px 18px;box-shadow:0 24px 60px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.06)}
 .scan-card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .scan-card h3{font-size:16.5px;font-weight:700;line-height:1.3}
@@ -547,7 +547,7 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .scan-card .co{font-size:12.5px;color:#6b655c;margin:2px 0 12px}
 .scan-card .body{font-size:14.5px;line-height:1.85;margin:0}
 .scan-card .apply{font-size:13px;color:#6b655c;margin:12px 0 0}
-.scan-card mark{background:none;color:inherit;border-radius:2px;box-shadow:inset 0 -2px 0 var(--sev,#c2410c);transition:box-shadow .35s var(--ease),background-color .9s}
+.scan-card mark{background:color-mix(in srgb,var(--sev,#c2410c) 13%,transparent);color:inherit;border-radius:2px;box-shadow:inset 0 -2px 0 var(--sev,#c2410c);transition:box-shadow .35s var(--ease),background-color .45s}
 .scan-card mark.crit{--sev:#b91c1c}.scan-card mark.warn{--sev:#b7791f}
 .scan-card sup{font-size:10px;font-weight:700;color:var(--sev,#b7791f);margin:0 2px 0 1px;transition:opacity .3s}
 .scan-card sup.crit{--sev:#b91c1c}.scan-card sup.warn{--sev:#b7791f}
@@ -564,19 +564,21 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .scan-verdict b{font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:20px;letter-spacing:.01em;color:#f0a193;margin-right:8px}
 .scan-verdict span{font-size:13px}
 .scan-verdict p{font-size:13px;margin:4px 0 0;color:#e8cfc9}.scan-verdict a{color:#fff;font-weight:600}
-@media(max-width:900px){.scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}.scan-card{padding-bottom:60px}}
+@media(max-width:900px){.scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}.scan-side{min-width:0}.scan-card{padding:16px 16px 52px}.scan-card .body{font-size:13.5px;line-height:1.7}.scan-card .co{margin-bottom:8px}.scan-flags{gap:4px;margin-top:10px}.scan-flags li{padding:6px 10px;font-size:12.5px}.scan-flags .n{width:18px;height:18px}.scan-stamp{font-size:18px;bottom:12px}}
 /* armed by fx.js: things appear as the scan line reaches them */
 .scan.armed .scan-line{opacity:1}
-.scan.armed .scan-card mark:not(.on){box-shadow:inset 0 -2px 0 transparent}
-.scan.armed .scan-card mark.flash{background-color:color-mix(in srgb,var(--sev) 16%,transparent)}
+.scan.armed .scan-card mark:not(.on){box-shadow:inset 0 -2px 0 transparent;background-color:transparent}
+.scan.armed .scan-card mark.flash{background-color:color-mix(in srgb,var(--sev) 30%,transparent)}
+.scan .live-only,.scan.armed .static-only{display:none}.scan.armed .live-only{display:inline}
 .scan.armed .scan-card sup:not(.on){opacity:0}
 .scan.armed .scan-flags li:not(.on){opacity:0;transform:translateX(14px)}
 .scan.armed .scan-verdict:not(.on){opacity:0;transform:translateY(10px)}
 .scan.armed .scan-stamp{opacity:0;transform:rotate(-5deg) scale(1.6)}
 .scan.armed .scan-stamp.on{opacity:1;transform:rotate(-5deg) scale(1);transition:opacity .15s,transform .45s cubic-bezier(.2,1.6,.4,1)}
 .scan.armed.done .scan-line{opacity:0;transition:opacity .6s}
-.scan.pinned{height:250vh}
-.scan.pinned .scan-stick{position:sticky;top:0;min-height:100vh;min-height:100svh}
+@media(min-width:901px){.scan.pinned{height:250vh}.scan.pinned .scan-stick{position:sticky;top:0;min-height:100vh;min-height:100svh}}
+/* phones: the copy scrolls away normally and only the card and its flags pin, just under the header */
+@media(max-width:900px){.scan.pinned .scan-track{height:calc(var(--bh,100svh) + 240svh)}.scan.pinned .scan-board{position:sticky;top:calc(var(--hdr,55px) + 12px)}}
 /* how it works: an asymmetric bento instead of three equal cards */
 .how-bento{max-width:1120px;margin:0 auto;padding:64px 20px 20px;display:grid;grid-template-columns:1.25fr 1fr;grid-template-rows:auto auto;gap:16px}
 .how-bento .hb{background:var(--surface);border:1px solid var(--whisper);border-radius:16px;padding:24px 24px 22px;position:relative}
@@ -879,21 +881,24 @@ SCAN_SAMPLE = {
              "balance by Zelle. Text our hiring manager on WhatsApp to get started."),
     "apply": "quickcash.hiring@gmail.com",
 }
-SCAN_EXPECTED = {"instant_hire", "weekly_stipend", "fake_check_funds", "money_mule", "advance_fee",
-                 "irreversible_pay", "off_platform", "personal_email"}
+# rule -> a phrase in the sample it must underline. The test fails if a rule stops firing there.
+SCAN_EXPECTED = {"instant_hire": "you've been selected", "weekly_stipend": "$500 weekly", "fake_check_funds": "mail you a check",
+                 "advance_fee": "check to buy", "money_mule": "approved vendor", "irreversible_pay": "send the balance by Zelle",
+                 "off_platform": "WhatsApp", "personal_email": "@gmail.com"}
 
 
 def scan_findings() -> dict:
-    """Run the detector on the sample and place each finding in the text: [{rule_id, title, severity, spans}]."""
+    """Run the sample through the public scam check's listing tab (msgcheck.check_listing, the same code a student
+    gets) and place each finding in the text: {findings: [{rule_id, title, severity, spans}], score, title, advice}."""
     import re
-    from scam_detector.scorer import score_posting
+    import msgcheck
     s = SCAN_SAMPLE
+    r = msgcheck.check_listing(s["title"], s["body"], s["company"], contact=s["apply"])
     text = s["body"] + "\n" + s["apply"]
-    r = score_posting(s["title"], text, s["company"], run_network=False)
     placed = []
-    for f in r.findings:
+    for f in r["findings"]:
         spans = []
-        for phrase in f["matched"]:
+        for phrase in f.get("matched") or []:
             rx = re.compile(r"\s+".join(re.escape(w) for w in phrase.split()), re.I)
             m = rx.search(text)
             if m:
@@ -901,7 +906,8 @@ def scan_findings() -> dict:
         placed.append({"rule_id": f["rule_id"], "title": f["title"], "severity": f["severity"], "spans": sorted(spans)})
     # Number the flags in reading order: by where each one's last underline ends.
     placed.sort(key=lambda f: (f["spans"][-1][1] if f["spans"] else 10 ** 6, f["spans"][0][0] if f["spans"] else 0))
-    return {"score": r.score, "band": r.band, "findings": placed, "text": text}
+    return {"score": r["score"], "band": r["band"], "title": r["title"], "advice": (r["steps"] or [r["advice"]])[0],
+            "findings": placed, "text": text}
 
 
 def _scan_text(text: str, findings: list) -> str:
@@ -931,6 +937,8 @@ def _scan_text(text: str, findings: list) -> str:
 
 
 def scan_block(cta_html: str) -> str:
+    """Rendered finished (every flag underlined, listed and stamped), so it reads without JS or with reduced motion.
+    static/fx.js arms it and replays the scan as you scroll."""
     s, r = SCAN_SAMPLE, scan_findings()
     body, _, apply = _scan_text(r["text"], r["findings"]).rpartition("\n")
     flags = "".join(
@@ -941,14 +949,14 @@ def scan_block(cta_html: str) -> str:
     return f"""<section class="scan" data-scan aria-labelledby="scan-h"><div class="scan-stick">
 <div class="scan-copy"><div class="eyebrow">A fake listing, read by the real detector</div>
 <h2 class="display" id="scan-h">Know it's real<br><em>before you apply.</em></h2>
-<p>This listing is made up. Scroll and watch the scam check read it. Every underline is something the detector caught on its own, not something we wrote in.</p>
+<p>This listing is made up. <span class="live-only">Scroll and watch the scam check read it.</span><span class="static-only">Here's what the scam check found in it.</span> Every underline is something the detector caught on its own, not something we wrote in.</p>
 <p class="scan-cta">{cta_html}</p></div>
-<div class="scan-board"><div class="scan-card"><div class="scan-line" aria-hidden="true"></div>
+<div class="scan-side"><div class="scan-track"><div class="scan-board"><div class="scan-card"><div class="scan-line" aria-hidden="true"></div>
 <div class="top"><h3>{esc(s["title"])}</h3><span class="tag">Sample</span></div><p class="co">{esc(s["company"])} · {esc(s["meta"])}</p>
-<p class="body">{body}</p><p class="apply">Apply: {apply}</p><div class="scan-stamp" aria-hidden="true">Scam. Stop here.</div></div>
-<ol class="scan-flags" aria-label="What the detector found">{flags}</ol>
-<div class="scan-verdict"><b>Scam. Stop here.</b><span>Scam risk {r["score"]}/100 from {n} signals.</span>
-<p>Don't apply, reply or send anything. {cta_html}</p></div></div>
+<p class="body">{body}</p><p class="apply">Apply: {apply}</p><div class="scan-stamp" aria-hidden="true">{esc(r["title"])}</div></div>
+<ol class="scan-flags" aria-label="What the detector found">{flags}</ol></div></div>
+<div class="scan-verdict"><b>{esc(r["title"])}</b><span>Scam risk {r["score"]}/100 from {n} signals.</span>
+<p>{esc(r["advice"])} {cta_html}</p></div></div>
 </div></section>"""
 
 

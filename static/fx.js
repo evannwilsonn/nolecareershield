@@ -109,37 +109,52 @@
   }
 
   // ---------- listing scanner ----------
-  // A gold line runs down the sample listing; each flag lights up as the line passes it, then the stamp
-  // lands. On wide screens it follows the scroll (the section pins); on phones it plays once when seen.
+  // A gold line runs down the sample listing; each flagged phrase lights up when the line reaches its middle, its
+  // flag slides in, then the stamp lands. It follows the scroll and reverses when you scroll back. Wide screens pin
+  // the whole section; phones pin only the card and flags, just under the header. If even that won't fit on screen,
+  // it plays once when seen instead.
   var scans = [];
 
   function Scan(sec) {
     var card = sec.querySelector(".scan-card"), line = sec.querySelector(".scan-line"), stick = sec.querySelector(".scan-stick");
+    var track = sec.querySelector(".scan-track"), board = sec.querySelector(".scan-board");
     var marks = [].slice.call(card.querySelectorAll("mark")), sups = [].slice.call(card.querySelectorAll("sup"));
-    var items = {}, h = 1, done = false;
+    var items = {}, h = 1, done = false, mode = "", played = false;
     [].slice.call(sec.querySelectorAll(".scan-flags li")).forEach(function (li) { items[li.getAttribute("data-f")] = li; });
     var verdict = sec.querySelector(".scan-verdict"), stamp = sec.querySelector(".scan-stamp");
-    var pinned = window.innerWidth >= 901 && stick.offsetHeight <= window.innerHeight;
-    var self = { sec: sec, tick: function () { return false; }, measure: measure };
+    var self = { sec: sec, tick: tick, measure: measure };
 
+    function hdr() { var el = document.querySelector("header"); return el ? el.offsetHeight : 0; }
+    function decide() {
+      var vh = window.innerHeight, next;
+      if (window.innerWidth >= 901) next = stick.offsetHeight <= vh ? "section" : "timed";
+      else next = board.offsetHeight <= vh - hdr() - 24 ? "card" : "timed";
+      if (next === mode) return;
+      mode = next;
+      sec.classList.toggle("pinned", mode !== "timed");
+      sec.style.setProperty("--bh", board.offsetHeight + "px");
+      if (mode === "timed") playOnce();
+    }
     function measure() {
+      sec.style.setProperty("--hdr", hdr() + "px");
       var top = card.getBoundingClientRect().top;
       h = card.offsetHeight;
-      marks.forEach(function (m) { m.__y = m.getBoundingClientRect().bottom - top; });
-      sups.forEach(function (x) { x.__y = x.getBoundingClientRect().bottom - top; });
+      marks.forEach(function (m) { var r = m.getBoundingClientRect(); m.__y = (r.top + r.bottom) / 2 - top; });
+      sups.forEach(function (x) { var r = x.getBoundingClientRect(); x.__y = (r.top + r.bottom) / 2 - top; });
+      decide();
     }
     function at(q) {
       var y = Math.max(0, Math.min(1, q)) * h;
       line.style.transform = "translateY(" + y.toFixed(1) + "px)";
       marks.forEach(function (m) {
-        var on = m.__y <= y + 3;
+        var on = q > 0 && m.__y <= y;
         if (on && !m.classList.contains("on")) {
           m.classList.add("on", "flash");
-          setTimeout(function () { m.classList.remove("flash"); }, 650);
+          setTimeout(function () { m.classList.remove("flash"); }, 600);
         } else if (!on) m.classList.remove("on");
       });
       sups.forEach(function (x) {
-        var on = x.__y <= y + 3, li = items[x.getAttribute("data-f")];
+        var on = q > 0 && x.__y <= y, li = items[x.getAttribute("data-f")];
         x.classList.toggle("on", on);
         if (li) li.classList.toggle("on", on);
       });
@@ -149,22 +164,27 @@
       done = on;
       stamp.classList.toggle("on", on); verdict.classList.toggle("on", on); sec.classList.toggle("done", on);
     }
-
-    sec.classList.add("armed");
-    if (pinned) {
-      sec.classList.add("pinned");
-      self.tick = function () {
-        var r = sec.getBoundingClientRect(), total = sec.offsetHeight - window.innerHeight;
-        var p = total > 0 ? Math.min(1, Math.max(0, -r.top / total)) : 0;
-        at((p - 0.06) / 0.62);
-        finish(p > 0.74);
-        return false;
-      };
-    } else {
-      // Plays once, the first time most of the card is on screen.
+    function progress() {
+      var vh = window.innerHeight;
+      if (mode === "section") {
+        var r = sec.getBoundingClientRect(), total = sec.offsetHeight - vh;
+        return total > 0 ? -r.top / total : 0;
+      }
+      var t = track.getBoundingClientRect(), span = track.offsetHeight - board.offsetHeight;
+      return span > 0 ? (hdr() + 12 - t.top) / span : 0;
+    }
+    function tick() {
+      if (mode === "timed") return false;
+      var p = Math.min(1, Math.max(0, progress()));
+      at((p - 0.04) / 0.72);                 // the line sweeps through most of the track...
+      finish(p > 0.8);                       // ...then the verdict lands
+      return false;
+    }
+    function playOnce() {
+      if (played) return;
       var io = new IntersectionObserver(function (es) {
-        if (!es[0].isIntersecting) return;
-        io.disconnect();
+        if (!es[0].isIntersecting || mode !== "timed") return;
+        io.disconnect(); played = true;
         var t0 = performance.now(), D = 2800;
         (function step(now) {
           var q = (now - t0) / D;
@@ -174,6 +194,8 @@
       }, { threshold: 0.6 });
       io.observe(card);
     }
+
+    sec.classList.add("armed");
     measure(); at(0);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { measure(); kick(); });
     return self;
