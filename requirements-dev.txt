@@ -1,4 +1,3 @@
 -r requirements.txt
 pytest>=8
 httpx>=0.27
-scikit-learn>=1.4    # training the learned layer only (python -m scam_detector.tools.train_model)

@@ -278,6 +278,7 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--accent)}
 .rev-actions button{border:none;border-radius:8px;padding:8px 15px;font-weight:600;font-size:14px;cursor:pointer;font-family:inherit}
 .btn-approve{background:var(--ok);color:#fff}
 .btn-reject{background:var(--sand);color:var(--bad)}
+.btn-ghost{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line-2) inset}
 .admin-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 18px}
 /* ---------- avatars, people ---------- */
 .avatar{width:38px;height:38px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:var(--display);font-stretch:84%;font-size:16px;background:var(--gold-tint);color:var(--gold-ink);flex:none}

@@ -72,13 +72,17 @@ def test_dashboard_profile_gap_expiry_and_events_guards(net):
     job = add_job(net, eid)
     home = emp.get("/").text
     assert "Your company profile is missing" in home and "a tagline" in home          # from the trust card's tips
-    assert "expires" not in home and "Upcoming events" not in home                     # no expires_at column / events table yet (guards)
+    assert "expires in" not in home and "Nothing scheduled" in home
     with _db(net) as db:
-        if "expires_at" not in {r[1] for r in db.execute("PRAGMA table_info(jobs)")}:
-            db.execute("ALTER TABLE jobs ADD COLUMN expires_at REAL")
         db.execute("UPDATE jobs SET expires_at = ? WHERE id = ?", (time.time() + 3 * 86400 + 60, job))
-        db.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, employer_id INTEGER, title TEXT, starts_at REAL)")
-        db.execute("INSERT INTO events (employer_id, title, starts_at) VALUES (?,?,?)", (eid, "Summer internship info session", time.time() + 86400))
+        cols = {r[1]: r for r in db.execute("PRAGMA table_info(events)")}
+        now = time.time()
+        vals = {"employer_id": eid, "title": "Summer internship info session", "starts_at": now + 86400, "status": "approved",
+                "created_at": now, "updated_at": now}
+        for c, r in cols.items():                       # fill any other NOT NULL column without a default
+            if c not in vals and r[3] and r[4] is None and not r[5]:
+                vals[c] = 0 if "INT" in (r[2] or "").upper() or "REAL" in (r[2] or "").upper() else ""
+        db.execute(f"INSERT INTO events ({', '.join(vals)}) VALUES ({', '.join('?' * len(vals))})", tuple(vals.values()))
         db.commit()
     home = emp.get("/").text
     assert "<b>Data Analyst Intern</b> expires in 3 days" in home

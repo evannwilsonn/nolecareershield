@@ -117,11 +117,18 @@ def _load(path: str, mtime: float) -> Model:
     return Model(json.loads(Path(path).read_text()))
 
 
+def active_path() -> Path:
+    """The model the site uses: one retrained on the live board (SCAM_MODEL_PATH, written by learning.py) when it
+    exists, otherwise the one shipped in the repo."""
+    live = os.environ.get("SCAM_MODEL_PATH", "")
+    return Path(live) if live and Path(live).exists() else MODEL_PATH
+
+
 def load(path: Path | None = None) -> Model | None:
-    """The shipped model, or None when it's missing or switched off."""
+    """The active model, or None when it's missing or switched off."""
     if os.environ.get("SCAM_MODEL", "").lower() in ("off", "0", "false", "no"):
         return None
-    p = Path(path or MODEL_PATH)
+    p = Path(path or active_path())
     if not p.exists():
         return None
     return _load(str(p), p.stat().st_mtime)

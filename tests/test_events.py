@@ -170,7 +170,7 @@ def test_feed_company_page_filters_and_nav(net):
     assert "✓ Going" in s.get("/feed").text
     assert "Upcoming events" in s.get(f"/company/{empid}").text
     assert 'href="/events"' in s.get("/jobs").text                                        # student sidebar
-    assert 'href="/events/manage"' in emp.get("/jobs").text                              # employer sidebar
+    assert 'href="/events/manage"' in emp.get("/hiring").text                            # employer sidebar
     later = create(emp, title="Spring career fair table", kind="career_fair", date=when(60)[0])
     approve(net, later)
     assert "Spring career fair table" in s.get("/events").text

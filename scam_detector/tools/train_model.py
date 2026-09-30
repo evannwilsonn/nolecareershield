@@ -178,14 +178,21 @@ def gate(rules_h: dict, new_h: dict, rules_s: dict, new_s: dict, cur_h: dict | N
     return problems
 
 
+LAST_RESULT: dict = {}      # what the last main() call did, for learning.py: ok, version, report, rows
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--extra", nargs="*", default=[], help="more labeled JSONL, e.g. export_labeled.py output")
     ap.add_argument("--dry-run", action="store_true", help="report only, never write the model")
     ap.add_argument("--out", default=str(ml.MODEL_PATH))
+    ap.add_argument("--holdout-extra", nargs="*", default=[], help="more frozen holdout JSONL (the live board's monthly holdout)")
+    ap.add_argument("--current", default="", help="the model a candidate must not do worse than (default: --out, else the repo model)")
+    ap.add_argument("--report-dir", default=str(MODELS), help="where TRAINING_REPORT.md goes")
     a = ap.parse_args(argv)
+    LAST_RESULT.clear()
 
-    holdout = [r for f in HOLDOUTS for r in load(DATA / f)]
+    holdout = [r for f in HOLDOUTS for r in load(DATA / f)] + [r for f in a.holdout_extra for r in load(Path(f))]
     hard = load(DATA / HARD_LEGIT)
     train = [r for f in TRAIN_FILES for r in load(DATA / f)] + [r for f in HALF_WEIGHT for r in load(DATA / f, 0.5)]
     train += [r for f in a.extra for r in load(Path(f))]
@@ -225,14 +232,15 @@ def main(argv=None) -> int:
     hold_p = model.proba(holdout)
     new_h = tally(holdout, system_flags(holdout, hold_p, threshold))
     per_file = []
-    for f in HOLDOUTS:
+    for f in HOLDOUTS + [Path(x).name for x in a.holdout_extra]:
         idx = [i for i, r in enumerate(holdout) if r["_src"] == f]
         rows_f = [holdout[i] for i in idx]
         per_file += [line(f"  {f}, rules alone", tally(rows_f, [rules_for(r)["flag"] for r in rows_f])),
                      line(f"  {f}, rules + this model", tally(rows_f, system_flags(rows_f, [hold_p[i] for i in idx], threshold)))]
     new_s = tally(hard, system_flags(hard, model.proba(hard), threshold))
 
-    current = ml.load(Path(a.out)) if Path(a.out).exists() else None
+    cur_path = Path(a.current) if a.current else (Path(a.out) if Path(a.out).exists() else ml.MODEL_PATH)
+    current = ml.load(cur_path) if cur_path.exists() else None
     cur_h = None
     if current:
         cur_p = [current.predict(r.get("title", ""), r.get("description", ""), r.get("company", ""), r.get("url") or "",
@@ -264,12 +272,18 @@ def main(argv=None) -> int:
         "**Result: " + ("passed" if ok else "did not pass: " + "; ".join(problems)) + "**", "",
         "Numbers this small are a sanity check, not a measured accuracy. Add reviewer decisions with --extra and retrain.",
     ])
-    MODELS.mkdir(parents=True, exist_ok=True)
-    (MODELS / "TRAINING_REPORT.md").write_text(report + "\n")
+    Path(a.report_dir).mkdir(parents=True, exist_ok=True)
+    (Path(a.report_dir) / "TRAINING_REPORT.md").write_text(report + "\n")
     print(report)
+    LAST_RESULT.update({"ok": ok, "problems": problems, "report": report, "rows": len(train), "holdout_rows": len(holdout),
+                        "holdout": meta["holdout"], "threshold": threshold, "version": None, "written": False})
     if ok and not a.dry_run:
         spec = model.export(threshold, meta)
-        Path(a.out).write_text(json.dumps(spec, separators=(",", ":"), sort_keys=True))
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        tmp = Path(str(a.out) + ".tmp")
+        tmp.write_text(json.dumps(spec, separators=(",", ":"), sort_keys=True))
+        tmp.replace(a.out)                                  # atomic: the site never reads a half-written model
+        LAST_RESULT.update({"version": spec["version"], "written": True})
         print(f"\nwrote {a.out} (version {spec['version']}, {len(spec['vocab'])} phrases, {len(rule_ids)} rules)")
     elif not ok:
         print("\nModel not written.")

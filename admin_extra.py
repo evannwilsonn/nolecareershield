@@ -1,7 +1,7 @@
 """
 Reviewer queues for the network features, behind the same reviewer sign-in as the job queue:
 employers waiting for approval, employer feed posts, anything the scanner held (posts,
-comments, messages), user reports, and messages students sent in from the scam checker.
+comments, messages) and user reports. The label queue and model page live in learning.py.
 """
 
 from __future__ import annotations
@@ -50,7 +50,8 @@ def counts(conn) -> dict:
         "posts": one("SELECT COUNT(*) FROM posts WHERE status IN ('pending','held')") + one("SELECT COUNT(*) FROM post_comments WHERE status = 'held'"),
         "messages": one("SELECT COUNT(*) FROM messages WHERE status = 'held'"),
         "reports": one("SELECT COUNT(*) FROM reports WHERE resolved = 0"),
-        "checks": one("SELECT COUNT(*) FROM submitted_checks"),
+        "checks": one("SELECT COUNT(*) FROM submitted_checks WHERE review_label IS NULL"),
+        "model": one("SELECT COUNT(*) FROM model_runs"),
         "schools": one("SELECT COUNT(DISTINCT lower(school)) FROM school_requests"),
         "events": one("SELECT COUNT(*) FROM events WHERE status = 'pending'"),
     }
@@ -64,7 +65,7 @@ def tabs(active: str, title: str = "") -> str:
         c["live"] = conn.execute("SELECT COUNT(*) FROM jobs WHERE review_status = 'approved'").fetchone()[0]
     items = [("/admin", "Listings", "listings"), ("/admin/employers", "Employers", "employers"), ("/admin/posts", "Feed", "posts"),
              ("/admin/messages", "Held messages", "messages"), ("/admin/reports", "Reports", "reports"),
-             ("/admin/checks", "Sent-in messages", "checks"), ("/admin/schools", "School requests", "schools"),
+             ("/admin/checks", "Label queue", "checks"), ("/admin/model", "Model", "model"), ("/admin/schools", "School requests", "schools"),
              ("/admin/events", "Events", "events"), ("/admin/live", "Live listings", "live")]
     return ui.desk(title or next((t for h, t, _ in items if h == active), "Review queue"),
                    [(h, t, c[k], h == active) for h, t, k in items])
@@ -260,21 +261,6 @@ def resolve(ttype: str, tid: int, session: str | None = Cookie(default=None), cs
         with store.db() as conn:
             conn.execute("UPDATE reports SET resolved = 1 WHERE target_type = ? AND target_id = ?", (ttype, tid))
     return RedirectResponse("/admin/reports", status_code=303)
-
-
-@router.get("/admin/checks", response_class=HTMLResponse)
-def checks(session: str | None = Cookie(default=None)):
-    if not _ok(session):
-        return RedirectResponse("/admin", status_code=303)
-    with store.db() as conn:
-        cs = store.rows(conn, "SELECT * FROM submitted_checks ORDER BY created_at DESC LIMIT 200")
-    out = "".join(f"""<div class="rev-card"><div class="row between"><span class="small muted">{esc(time.strftime('%Y-%m-%d', time.gmtime(c['created_at'])))}
-{(' · from ' + esc(c['sender'])) if c['sender'] else ''}</span><span class="row"><span class="pill">detector: {esc(c['band'])}</span>
-<span class="pill {'bad' if c['user_label'] == 'scam' else 'ok' if c['user_label'] == 'legit' else ''}">student says: {esc(c['user_label'])}</span></span></div>
-<div class="detail-desc" style="font-size:14px;max-height:180px;overflow:auto">{esc(c['body'])}</div></div>""" for c in cs)
-    return _page('<p class="lead">Messages students sent in from the scam checker. Label the clear ones into the corpus (see ADAPTING.md) '
-                 'so the next rule update learns from them.</p>' + (out or '<div class="empty">Nothing sent in yet.</div>'),
-                 "Sent-in messages", "/admin/checks")
 
 
 @router.get("/admin/schools", response_class=HTMLResponse)

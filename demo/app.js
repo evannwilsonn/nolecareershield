@@ -490,7 +490,7 @@ function edData(uid) {
   const jobsOf = new Set(newApps.map(c => c.job));
   return {company: p.company || "", status: p.status || "draft", status_note: p.status_note || "", new_apps: newApps.length, new_job: jobsOf.size === 1 ? newApps[0].job : null,
     awaiting: awaitingReply(uid), expiring, gap: profileGap(trustOf(uid).tips), pending: jobs.filter(j => j.review_status === "pending").length, live: jobs.filter(visibleListing).length,
-    stages, rows, more: Math.max(0, jobs.length - ED_ROWS), events: S.events ? S.events.filter(e => e.host === uid && e.at >= now - 3600e3).sort((a, b) => a.at - b.at).slice(0, 3) : null};
+    stages, rows, more: Math.max(0, jobs.length - ED_ROWS), events: (S.events || []).filter(e => e.employer === uid && ["approved", "pending"].includes(e.status) && e.starts >= now - 3600e3).sort((a, b) => a.starts - b.starts).slice(0, 5)};
 }
 function edQueue(d) {
   const items = [], inDays = n => n <= 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`;
@@ -521,7 +521,7 @@ function employerHome() {
       + `<div class="ed-m"><b>${r.views}</b><span>viewed</span></div><div class="ed-m"><b>${r.clicks}</b><span>Apply clicks</span></div><div class="ed-m"><b>${r.applicants}</b><span>applicants</span></div><div class="ed-m"><b>${r.match === null ? "—" : r.match + "%"}</b><span>avg match</span></div>`
       + `<div class="ed-ac">${r.status === "approved" ? previewLink(r.id, "ed-pv") : ""}</div></div>`).join("")}</div>${d.more ? `<p class="small muted" style="margin-top:10px">${d.more} more on <a href="#" data-go="hiring">Your listings</a>.</p>` : ""}<p class="small faint" style="margin-top:10px">Views and Apply clicks are totals; you never see which students viewed.</p></section>`
     : `<section class="card ed-list"><div class="phead"><h2>Your listings</h2></div><div class="empty">No listings yet. <a href="#" data-go="post">Post your first job</a>; every one is scam-checked and approved by a person.</div></section>`;
-  const ev = d.events === null ? "" : `<section class="card ed-events"><div class="phead"><h2>Upcoming events</h2><a class="small ed-all" href="#" data-go="events">Events →</a></div>${d.events.length ? `<ul class="ed-ev">${d.events.map(e => `<li><b>${esc(e.title)}</b><span>${esc(new Date(e.at).toLocaleString("en-US", {weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"}))}</span></li>`).join("")}</ul>` : '<p class="small muted">Nothing scheduled. Host an info session or a coffee chat for FSU students.</p>'}</section>`;
+  const ev = `<section class="card ed-events"><div class="phead"><h2>Upcoming events</h2><a class="small ed-all" href="#" data-go="emanage">Manage events →</a></div>${d.events.length ? `<ul class="ed-ev">${d.events.map(e => `<li><a href="#" data-go="event?id=${e.id}"><b>${esc(e.title)}</b></a><span>${esc(evWhen(e, true))} · ${evCounts(e.id).going} going${e.status === "pending" ? " · in review" : ""}</span></li>`).join("")}</ul>` : '<p class="small muted">Nothing scheduled. <a href="#" data-go="eventnew">Host an info session or a coffee chat</a> for FSU students.</p>'}</section>`;
   return head + `<div class="ed-grid">${q}${pipe}${lst}${ev}</div>`;
 }
 const previewLink = (id, cls) => `<a class="${cls || "b sm ghost"}" href="#" data-go="job?id=${id}">Preview as students see it</a>`;

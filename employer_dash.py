@@ -161,24 +161,12 @@ def awaiting_reply(conn, uid: int) -> int:
 
 
 def _events(conn, uid: int, now: float) -> list[dict] | None:
-    """Upcoming events this employer hosts, or None when there is no events table to read."""
-    cols = _cols(conn, "events")
-    if not cols:
-        return None
-    host = next((c for c in ("employer_id", "host_id", "author_id", "owner_id", "user_id") if c in cols), None)
-    when = next((c for c in ("starts_at", "start_at", "start", "starts", "at") if c in cols), None)
-    if not host or not when or "title" not in cols:
-        return []
-    try:
-        rows = store.rows(conn, f"SELECT id, title, {when} AS w FROM events WHERE {host} = ? ORDER BY {when} LIMIT 40", (uid,))
-    except sqlite3.Error:
-        return []
-    out = []
-    for r in rows:
-        t = _expiry(r["w"])
-        if t is not None and t >= now - 3600:
-            out.append({"id": r["id"], "title": r["title"], "at": t})
-    return out[:3]
+    """Upcoming events this employer hosts (approved or waiting for review), with RSVP counts."""
+    import events
+    rows = store.rows(conn, "SELECT * FROM events WHERE employer_id = ? AND status IN ('approved','pending') AND starts_at >= ? "
+                            "ORDER BY starts_at LIMIT 5", (uid, now - 3600))
+    return [{"id": r["id"], "title": r["title"], "at": r["starts_at"], "when": events.when_text(r, short=True),
+             "going": events.counts(conn, r["id"]).get("going", 0), "pending": r["status"] == "pending"} for r in rows]
 
 
 def data(conn, user: dict, now: float | None = None) -> dict:
@@ -294,10 +282,11 @@ def html(d: dict, hello: str, date: str) -> str:
                f'<a {h("/post")}>Post your first job</a>; every one is scam-checked and approved by a person.</div></section>')
     ev = ""
     if d["events"] is not None:
-        inner = ("".join(f'<li><b>{esc(e["title"])}</b><span>{esc(time.strftime("%a %b %-d, %-I:%M %p", time.localtime(e["at"])))}</span></li>' for e in d["events"])
+        inner = ("".join(f'<li><a {h("/events/%d" % int(e["id"]))}><b>{esc(e["title"])}</b></a><span>{esc(e["when"])} · '
+                         f'{e["going"]} going{" · in review" if e["pending"] else ""}</span></li>' for e in d["events"])
                  if d["events"] else "")
-        ev = (f'<section class="card ed-events"><div class="phead"><h2>Upcoming events</h2><a class="small ed-all" {h("/events")}>Events →</a></div>'
-              + (f'<ul class="ed-ev">{inner}</ul>' if inner else '<p class="small muted">Nothing scheduled. Host an info session or a coffee chat for FSU students.</p>') + '</section>')
+        ev = (f'<section class="card ed-events"><div class="phead"><h2>Upcoming events</h2><a class="small ed-all" {h("/events/manage")}>Manage events →</a></div>'
+              + (f'<ul class="ed-ev">{inner}</ul>' if inner else '<p class="small muted">Nothing scheduled. <a ' + h('/events/new') + '>Host an info session or a coffee chat</a> for FSU students.</p>') + '</section>')
     return head + f'<div class="ed-grid">{q}{pipe}{lst}{ev}</div>'
 
 

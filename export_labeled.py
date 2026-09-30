@@ -51,6 +51,9 @@ def export(db_path: Path, out_path: Path) -> dict:
             raise SystemExit("This database predates reviewer labels. Start the app once to migrate it, "
                              "then review some listings.")
         rows = db.execute("SELECT * FROM jobs WHERE review_label IS NOT NULL ORDER BY id").fetchall()
+        check_cols = {r[1] for r in db.execute("PRAGMA table_info(submitted_checks)")}
+        checks = (db.execute("SELECT * FROM submitted_checks WHERE review_label IN ('legit','scam','lead_gen') ORDER BY id").fetchall()
+                  if "review_label" in check_cols else [])
     with out_path.open("w", encoding="utf-8") as f:
         for r in rows:
             label = r["review_label"]
@@ -68,6 +71,16 @@ def export(db_path: Path, out_path: Path) -> dict:
                 "context_flags": [],
                 "notes": f"review-queue export; detector band={r['band']} score={r['score']} "
                          f"ruleset={r['ruleset_version'] or 'unknown'}",
+            }) + "\n")
+        # Things people sent in from the scam check, once a reviewer confirmed the label (the label queue).
+        for r in checks:
+            counts[r["review_label"]] += 1
+            counts["from_checks"] = counts.get("from_checks", 0) + 1
+            desc = r["body"] if r["kind"] == "listing" else r["body"] + (f"\n{r['sender']}" if r["sender"] else "")
+            f.write(json.dumps({
+                "label": r["review_label"], "kind": r["kind"], "title": mask(r["title"]), "company": mask(r["company"]),
+                "description": mask(desc), "url": r["url"] or "", "context_flags": [],
+                "notes": f"scam-check submission ({r['source']}), reviewer label; detector band={r['band']}",
             }) + "\n")
     return counts
 
