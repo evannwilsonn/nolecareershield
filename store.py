@@ -318,6 +318,24 @@ CREATE TABLE IF NOT EXISTS assistant_msgs (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_amsg_chat ON assistant_msgs (chat_id, id);
+-- What the Career assistant remembers about a student (assistant.py): short facts the student stated, never sensitive
+-- data (a filter refuses SSNs, bank/card numbers, health and similar). The student can see, delete or clear them.
+CREATE TABLE IF NOT EXISTS assistant_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    fact TEXT NOT NULL,
+    chat_id INTEGER,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_amem_user ON assistant_memory (user_id, id);
+-- Jobs the assistant showed in a chat are pinned to its side panel; a row with pinned = 0 means the student unpinned it.
+CREATE TABLE IF NOT EXISTS assistant_pins (
+    user_id INTEGER NOT NULL,
+    chat_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (user_id, chat_id, job_id)
+);
 """
 
 
@@ -362,6 +380,9 @@ def purge(conn) -> None:
     # Assistant chats go after 180 days without a new message.
     conn.execute("DELETE FROM assistant_chats WHERE updated_at < ?", (now - 180 * 86400,))
     conn.execute("DELETE FROM assistant_msgs WHERE chat_id NOT IN (SELECT id FROM assistant_chats)")
+    conn.execute("DELETE FROM assistant_pins WHERE chat_id NOT IN (SELECT id FROM assistant_chats)")
+    # Assistant memories go when the account does, or after a year without being refreshed.
+    conn.execute("DELETE FROM assistant_memory WHERE created_at < ?", (now - 365 * 86400,))
     conn.commit()
 
 
@@ -397,6 +418,8 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM emails WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_msgs WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_chats WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM assistant_memory WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM assistant_pins WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_tokens WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE jobs SET employer_id = NULL WHERE employer_id = ?", (user_id,))
