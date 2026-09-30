@@ -62,7 +62,7 @@ const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [],
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], connLog: [], easyDraft: null};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], connLog: [], easyDraft: null};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -808,30 +808,90 @@ function sendMessage(c, text) {
 
 // ---- feed ----
 const KINDS = {question: "Question", advice: "Advice", opportunity: "Opportunity", event: "Event", win: "Win", info_session: "Info session"};
-const FILTERS = {question: "Questions", advice: "Advice", opportunity: "Opportunities", event: "Events", win: "Wins", info_session: "Info sessions"};
 const KIND_PILL = {question: "info", advice: "gold", opportunity: "accent", event: "gold", win: "ok", info_session: "gold"};
+// Mirrors feed.py: tabs (Feed / For you / Saved), pills (All / Your major / Employers), bookmark saves, for-you ranking, right rail.
+const FEED_TABS = [["feed", "Feed"], ["foryou", "For you"], ["saved", "Saved"]], FEED_PILLS = [["all", "All"], ["major", "Your major"], ["employers", "Employers"]];
+const FEED_RULES = ["Be kind and specific. Help each other out.", "No ads, spam or pay-to-apply offers.", "Never share passwords, SSNs or bank details.", "Report anything that feels like a scam."];
+const FEED_STOP = new Set(("about above after again also always another anyone around because before being between both come could does doing done down each even ever every from get going good great have having here hello help how into just know like look make many more most much need only other over please really should some someone something still such take than thank thanks that their them then there these they thing think this those through today want week were what when where which while will with would year your students student fsu florida state university apply hiring internship internships").split(" "));
+const MAX_SAVES = 300;
+const bookmark = (filled, size) => `<svg class="ic" viewBox="0 0 24 24" width="${size || 20}" height="${size || 20}" fill="${filled ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h12v17l-6-4.2L6 21z"/></svg>`;
+const isSaved = (uid, pid) => S.saves.some(x => x.user === uid && x.post === pid);
+function feedUrl(tab, f, q) { const p = []; if (tab && tab !== "feed") p.push("tab=" + tab); if (f && f !== "all") p.push("f=" + f); if (q) p.push("q=" + encodeURIComponent(q)); return "feed" + (p.length ? "?" + p.join("&amp;") : ""); }
+function forYouScore(post, viewer, author, now) {   // author major +4, shared skills up to +3, viewer skills named in the post up to +3, their major named +2, recency up to +4 (halves every 3 days)
+  let pts = 0; const vmajor = (viewer.major || "").trim().toLowerCase(), vskills = (viewer.skills || []).filter(Boolean), body = post.body.toLowerCase();
+  if (author && vmajor && (author.major || "").trim().toLowerCase() === vmajor) pts += 4;
+  if (author) { const theirs = new Set((author.skills || []).map(x => x.toLowerCase())); pts += Math.min(3, vskills.filter(x => theirs.has(x.toLowerCase())).length); }
+  pts += Math.min(3, vskills.filter(w => new RegExp("(?<![a-z0-9])" + w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![a-z0-9])").test(body)).length);
+  if (vmajor && body.includes(vmajor)) pts += 2;
+  return pts + 4 * Math.pow(0.5, Math.max(0, now - post.at) / 864e5 / 3);
+}
+function feedTrending() {
+  const since = NOW() - 30 * 864e5, seen = {};
+  S.posts.filter(p => p.status === "published" && p.at > since).slice(-300).forEach(p => new Set((p.body.match(/#?[A-Za-z][A-Za-z+#.-]{3,24}/g) || []).map(w => w.toLowerCase().replace(/^#/, "")).filter(w => !FEED_STOP.has(w))).forEach(w => { seen[w] = (seen[w] || 0) + 1; }));
+  return Object.entries(seen).filter(([, n]) => n >= 2).sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1)).slice(0, 5);
+}
+function feedAuthor(id) {
+  const [n, sub, kind] = who(id), nm = `<a href="#" data-go="${kind === "emp" ? "company" : "u"}?id=${id}" style="text-decoration:none">${esc(n)}</a>`;
+  return `<div class="person"><span class="avatar${kind === "emp" ? " emp" : ""}">${initials(n)}</span><div style="min-width:0"><div class="nm">${nm}${kind === "emp" ? ' <span class="pill accent fd-tag">Employer</span>' : ""}</div><div class="sub">${esc(sub)}</div></div></div>`;
+}
+function feedRail() {
+  let people = "";
+  if (isStudent()) {
+    const rows = suggestions(me().id).slice(0, 3).map(([uid]) => `<div class="fd-person">${person(uid)}${connectButton(uid, "none", "feed", false)}</div>`)
+      .concat(Object.keys(S.employers).map(Number).filter(e => approvedEmp(e) && !isFollowing(me().id, e)).slice(0, 2).map(e => `<div class="fd-person">${person(e)}${followButton(e, false, "feed")}</div>`)).join("");
+    if (rows) people = `<section class="fd-card" aria-label="Suggested people"><h3>People to follow</h3>${rows}<p style="margin:8px 0 0"><a class="small" href="#" data-go="network?tab=discover">See more in your network</a></p></section>`;
+  }
+  const topics = feedTrending(), tcard = topics.length ? `<section class="fd-card" aria-label="Trending topics"><h3>Trending topics</h3><div class="fd-topics">${topics.map(([w, n]) => `<a href="#" data-go="${feedUrl("feed", "all", w)}">${esc(w)}<small>${n}</small></a>`).join("")}</div></section>` : "";
+  return `<aside class="fd-rail" aria-label="Feed sidebar">${people}${tcard}<section class="fd-card" aria-label="Community guidelines"><h3>Community guidelines</h3><ul class="fd-rules">${FEED_RULES.map(g => `<li>${esc(g)}</li>`).join("")}</ul></section></aside>`;
+}
 P.feed = () => {
   if (!me()) return pageHead("The FSU feed", "Questions, advice and opportunities from verified FSU students and employers our reviewers approved.", "Community") +
     `<div class="bento"><div class="tile w3"><h3>Students</h3><p>Sign in with your @fsu.edu account to read and post.</p><div class="foot"><a class="b" href="#" data-go="start">Log in or sign up</a></div></div><div class="tile w3"><h3>Employers</h3><p>Approved employers can share internships, info sessions and advice for FSU students.</p><div class="foot"><a class="b sec" href="#" data-do="as-employer">Explore as a sample employer</a></div></div></div>`;
-  const head = pageHead("The FSU feed", "Only verified FSU students and approved employers can post here. Employer posts must be opportunities or advice for FSU students.", "Community");
-  if (isEmployer() && !approvedEmp(me().id)) return head + banner("info", "The feed opens to employers once a reviewer approves your organization.");
-  const kind = KINDS[S.route.q.kind] ? S.route.q.kind : "all";
-  const posts = S.posts.filter(p => (p.status === "published" || (p.author === me().id && ["pending", "held", "rejected"].includes(p.status))) && (kind === "all" || p.kind === kind)).sort((a, b) => b.at - a.at);
-  const kinds = isStudent() ? ["question", "advice", "opportunity", "event", "win"] : ["opportunity", "advice", "event", "info_session"];
-  const d = S.feedDraft || {}, rule = isStudent() ? "Share a question, advice, a win, or an opportunity with other Noles." : "Employer posts must be opportunities, events or advice for FSU students. Ads and promotions are declined. A reviewer approves each post.";
-  const canPost = isStudent() ? studentReady(SP(me().id)) : true;
-  const composer = canPost ? `<form id="feedForm" class="composer-card">${takeFlash()}<label for="f-body" class="hp">Post</label><textarea id="f-body" name="body" required maxlength="1500" placeholder="${esc(rule)}">${esc(d.body || "")}</textarea>
+  if (isEmployer() && !approvedEmp(me().id)) return pageHead("The FSU feed", "", "Community") + banner("info", "The feed opens to employers once a reviewer approves your organization.");
+  const rq = S.route.q, tab = ["feed", "foryou", "saved"].includes(rq.tab) ? rq.tab : "feed", meId = me().id;
+  const f = FEED_PILLS.some(x => x[0] === rq.f) && !(rq.f === "major" && !isStudent()) ? rq.f : "all";
+  const q = /^[A-Za-z0-9+#. -]{1,40}$/.test((rq.q || "").trim()) ? rq.q.trim() : "";
+  const viewer = isStudent() ? (SP(meId) || {}) : {}, vmajor = (viewer.major || "").trim().toLowerCase();
+  const visible = p => p.status === "published" || (p.author === meId && ["pending", "held", "rejected"].includes(p.status));
+  let posts, lead = "", note = "", empty;
+  if (tab === "saved") {
+    posts = S.saves.filter(x => x.user === meId).sort((a, b) => b.at - a.at).map(x => S.posts.find(p => p.id === x.post)).filter(p => p && p.status === "published").slice(0, 100);
+    empty = `<div class="fd-empty">${bookmark(false, 44)}<h2>No saved posts yet</h2><p>Tap the bookmark on any post to save it here for later.</p><a class="b sec" href="#" data-go="feed">Browse the feed</a></div>`;
+  } else {
+    posts = S.posts.filter(visible).filter(p => {
+      if (f === "employers" && U(p.author) && U(p.author).role !== "employer") return false;
+      if (f === "major" && !(vmajor && U(p.author) && U(p.author).role === "student" && ((SP(p.author) || {}).major || "").trim().toLowerCase() === vmajor)) return false;
+      return !q || p.body.toLowerCase().includes(q.toLowerCase());
+    });
+    if (tab === "foryou") {
+      const now = NOW(); posts = posts.map(p => [forYouScore(p, viewer, U(p.author) && U(p.author).role === "student" ? SP(p.author) : null, now), p]).sort((x, y) => y[0] - x[0] || y[1].at - x[1].at).map(x => x[1]).slice(0, 30);
+      note = isStudent() ? `<p class="fd-note">Ranked by how much each post overlaps with your major and skills, then by how recent it is.${viewer.major ? "" : " Add your major and skills to your profile to sharpen it."}</p>` : '<p class="fd-note">Newest first. Students see posts ranked by their major and skills.</p>';
+    } else posts.sort((a, b) => b.at - a.at);
+    empty = f === "major" && isStudent() && !vmajor ? '<div class="fd-empty"><h2>Add your major</h2><p>Add your major to your profile and posts from students in it will show up here.</p><a class="b sec" href="#" data-go="setup">Update profile</a></div>'
+      : f === "major" ? '<div class="fd-empty"><h2>No posts from your major yet</h2><p>When students in your major share something, it will show up here.</p></div>'
+      : f === "employers" ? '<div class="fd-empty"><h2>No employer posts yet</h2><p>Approved employers share opportunities and advice for FSU students here.</p></div>'
+      : '<div class="fd-empty"><h2>Nothing here yet</h2><p>Start the conversation.</p></div>';
+    const pills = FEED_PILLS.filter(x => !(x[0] === "major" && !isStudent())).map(([k, label]) => `<a class="fd-pill" href="#" data-go="${feedUrl(tab, k, q)}"${k === f ? ' aria-current="true"' : ""}>${k === f ? icon("check", 15) : ""}${label}</a>`).join("")
+      + (q ? `<a class="fd-pill" href="#" data-go="${feedUrl(tab, f)}">Topic: ${esc(q)} ✕</a>` : "");
+    const kinds = isStudent() ? ["question", "advice", "opportunity", "event", "win"] : ["opportunity", "advice", "event", "info_session"];
+    const d = S.feedDraft || {}, rule = isStudent() ? "Share a question, advice, a win, or an opportunity with other Noles." : "Employer posts must be opportunities, events or advice for FSU students. Ads and promotions are declined. A reviewer approves each post.";
+    const canPost = isStudent() ? studentReady(SP(meId)) : true, [nm] = who(meId);
+    const composer = canPost ? `<details class="fd-comp"${d.body ? " open" : ""}><summary><span class="avatar${isEmployer() ? " emp" : ""}" aria-hidden="true">${initials(nm)}</span><span>Share something with the community…</span></summary><form id="feedForm" class="composer-card">${takeFlash()}<label for="f-body" class="hp">Post</label><textarea id="f-body" name="body" required maxlength="1500" placeholder="${esc(rule)}">${esc(d.body || "")}</textarea>
 <div class="row" style="margin-top:8px"><label for="f-kind" class="hp">Type</label><select id="f-kind" name="kind" style="width:auto">${kinds.map(k => `<option value="${k}"${d.kind === k ? " selected" : ""}>${KINDS[k]}</option>`).join("")}</select>
-<label for="f-link" class="hp">Link</label><input id="f-link" name="link" maxlength="300" placeholder="Link (optional)" value="${esc(d.link || "")}" style="flex:1;min-width:160px"><button class="b" type="submit">Post</button></div>${isEmployer() ? `<p class="small faint" style="margin-top:6px">${esc(rule)}</p>` : ""}</form>` : banner("info", "Set up your profile (name and major) before posting.");
-  const seg = `<div class="seg" style="margin-bottom:14px"><a href="#" data-go="feed"${kind === "all" ? ' class="on"' : ""}>All</a>${Object.keys(FILTERS).map(k => `<a href="#" data-go="feed?kind=${k}"${k === kind ? ' class="on"' : ""}>${FILTERS[k]}</a>`).join("")}</div>`;
+<label for="f-link" class="hp">Link</label><input id="f-link" name="link" maxlength="300" placeholder="Link (optional)" value="${esc(d.link || "")}" style="flex:1;min-width:160px"><button class="b" type="submit">Post</button></div>${isEmployer() ? `<p class="small faint" style="margin-top:6px">${esc(rule)}</p>` : ""}</form></details>` : banner("info", "Set up your profile (name and major) before posting.");
+    lead = `<div class="fd-pills" role="group" aria-label="Filter posts">${pills}</div>${composer}`;
+  }
+  const here = tab === "saved" ? "feed?tab=saved" : feedUrl(tab, f, q);
   const items = posts.map(p => {
     const st = p.status !== "published" ? `<span class="pill ${p.status === "rejected" ? "bad" : "warn"}">${{pending: "Waiting for review", held: "Held for a safety check", rejected: "Not approved"}[p.status]}</span>` : "";
-    const open = S.openComments === p.id, mine = p.author === me().id, helped = p.helpful.has(me().id);
-    return `<article class="post"><div class="head">${person(p.author)}<div class="row" style="gap:6px">${st}<span class="pill ${KIND_PILL[p.kind]}">${KINDS[p.kind]}</span><span class="small faint">${ago(p.at)}</span></div></div>
+    const open = S.openComments === p.id, mine = p.author === meId, helped = p.helpful.has(meId), sv = isSaved(meId, p.id);
+    const save = p.status === "published" ? `<button class="fd-save-b" type="button" data-do="${sv ? "unsave" : "save"}" data-id="${p.id}" data-next="${esc(here)}" aria-label="${sv ? "Remove from saved posts" : "Save post"}" title="${sv ? "Remove from saved posts" : "Save post"}" aria-pressed="${sv}">${bookmark(sv)}</button>` : "";
+    return `<article class="post fd-post"><div class="fd-head">${feedAuthor(p.author)}<div class="fd-meta">${st}<span class="pill ${KIND_PILL[p.kind]} fd-tag">${KINDS[p.kind]}</span><span class="fd-time">${ago(p.at)}</span><span class="fd-save">${save}</span></div></div>
 <div class="body">${esc(p.body)}</div>${p.link ? `<p class="lnk">${icon("jobs", 14)} <a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer nofollow ugc">${esc(p.link.slice(0, 90))}</a> <span class="faint">(opens another site)</span></p>` : ""}
-${p.status === "published" ? `<div class="acts"><button type="button" data-do="helpful" data-id="${p.id}"${helped ? ' class="on"' : ""}>Helpful · ${p.helpful.size}</button><button type="button" data-do="comments" data-id="${p.id}">Comments · ${p.comments.length}</button>${mine ? "" : `<button type="button" data-do="report-post" data-id="${p.id}">${p.reports.has(me().id) ? "Reported" : "Report"}</button>`}${!mine && isStudent() && U(p.author).role === "employer" && approvedEmp(p.author) ? `<a href="#" data-go="newmsg?to=${p.author}">Message</a>` : ""}${mine ? `<button type="button" data-do="del-post" data-id="${p.id}">Delete</button>` : ""}</div>` : ""}
+${p.status === "published" ? `<div class="acts"><button type="button" data-do="helpful" data-id="${p.id}"${helped ? ' class="on"' : ""}>Helpful · ${p.helpful.size}</button><button type="button" data-do="comments" data-id="${p.id}">Comments · ${p.comments.length}</button>${mine ? "" : `<button type="button" data-do="report-post" data-id="${p.id}">${p.reports.has(meId) ? "Reported" : "Report"}</button>`}${!mine && isStudent() && U(p.author).role === "employer" && approvedEmp(p.author) ? `<a href="#" data-go="newmsg?to=${p.author}">Message</a>` : ""}${mine ? `<button type="button" data-do="del-post" data-id="${p.id}">Delete</button>` : ""}</div>` : ""}
 ${open ? `<div class="comments">${p.comments.map(c => `<div class="comment"><b>${esc(who(c.author)[0])}</b> ${esc(c.body)} <span class="small faint">${ago(c.at)}</span></div>`).join("") || '<p class="faint small">No comments yet.</p>'}<form class="commentForm row" data-id="${p.id}" style="margin-top:8px"><label for="cm-${p.id}" class="hp">Comment</label><input id="cm-${p.id}" name="body" maxlength="500" required placeholder="Add a comment" style="flex:1;min-width:160px"><button class="b sm" type="submit">Comment</button></form></div>` : ""}</article>`; }).join("");
-  return head + composer + seg + (items || '<div class="empty">Nothing here yet. Start the conversation.</div>');
+  const tabs = `<nav class="fd-tabs" aria-label="Feed sections">${FEED_TABS.map(([k, label]) => `<a href="#" data-go="${feedUrl(k)}"${k === tab ? " aria-current=page" : ""}>${label}</a>`).join("")}</nav>`;
+  return `<div class="fd">${tabs}<div class="fd-grid"><div class="fd-main">${note}${lead}${items || empty}</div>${feedRail()}</div></div>`;
 };
 
 // ---- profiles ----
@@ -1316,6 +1376,7 @@ function exportData() {
     feed_posts: S.posts.filter(p => p.author === u.id).map(p => ({kind: p.kind, body: p.body, status: p.status})), resume_versions: S.versions.filter(v => v.user === u.id).map(v => v.name),
     applications: S.apps.filter(a => a.student === u.id).map(a => ({job_id: a.job, answers: a.answers, note: a.note, share_resume: a.share ? 1 : 0, created_at: new Date(a.at).toISOString()})),
     connections: S.conns.filter(c => c.a === u.id || c.b === u.id).map(c => ({user_a: c.a, user_b: c.b, requested_by: c.by, status: c.status, created_at: new Date(c.at).toISOString()})),
+    saved_posts: S.saves.filter(x => x.user === u.id).map(x => ({post_id: x.post, created_at: new Date(x.at).toISOString()})),
     follows: S.follows.filter(f => f.student === u.id).map(f => ({employer_id: f.employer, created_at: new Date(f.at).toISOString()}))};
   return JSON.stringify(d, (k, v) => v instanceof Set ? [...v] : v, 2);
 }
@@ -1606,7 +1667,9 @@ document.addEventListener("click", e => {
     helpful: () => { const p = S.posts.find(x => x.id === id); p.helpful.has(me().id) ? p.helpful.delete(me().id) : p.helpful.add(me().id); render(true); },
     comments: () => { S.openComments = S.openComments === id ? null : id; render(true); },
     "report-post": () => { const p = S.posts.find(x => x.id === id); if (!p.reports.has(me().id)) { p.reports.add(me().id); S.reports.push({what: "Feed post reported", by: me().id, text: p.body, at: NOW()}); if (p.reports.size >= 3) p.status = "held"; } render(true); },
-    "del-post": () => { S.posts = S.posts.filter(x => x.id !== id); render(true); },
+    save: () => { const p = S.posts.find(x => x.id === id); if (p && p.status === "published" && !isSaved(me().id, id) && S.saves.filter(x => x.user === me().id).length < MAX_SAVES) S.saves.push({user: me().id, post: id, at: NOW()}); render(true); },
+    unsave: () => { S.saves = S.saves.filter(x => !(x.user === me().id && x.post === id)); render(true); },
+    "del-post": () => { S.posts = S.posts.filter(x => x.id !== id); S.saves = S.saves.filter(x => x.post !== id); render(true); },
     export: () => { S.showExport = !S.showExport; render(true); },
     "emp-approve": () => { EP(id).status = "approved"; EP(id).approved_at = NOW(); mail(U(id).email, "Your organization was approved", "A reviewer approved your organization. You can now message students, browse the directory and post to the FSU feed.", null); render(true); },
     "emp-reject": () => { EP(id).status = "rejected"; EP(id).status_note = d.dataset.note; render(true); },
@@ -1760,6 +1823,7 @@ document.addEventListener("submit", e => {
   if (id === "deleteForm") {
     if (fd.get("password") !== me().pw) { flash("warning", "That password isn't right, so nothing was deleted."); return go("profile"); }
     const uid = me().id; S.users = S.users.filter(u => u.id !== uid); delete S.students[uid]; delete S.employers[uid];
+    const gone = new Set(S.posts.filter(p => p.author === uid).map(p => p.id)); S.saves = S.saves.filter(x => x.user !== uid && !gone.has(x.post));
     S.posts = S.posts.filter(p => p.author !== uid); S.posts.forEach(p => { p.comments = p.comments.filter(c => c.author !== uid); });
     S.convos.forEach(c => { c.messages.forEach(m => { if (m.from === uid) { m.body = ""; m.status = "removed"; } }); if (c.student === uid || c.employer === uid) c.blocked_by = uid; });
     S.versions = S.versions.filter(v => v.user !== uid); S.apps = S.apps.filter(a => a.student !== uid && a.employer !== uid);

@@ -560,6 +560,7 @@ def export(request: Request):
                 "resume_versions": store.rows(conn, "SELECT name, body, job_id, created_at FROM resume_versions WHERE user_id = ?", (user["id"],)),
                 "messages_sent": store.rows(conn, "SELECT conversation_id, body, created_at, status FROM messages WHERE sender_id = ?", (user["id"],)),
                 "feed_posts": store.rows(conn, "SELECT kind, body, link, status, created_at FROM posts WHERE author_id = ?", (user["id"],)),
+                "saved_posts": store.rows(conn, "SELECT post_id, created_at FROM post_saves WHERE user_id = ?", (user["id"],)),
                 "comments": store.rows(conn, "SELECT post_id, body, created_at FROM post_comments WHERE author_id = ?", (user["id"],)),
                 "applications": store.rows(conn, "SELECT job_id, answers, note, share_resume, created_at FROM applications WHERE student_id = ?", (user["id"],)),
                 "connections": store.rows(conn, "SELECT user_a, user_b, requested_by, status, created_at FROM connections WHERE user_a = ? OR user_b = ?", (user["id"], user["id"])),
