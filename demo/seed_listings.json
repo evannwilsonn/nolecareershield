@@ -1,0 +1,175 @@
+[
+ {
+  "id": 1,
+  "title": "Marketing Data Analyst",
+  "company": "Garnet Analytics",
+  "category": "Marketing",
+  "work_type": "hybrid",
+  "location": "Tallahassee, FL",
+  "description": "Build weekly campaign dashboards in Excel and SQL for our marketing team. Clean survey and ad-platform exports, flag anomalies, and present findings in a short Friday readout.\n\nRequirements: coursework in statistics or business analytics, comfort with spreadsheets. 15 hours per week during the semester. Pay is $19 per hour, paid biweekly through payroll.",
+  "apply_url": "https://example.com/garnet-analytics/careers",
+  "contact": "",
+  "state": "approved",
+  "score": 0,
+  "scam_status": "clear",
+  "findings": []
+ },
+ {
+  "id": 2,
+  "title": "Front Desk Assistant",
+  "company": "Bayside Dental",
+  "category": "Customer Service",
+  "work_type": "on-site",
+  "location": "Tampa, FL",
+  "description": "Greet patients, confirm appointments, answer the phone and keep the waiting area organized. Evenings and Saturdays. Training provided by our office manager.\n\nPay: $16 per hour. Please apply through our practice website.",
+  "apply_url": "https://example.com/bayside-dental/jobs",
+  "contact": "",
+  "state": "approved",
+  "score": 0,
+  "scam_status": "clear",
+  "findings": []
+ },
+ {
+  "id": 3,
+  "title": "Research Assistant, Survey Data",
+  "company": "Coastal Policy Lab",
+  "category": "Data & Analytics",
+  "work_type": "remote",
+  "location": "",
+  "description": "Help a small policy lab code open-ended survey responses and check them for consistency. You will work in a shared spreadsheet and meet with your supervisor once a week over video.\n\n10 hours per week, $17 per hour. Applicants should be enrolled students with strong attention to detail.",
+  "apply_url": "https://example.com/coastal-policy-lab/ra",
+  "contact": "lab@example.com",
+  "state": "approved",
+  "score": 0,
+  "scam_status": "clear",
+  "findings": []
+ },
+ {
+  "id": 4,
+  "title": "Warehouse Associate",
+  "company": "Panhandle Freight",
+  "category": "Operations & Warehouse",
+  "work_type": "on-site",
+  "location": "Tallahassee, FL",
+  "description": "Load and unload trucks, scan inbound pallets and keep aisles clear. Must be able to lift 50 lbs. Weekend shifts, 12 to 20 hours per week. $17.50 per hour.",
+  "apply_url": "https://example.com/panhandle-freight/work",
+  "contact": "",
+  "state": "approved",
+  "score": 0,
+  "scam_status": "clear",
+  "findings": []
+ },
+ {
+  "id": 5,
+  "title": "Remote Admin Assistant",
+  "company": "Brightpath Staffing",
+  "category": "Admin & Office",
+  "work_type": "remote",
+  "location": "",
+  "description": "Work from home on your own schedule. No experience needed and pay is $32 per hour. We hire immediately and interview by text message on Telegram, so you could start today. Reply now because spots fill fast.",
+  "apply_url": "https://example.com/brightpath/apply",
+  "contact": "",
+  "state": "approved",
+  "score": 56,
+  "scam_status": "flagged",
+  "findings": [
+   {
+    "severity": "warning",
+    "title": "Pushed onto a messaging app",
+    "why": "Moving to an unmonitored app right away avoids platform fraud detection and leaves no record."
+   },
+   {
+    "severity": "warning",
+    "title": "Interview by text only",
+    "why": "Scam operations avoid live video because they're using a stolen or invented identity."
+   },
+   {
+    "severity": "warning",
+    "title": "High pay for very little",
+    "why": "Pay well above market for a role needing no experience is bait, not an opportunity."
+   },
+   {
+    "severity": "warning",
+    "title": "Pressure to decide now",
+    "why": "Urgency is there to stop you checking. Real hiring runs on weeks, not hours."
+   }
+  ]
+ },
+ {
+  "id": 6,
+  "title": "Payments Processing Assistant",
+  "company": "QuickCash Staffing",
+  "category": "Admin & Office",
+  "work_type": "remote",
+  "location": "",
+  "description": "Earn $950 per week from home. We will mail you a check to deposit; keep your share and send the rest via gift cards for equipment. No experience needed. Text our manager on Telegram to start today.",
+  "apply_url": "https://example.com/quickcash/apply",
+  "contact": "",
+  "state": "pending",
+  "score": 99,
+  "scam_status": "held",
+  "findings": [
+   {
+    "severity": "critical",
+    "title": "The job involves moving money or packages",
+    "why": "Depositing checks and forwarding funds, or reshipping parcels, is how stolen money and goods get laundered."
+   },
+   {
+    "severity": "critical",
+    "title": "Payment through irreversible channels",
+    "why": "Gift cards, crypto, and peer-to-peer apps can't be reversed or traced. No payroll uses them."
+   },
+   {
+    "severity": "warning",
+    "title": "Pushed onto a messaging app",
+    "why": "Moving to an unmonitored app right away avoids platform fraud detection and leaves no record."
+   },
+   {
+    "severity": "warning",
+    "title": "High pay for very little",
+    "why": "Pay well above market for a role needing no experience is bait, not an opportunity."
+   },
+   {
+    "severity": "warning",
+    "title": "Pressure to decide now",
+    "why": "Urgency is there to stop you checking. Real hiring runs on weeks, not hours."
+   }
+  ]
+ },
+ {
+  "id": 7,
+  "title": "Finance Intern",
+  "company": "Capital Row Partners",
+  "category": "Finance & Accounting",
+  "work_type": "remote",
+  "location": "Tampa, FL",
+  "description": "Support the finance team with month-end reporting, reconcile vendor invoices and help prepare the quarterly budget review. Ten to fifteen hours per week. This is a paid internship at $18 per hour, processed through payroll after your I-9 and W-4 are completed.",
+  "apply_url": "https://example.com/capital-row/internships",
+  "contact": "",
+  "state": "pending",
+  "score": 0,
+  "scam_status": "clear",
+  "findings": []
+ },
+ {
+  "id": 8,
+  "title": "Sales Lead Specialist",
+  "company": "JobMatch Network",
+  "category": "Marketing",
+  "work_type": "remote",
+  "location": "",
+  "description": "Create a free profile to see the employer and apply to hundreds of similar openings. Sign up to unlock full job details. Our partners will contact you about matching roles. Click to view salary and apply on our partner site.",
+  "apply_url": "https://example.com/jobmatch/signup?ref=track123&utm_source=feed",
+  "contact": "",
+  "state": "pending",
+  "score": 0,
+  "scam_status": "flagged",
+  "findings": [
+   {
+    "severity": "warning",
+    "title": "Looks like an aggregator or lead-generation listing",
+    "why": "This looks like an aggregator or lead-generation listing: the link goes through a middleman, not the employer. It may collect your email and profile. Find the employer's own posting before you apply."
+   }
+  ]
+ }
+]
