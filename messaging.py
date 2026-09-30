@@ -24,8 +24,11 @@ import time
 from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+import css_msg  # noqa: F401  (appends the scheduling and template styles to ui.CSS)
 import mailer
 import msgcheck
+import msg_templates
+import scheduling
 import profiles
 import security
 import hiring
@@ -35,6 +38,9 @@ import web
 from ui import esc
 
 router = APIRouter()
+# /messages/templates must be matched before /messages/{cid}, so its routes go in first.
+router.include_router(msg_templates.router)
+router.include_router(scheduling.router)
 
 MAX_BODY = 4000
 NOTIFY_EVERY = 6 * 3600
@@ -128,6 +134,15 @@ def _notify(background: BackgroundTasks, conn, c: dict, sender: dict) -> None:
 
 # ---------- rendering ----------
 
+def _job_title(conn, c: dict) -> str:
+    if c.get("subject"):
+        return c["subject"]
+    if c.get("job_id"):
+        r = conn.execute("SELECT title FROM jobs WHERE id = ?", (c["job_id"],)).fetchone()
+        return r[0] if r else ""
+    return ""
+
+
 def _thread_list(conn, user: dict, active: int = 0) -> str:
     side = "student" if user["role"] == "student" else "employer"
     other = "employer_id" if side == "student" else "student_id"
@@ -184,7 +199,10 @@ def _inbox_page(conn, user: dict, c: dict | None = None, error: str = "", draft:
         right = ('<div class="convo" style="justify-content:center;align-items:center;padding:40px;text-align:center">'
                  f'<div>{ui.icon("chat", 34)}<p class="muted" style="margin-top:10px">Pick a conversation.</p>'
                  '<p class="small faint" style="margin-top:6px">Every message is scanned for scam signs. Links in messages are never clickable.</p></div></div>')
-        body = ui.page_head("Messages", num="Inbox") + f'<div class="inbox">{f"<div class=threads>{threads}</div>"}{right}</div>'
+        tools = ('<p class="msg-tools"><a class="b sm sec" href="/messages/templates">' + ui.icon("file", 14) + ' Message templates</a></p>'
+                 if user["role"] == "employer" else "")
+        body = (ui.page_head("Messages", num="Inbox") + scheduling.upcoming_block(conn, user) + tools +
+                f'<div class="inbox">{f"<div class=threads>{threads}</div>"}{right}</div>')
         return web.page(body, "Messages", active="/messages", js=True, status=status)
     other = c["employer_id"] if user["id"] == c["student_id"] else c["student_id"]
     name, sub, kind = web.display_name(conn, other)
@@ -193,19 +211,24 @@ def _inbox_page(conn, user: dict, c: dict | None = None, error: str = "", draft:
                       (c["id"], user["id"]))
     conn.execute("UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL AND status = 'delivered'",
                  (time.time(), c["id"], user["id"]))
-    bubbles = "".join(_bubble(message_json(m, user["id"])) for m in msgs) or '<p class="faint small" style="text-align:center">No messages yet.</p>'
+    # Interview cards and their system lines sit in the thread in time order with the messages.
+    items = [(m["created_at"], _bubble(message_json(m, user["id"]))) for m in msgs] + scheduling.thread_items(conn, c, user)
+    items.sort(key=lambda x: x[0])
+    bubbles = "".join(h for _, h in items) or '<p class="faint small" style="text-align:center">No messages yet.</p>'
     ok, why = can_send(conn, c, user)
     csrf = ui.user_csrf_input()
     last_id = msgs[-1]["id"] if msgs else 0
     err = f'<div class="banner warning" style="margin:10px 12px 0">{esc(error)}</div>' if error else ""
     if ok:
-        composer = (f'{err}<form class="composer" method="post" action="/messages/{int(c["id"])}/send" data-send="{int(c["id"])}">{csrf}'
+        tpl = msg_templates.picker(conn, user, c["student_id"], _job_title(conn, c), lambda tid: f"/messages/{int(c['id'])}?tpl={int(tid)}#m-body", "m-body")
+        composer = (f'{err}{f"<div class=tpl-bar>{tpl}</div>" if tpl else ""}<form class="composer" method="post" action="/messages/{int(c["id"])}/send" data-send="{int(c["id"])}">{csrf}'
                     f'<label for="m-body" class="hp">Message</label><textarea id="m-body" name="body" maxlength="{MAX_BODY}" required placeholder="Write a message" rows="1">{esc(draft)}</textarea>'
                     f'<button class="b" type="submit" aria-label="Send">{ui.icon("send", 16)}</button></form>')
     else:
         composer = f'<div class="composer"><span class="muted small">{esc(why)}</span></div>'
     blocked_by_me = c["blocked_by"] == user["id"]
-    actions = (f'<form method="post" action="/messages/{int(c["id"])}/{"unblock" if blocked_by_me else "block"}" class="navform">{csrf}'
+    actions = (scheduling.propose_button(conn, c, user) +
+               f'<form method="post" action="/messages/{int(c["id"])}/{"unblock" if blocked_by_me else "block"}" class="navform">{csrf}'
                f'<button class="b sm sec" type="submit">{"Unblock" if blocked_by_me else "Block"}</button></form>'
                f'<form method="post" action="/messages/{int(c["id"])}/report" class="navform">{csrf}<button class="b sm danger" type="submit">{ui.icon("flag", 14)} Report</button></form>'
                f'<form method="post" action="/messages/{int(c["id"])}/hide" class="navform">{csrf}<button class="b sm ghost" type="submit">Archive</button></form>')
@@ -229,7 +252,7 @@ def inbox(request: Request):
 
 
 @router.get("/messages/new", response_class=HTMLResponse)
-def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0, body: str = ""):
+def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0, body: str = "", tpl: int = 0):
     user = web.require_user(request)
     with store.db() as conn:
         ok, why = can_start(conn, user, to)
@@ -247,8 +270,14 @@ def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0, body:
         draft = ""
         if invite and jobrow and user["role"] == "employer":
             draft = hiring.invite_text(conn, user["id"], store.student_profile(conn, to) or {}, jobrow)
+        if not draft and tpl and user["role"] == "employer":      # "Insert template" without JS
+            t = msg_templates.get(conn, user["id"], tpl)
+            if t:
+                draft = msg_templates.filled(conn, t, employer_id, student_id, jobrow["title"] if jobrow else "")[:MAX_BODY]
         if not draft and body:                  # a draft handed over by the page that linked here (e.g. the resume studio's note)
             draft = security._CONTROL_CHARS_RE.sub("", body.replace("\r\n", "\n"))[:MAX_BODY]
+        picker = msg_templates.picker(conn, user, student_id, jobrow["title"] if jobrow else "",
+                                      msg_templates.new_message_href(to, jobrow["id"] if jobrow else 0), "n-body")
     about = f'<p class="small muted" style="margin:10px 0 0">About: <b>{esc(jobrow["title"])}</b></p>' if jobrow else ""
     tip = ("Introduce yourself and say which role you're interested in. Don't include your student ID, SSN or bank details. No real employer needs them in a first message."
            if user["role"] == "student" else
@@ -257,7 +286,7 @@ def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0, body:
             f'<div class="card" style="max-width:680px">{web.person(name, sub, kind)}{about}'
             f'<form method="post" action="/messages/new" style="margin-top:14px">{ui.user_csrf_input()}<input type="hidden" name="to" value="{int(to)}">'
             f'<input type="hidden" name="job" value="{int(jobrow["id"]) if jobrow else 0}">'
-            f'<div class="form-field"><label for="n-body">Message</label><textarea id="n-body" name="body" required maxlength="{MAX_BODY}" data-count>{esc(draft)}</textarea></div>'
+            f'<div class="form-field"><label for="n-body">Message</label>{picker}<textarea id="n-body" name="body" required maxlength="{MAX_BODY}" data-count>{esc(draft)}</textarea></div>'
             '<button class="submit-btn" type="submit">Send</button></form></div>')
     return web.page(body, "New message", active="/messages", js=True)
 
@@ -297,13 +326,18 @@ def new_send(request: Request, background: BackgroundTasks, to: int = Form(0), j
 
 
 @router.get("/messages/{cid}", response_class=HTMLResponse)
-def open_convo(cid: int, request: Request):
+def open_convo(cid: int, request: Request, tpl: int = 0):
     user = web.require_user(request)
     with store.db() as conn:
         c = get_convo(conn, cid, user)
         if not c:
             return web.page('<p class="empty" style="margin:40px 0">That conversation isn\'t available.</p>', "Messages", active="/messages", status=404)
-        return _inbox_page(conn, user, c)
+        draft = ""
+        if tpl and user["role"] == "employer" and user["id"] == c["employer_id"]:
+            t = msg_templates.get(conn, user["id"], tpl)
+            if t:                                   # "Insert template" without JS: the composer comes back filled in
+                draft = msg_templates.filled(conn, t, c["employer_id"], c["student_id"], _job_title(conn, c))[:MAX_BODY]
+        return _inbox_page(conn, user, c, draft=draft)
 
 
 def _send(request: Request, background: BackgroundTasks, cid: int, body: str, csrf: str):

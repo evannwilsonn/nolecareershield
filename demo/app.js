@@ -25,6 +25,7 @@ const ICONS = {
   people: '<circle cx="9" cy="9" r="3"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5"/><circle cx="16.5" cy="8" r="2.5"/><path d="M15.5 13.6c2.4-.3 4.4 1.1 5 3.9"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', flag: '<path d="M6 21V4"/><path d="M6 4h11l-2 4 2 4H6"/>',
   send: '<path d="M4 12 20 4l-5 16-3-7z"/>', check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  calendar: '<rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M4 10.5h16M8.5 3.5v4M15.5 3.5v4"/>',
 };
 const icon = (n, s) => `<svg class="ic" viewBox="0 0 24 24" width="${s || 18}" height="${s || 18}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 
@@ -66,7 +67,8 @@ const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [], dismissed: {}, suggs: {},
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, mailN: 0, itemN: 0, applyClicks: new Set(), timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null, mems: [], csPins: {}};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, mailN: 0, itemN: 0, applyClicks: new Set(), timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null, mems: [], csPins: {},
+       ivs: [], ivEvents: [], ivN: 0, ivDraft: null, tpls: [], tplSeeded: {}, tplDraft: null, tplErr: null, tplEditErr: null};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -145,6 +147,12 @@ function reset() {
   addMsg(c1, 4, "Hi Jordan, yes it is! Could you do a 20-minute video call Thursday afternoon? You can also apply on our careers page so HR has your resume.", t - 3000e3);
   const c2 = convo(j.id, 5, 0); addMsg(c2, 5, "Hello! We have a remote assistant opening. Text me on WhatsApp at 850-555-0142 so we can move faster, HR is swamped this week.", t - 1800e3);
   c1.messages.forEach(x => x.read = true); c2.messages.forEach(x => x.read = false);
+  // Garnet Analytics followed up with interview times (scheduling.py): Jordan can pick one in the thread.
+  { const e = toET(t), day = k => { const d = new Date(Date.UTC(e.y, e.mo - 1, e.d + k)); return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()]; };
+    const at = (k, h, mi) => fromET(...day(k), h, mi);
+    const sp = {id: ++S.ivN, c: c1.id, format: "video", location: "https://garnetanalytics.zoom.us/j/84261930475", note: "You'll meet Pat and our analytics lead. We'll talk through a SQL report you've built.",
+      status: "open", chosen: null, snote: "", at: t - 2900e3, slots: [[2, 14, 0, 30], [3, 10, 30, 30], [5, 15, 0, 45]].map(([k, h, mi, min]) => ({id: ++S.ivN, at: at(k, h, mi), min}))};
+    S.ivs.push(sp); S.ivEvents.push({c: c1.id, p: sp.id, text: "Garnet Analytics proposed 3 interview times.", at: t - 2900e3 + 1}); }
   // Each new message also sent Jordan an email; the in-site Emails page keeps a copy of both.
   const noteMail = (eid, at, read) => { mail(j.email, "You have a new message on NoleCareerShield", `${(EP(eid) || {}).company || "An employer"} sent you a message on NoleCareerShield.\n\nRead it on the site. We never put message text in emails, so an email that includes a "message" and asks you to reply is not from us.`, null); Object.assign(S.inbox[0], {at, read}); };
   noteMail(4, t - 3600e3, true); noteMail(5, t - 1800e3, false);
@@ -390,7 +398,7 @@ function nav() {
   if (me()) $("#navActions").innerHTML = extra + `<span class="who">${esc(me().email)}</span><button class="ghostbtn" type="button" data-do="logout">Log out</button>` + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "");
   else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="employers">For employers</a>';
 }
-const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages", tailor: "resume", standout: "resume", optimized: "resume",
+const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages", interview: "messages", templates: "messages", tailor: "resume", standout: "resume", optimized: "resume",
   resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", network: "network", applications: "applications", emails: "emails", easy: "jobs", u: "", company: "", about: "", privacy: "", report: ""};
 
 // ---------------- pages ----------------
@@ -1627,16 +1635,18 @@ P.messages = () => {
   if (!c) right = `<div class="convo" style="justify-content:center;align-items:center;padding:40px;text-align:center"><div><h3 class="sec" style="margin-top:0">Pick a conversation</h3><p class="small muted">${isStudent() ? "Message an approved employer from any listing or company page." : "Message students from the directory."}</p></div></div>`;
   else {
     const other = c.student === me().id ? c.employer : c.student;
-    const bubbles = c.messages.filter(m => m.status === "delivered" || m.from === me().id).map(m => {
+    const bubbles = c.messages.filter(m => m.status === "delivered" || m.from === me().id).map(m => [m.at, (() => {
       const mine = m.from === me().id, flag = !mine && ["review", "caution"].includes(m.band);
       const pre = flag ? `<div class="scanbox${m.band === "review" ? " bad" : ""}"><b>${m.band === "review" ? "⚠ Our scanner found scam signals in this message." : "Heads up: a couple of things in this message are worth checking."}</b><ul>${m.findings.slice(0, 4).map(t => `<li>${esc(t)}</li>`).join("")}</ul><a href="#" data-go="scam?m=${m.id}">See the full check →</a></div>` : "";
-      return `${pre}<div class="bubble ${mine ? "me" : "them"}${flag ? " flag" : ""}">${esc(m.body)}<span class="meta">${ago(m.at)}${!mine && !flag ? ` · <a href="#" data-go="scam?m=${m.id}" style="color:inherit">Is this a scam?</a>` : ""}</span>${m.status === "held" ? "<span class=\"meta\">Held for a safety review. A reviewer checks it before it's delivered.</span>" : ""}</div>`; }).join("");
+      return `${pre}<div class="bubble ${mine ? "me" : "them"}${flag ? " flag" : ""}">${esc(m.body)}<span class="meta">${ago(m.at)}${!mine && !flag ? ` · <a href="#" data-go="scam?m=${m.id}" style="color:inherit">Is this a scam?</a>` : ""}</span>${m.status === "held" ? "<span class=\"meta\">Held for a safety review. A reviewer checks it before it's delivered.</span>" : ""}</div>`; })()])
+      .concat(ivThreadItems(c)).sort((a, b) => a[0] - b[0]).map(x => x[1]).join("");
     const closed = c.blocked_by ? `<div class="composer"><p class="small muted">${c.blocked_by === me().id ? "You blocked this conversation." : "This conversation is closed."}</p>${c.blocked_by === me().id ? '<button class="b sm sec" type="button" data-do="unblock">Unblock</button>' : ""}</div>`
-      : `<form class="composer" id="sendForm"><label for="m-body" class="hp">Message</label><textarea id="m-body" name="body" maxlength="4000" required placeholder="Write a message" rows="1"></textarea><button class="b" type="submit" aria-label="Send">${icon("send", 16)}</button></form>`;
-    right = `<div class="convo"><div class="convo-head">${person(other)}<div class="row">${c.blocked_by ? "" : '<button class="b sm sec" type="button" data-do="block">Block</button>'}<button class="b sm danger" type="button" data-do="report-convo">${icon("flag", 14)} Report</button><button class="b sm ghost" type="button" data-do="archive">Archive</button></div></div>
+      : (isEmployer() ? `<div class="tpl-bar">${tplPicker(c.student, ivJob(c), "m-body")}</div>` : "") + `<form class="composer" id="sendForm"><label for="m-body" class="hp">Message</label><textarea id="m-body" name="body" maxlength="4000" required placeholder="Write a message" rows="1"></textarea><button class="b" type="submit" aria-label="Send">${icon("send", 16)}</button></form>`;
+    right = `<div class="convo"><div class="convo-head">${person(other)}<div class="row">${canPropose(c) ? `<a class="b sm" href="#" data-go="interview?c=${c.id}">${icon("calendar", 14)} Propose interview times</a>` : ""}${c.blocked_by ? "" : '<button class="b sm sec" type="button" data-do="block">Block</button>'}<button class="b sm danger" type="button" data-do="report-convo">${icon("flag", 14)} Report</button><button class="b sm ghost" type="button" data-do="archive">Archive</button></div></div>
 <div class="thread" id="thread">${bubbles}</div>${closed}</div>`;
   }
-  return (c ? '<a class="back" href="#" data-go="messages">← All messages</a>' : pageHead("Messages", "Students and approved employers only. Every message is scanned for scam signs when it's sent.", "Messages")) + takeFlash() +
+  return (c ? '<a class="back" href="#" data-go="messages">← All messages</a>' : pageHead("Messages", "Students and approved employers only. Every message is scanned for scam signs when it's sent.", "Messages") + upcomingBlock()
+      + (isEmployer() ? `<p class="msg-tools"><a class="b sm sec" href="#" data-go="templates">${icon("file", 14)} Message templates</a></p>` : "")) + takeFlash() +
     `<div class="inbox${c ? " open" : ""}"><div class="threads">${threads}</div>${right}</div><p class="small faint" style="margin-top:10px">Links in messages aren't clickable. Never send money, gift cards or bank details to get a job. <a href="#" data-go="scam?kind=message">Check a message</a></p>`;
 };
 P.newmsg = () => {
@@ -1645,7 +1655,7 @@ P.newmsg = () => {
   const [ok, why] = canStart(me(), to);
   if (!ok) return pageHead("New message") + banner("info", why) + '<a class="b sec" href="#" data-go="messages">Messages</a>';
   return pageHead("New message", "", "Messages") + `<div class="card" style="max-width:640px">${person(to)}${job ? `<p class="small muted" style="margin-top:8px">About: ${esc(job.title)}</p>` : ""}
-<form id="newMsgForm" data-to="${to}" data-job="${job ? job.id : 0}" style="margin-top:12px"><div class="form-field"><label for="n-body">Message</label><textarea id="n-body" name="body" required maxlength="4000">${isStudent() && S.route.q.body ? esc(String(S.route.q.body).slice(0, 4000)) : isStudent() && job ? esc(`Hi! I'm interested in the ${job.title} role. `) : isEmployer() && job && S.route.q.invite ? esc(inviteText(me().id, SP(to), job)) : ""}</textarea></div><button class="submit-btn" type="submit">Send</button></form></div>`;
+<form id="newMsgForm" data-to="${to}" data-job="${job ? job.id : 0}" style="margin-top:12px"><div class="form-field"><label for="n-body">Message</label>${tplPicker(to, job ? job.title : "", "n-body")}<textarea id="n-body" name="body" required maxlength="4000">${isStudent() && S.route.q.body ? esc(String(S.route.q.body).slice(0, 4000)) : isStudent() && job ? esc(`Hi! I'm interested in the ${job.title} role. `) : isEmployer() && job && S.route.q.invite ? esc(inviteText(me().id, SP(to), job)) : ""}</textarea></div><button class="submit-btn" type="submit">Send</button></form></div>`;
 };
 function canStart(sender, to) {
   const u = U(to); if (!u || to === sender.id) return [false, "That account isn't available."];
@@ -1656,6 +1666,197 @@ function canStart(sender, to) {
   if (!p.visible && !S.convos.some(c => c.student === to && c.employer === sender.id) && !S.apps.some(a => a.student === to && a.employer === sender.id)) return [false, "That student isn't accepting messages from employers."];
   return [true, ""];
 }
+// ---- interview scheduling + message templates (twins of scheduling.py and msg_templates.py) ----
+// Times are shown in Eastern Time (America/New_York) with the same DST rule as the site: second Sunday of March to the
+// first Sunday of November. Meeting links from zoom.us, teams.microsoft.com and meet.google.com are clickable; others are plain text.
+const IV_FORMATS = {video: "Video call", phone: "Phone call", in_person: "In person"}, IV_DUR = [15, 30, 45, 60], IV_MAX = 5, IV_TZ = "America/New_York";
+const IV_LOC_MAX = 300, IV_NOTE_MAX = 1000, IV_SNOTE_MAX = 500, IV_AHEAD_DAYS = 180, IV_BAD_LINKS = ["chat_link", "short_link", "ip_link", "fsu_lookalike_link"];
+const IV_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], IV_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const nthSunday = (y, m, n) => 1 + (7 - new Date(Date.UTC(y, m - 1, 1)).getUTCDay()) % 7 + 7 * (n - 1);
+function etOffset(ms) { const y = new Date(ms).getUTCFullYear(); return ms >= Date.UTC(y, 2, nthSunday(y, 3, 2), 7) && ms < Date.UTC(y, 10, nthSunday(y, 11, 1), 6) ? -4 : -5; }
+function toET(ms) { const d = new Date(ms + etOffset(ms) * 3600e3); return {y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), wd: (d.getUTCDay() + 6) % 7}; }
+function fromET(y, mo, d, h, mi) { const local = Date.UTC(y, mo - 1, d, h, mi), dst = local >= Date.UTC(y, 2, nthSunday(y, 3, 2), 2) && local < Date.UTC(y, 10, nthSunday(y, 11, 1), 2); return local + (dst ? 4 : 5) * 3600e3; }
+const etISO = ms => { const e = toET(ms); return `${e.y}-${String(e.mo).padStart(2, "0")}-${String(e.d).padStart(2, "0")}`; };
+const ivHM = (e, ampm) => `${e.h % 12 || 12}:${String(e.mi).padStart(2, "0")}` + (ampm ? (e.h < 12 ? " AM" : " PM") : "");
+const ivDay = ms => { const e = toET(ms); return `${IV_DAYS[e.wd]}, ${IV_MONTHS[e.mo - 1]} ${e.d}`; };
+const ivRange = (ms, min) => { const a = toET(ms), b = toET(ms + min * 60e3), same = (a.h < 12) === (b.h < 12); return `${ivHM(a, !same)} – ${ivHM(b, true)} ET`; };
+const ivSlotText = (ms, min) => `${ivDay(ms)} · ${ivRange(ms, min)}`;
+function meetingLink(loc) {
+  const s = String(loc || "").trim(); if (!/^https:\/\/[^\s<>"']+$/.test(s)) return null;
+  let u; try { u = new URL(s); } catch (e) { return null; }
+  if (u.username || u.password || u.port) return null;
+  const h = u.hostname.toLowerCase();
+  return h === "zoom.us" || h.endsWith(".zoom.us") || h === "teams.microsoft.com" || h === "meet.google.com" ? s : null;
+}
+const ivLocHtml = loc => { const l = meetingLink(loc); return l ? `<a href="${esc(l)}" target="_blank" rel="noopener noreferrer">${esc(l)}</a>` : esc(loc); };
+function ivScanProblem(text, loc) {
+  if (!(text || loc)) return "";
+  if (["block", "review"].includes(N.check((text + "\n" + (loc || "")).trim()).band)) return "That text matches scam patterns (for example asking for money, bank details or a chat on another app), so it can't be sent.";
+  if (N.linkFindings((loc || "") + "\n" + text).some(f => IV_BAD_LINKS.includes(f.rule_id))) return "Use a meeting link from Zoom, Microsoft Teams or Google Meet, or your own company's site. Chat-app, shortened and look-alike links aren't allowed.";
+  return "";
+}
+function ivParseSlots(g) {
+  const out = [], now = NOW();
+  for (let i = 1; i <= IV_MAX; i++) {
+    const d = g("d" + i), t = g("t" + i), m = Number(g("m" + i) || 30);
+    if (!d && !t) continue;
+    if (!d || !t) return [[], `Time ${i} needs both a date and a start time.`];
+    const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d), tm = /^(\d{2}):(\d{2})$/.exec(t);
+    if (!dm || !tm) return [[], `Time ${i} isn't a valid date and time.`];
+    if (!IV_DUR.includes(m)) return [[], "Pick a length of 15, 30, 45 or 60 minutes."];
+    const at = fromET(+dm[1], +dm[2], +dm[3], +tm[1], +tm[2]);
+    if (at < now + 10 * 60e3) return [[], `Time ${i} is in the past. Pick a time later than now.`];
+    if (at > now + IV_AHEAD_DAYS * 864e5) return [[], `Time ${i} is more than ${IV_AHEAD_DAYS} days away.`];
+    if (!out.some(x => Math.abs(x.at - at) < 1000)) out.push({at, min: m});
+  }
+  if (!out.length) return [[], "Add at least one time."];
+  return [out.sort((a, b) => a.at - b.at).slice(0, IV_MAX), ""];
+}
+function ivEvent(p, text) { const c = S.convos.find(x => x.id === p.c); S.ivEvents.push({c: p.c, p: p.id, text, at: NOW()}); if (c) { c.last = NOW(); c.hidden = {}; } }
+const ivMailFoot = "\n\nWe never put meeting links, addresses or message text in emails. If an email that looks like ours asks you to click a different link or send personal details, it isn't from us.";
+const ivMail = (uid, subject, body) => { const u = U(uid); if (u) mail(u.email, subject, body + ivMailFoot, null); };
+const ivJob = c => { const j = c.job && S.jobs.find(x => x.id === c.job); return j ? j.title : ""; };
+function ivPropose(c, fmt, loc, note, slots) {
+  const live = S.ivs.filter(p => p.c === c.id && ["open", "confirmed", "declined"].includes(p.status)); live.forEach(p => { p.status = "rescheduled"; });
+  const p = {id: ++S.ivN, c: c.id, format: fmt, location: loc, note, status: "open", chosen: null, snote: "", at: NOW(),
+    slots: slots.map(s => ({id: ++S.ivN, at: s.at, min: s.min}))};
+  S.ivs.push(p);
+  const en = who(c.employer)[0], job = ivJob(c), again = live.length > 0;
+  ivEvent(p, `${en} proposed ${again ? "new " : ""}${slots.length} interview time${slots.length !== 1 ? "s" : ""}.`);
+  ivMail(c.student, `${en} proposed ${again ? "new " : ""}interview times`, `${en} proposed ${again ? "new " : ""}interview times${job ? " for " + job : ""} (${IV_FORMATS[fmt].toLowerCase()}):\n\n${p.slots.map(s => "  - " + ivSlotText(s.at, s.min)).join("\n")}\n\nAll times are Eastern Time. Pick the one that works for you on NoleCareerShield, in Messages.`);
+  return p;
+}
+function upcomingInterviews(uid) {        // twin of scheduling.upcoming_interviews
+  return S.ivs.filter(p => p.status === "confirmed").map(p => { const c = S.convos.find(x => x.id === p.c), s = p.slots.find(x => x.id === p.chosen); return {p, c, s}; })
+    .filter(x => x.c && x.s && (x.c.student === uid || x.c.employer === uid) && x.s.at + x.s.min * 60e3 > NOW()).sort((a, b) => a.s.at - b.s.at).slice(0, 5)
+    .map(({p, c, s}) => { const other = c.student === uid ? c.employer : c.student; return {p, c, when: ivSlotText(s.at, s.min), other: who(other)[0], job: ivJob(c), fmt: IV_FORMATS[p.format]}; });
+}
+function upcomingBlock() {
+  const items = upcomingInterviews(me().id); if (!items.length) return "";
+  return `<section class="iv-up" aria-labelledby="iv-up-h"><h2 id="iv-up-h">${icon("calendar", 16)} Upcoming interviews</h2><ul>${items.map(i => `<li><a class="iv-up-main" href="#" data-go="messages?c=${i.c.id}"><span class="iv-up-when">${esc(i.when)}</span><span class="iv-up-who">${esc(i.other)}${i.job ? " · " + esc(i.job) : ""} · ${esc(i.fmt)}</span></a><button class="b sm ghost" type="button" data-do="iv-ics" data-id="${i.p.id}">${icon("calendar", 14)} .ics</button></li>`).join("")}</ul></section>`;
+}
+const IV_STATUS = {open: ["Interview times proposed", "gold"], confirmed: ["Interview confirmed", "ok"], declined: ["None of these times worked", ""], cancelled: ["Interview cancelled", ""], rescheduled: ["Replaced by new times", ""]};
+function ivCard(c, p) {
+  const isStu = me().id === c.student, isEmp = me().id === c.employer, now = NOW(), [head, tone] = IV_STATUS[p.status], chosen = p.slots.find(s => s.id === p.chosen);
+  const top = `<div class="iv-top"><span class="iv-ic">${icon("calendar", 18)}</span><div class="iv-h"><b>${esc(head)}</b><span class="iv-sub">${esc(IV_FORMATS[p.format])} · Eastern Time</span></div><span class="pill ${tone}">${esc(p.status[0].toUpperCase() + p.status.slice(1))}</span></div>`;
+  if (p.status === "rescheduled") return `<div class="iv-card iv-muted" id="iv-${p.id}">${top}</div>`;
+  const parts = [top];
+  if (p.status === "confirmed" && chosen) parts.push(`<p class="iv-when">${esc(ivSlotText(chosen.at, chosen.min))}</p>`);
+  else if (p.status === "open") {
+    parts.push(`<ul class="iv-slots">${p.slots.map(s => { const past = s.at <= now, label = `<span class="iv-d">${esc(ivDay(s.at))}</span><span class="iv-t">${esc(ivRange(s.at, s.min))} · ${s.min} min</span>`;
+      return isStu && !past ? `<li><button type="button" class="iv-slot" data-do="iv-pick" data-id="${p.id}" data-slot="${s.id}">${label}<span class="iv-go">Pick</span></button></li>`
+        : `<li><div class="iv-slot${past ? " past" : ""}">${label}<span class="iv-go">${past ? "Passed" : ""}</span></div></li>`; }).join("")}</ul>`);
+    if (p.slots.every(s => s.at <= now)) parts.push('<p class="iv-note small muted">All of these times have passed.</p>');
+  } else if (p.status === "cancelled" && chosen) parts.push(`<p class="iv-when iv-strike">${esc(ivSlotText(chosen.at, chosen.min))}</p>`);
+  if (["open", "confirmed"].includes(p.status) && p.location) parts.push(`<p class="iv-loc"><span class="iv-k">${{video: "Meeting link", phone: "Phone", in_person: "Where"}[p.format]}</span> <span class="iv-v">${ivLocHtml(p.location)}</span></p>`);
+  if (p.note && ["open", "confirmed"].includes(p.status)) parts.push(`<p class="iv-msg">${esc(p.note)}</p>`);
+  if (p.status === "declined" && p.snote) parts.push(`<p class="iv-msg"><span class="iv-k">Note</span> ${esc(p.snote)}</p>`);
+  const acts = [];
+  if (p.status === "confirmed" && chosen) acts.push(`<button class="b sm" type="button" data-do="iv-ics" data-id="${p.id}">${icon("calendar", 14)} Add to calendar (.ics)</button>`);
+  if (isStu && p.status === "open") acts.push(`<details class="iv-none"><summary class="b sm ghost">None of these work</summary><form id="ivDecline" data-id="${p.id}"><label for="ivn-${p.id}">Note (optional)</label><textarea id="ivn-${p.id}" name="note" maxlength="${IV_SNOTE_MAX}" rows="2" placeholder="For example: I'm free weekday afternoons after 3."></textarea><button class="b sm sec" type="submit">Send</button></form></details>`);
+  if (isEmp && ["open", "confirmed", "declined"].includes(p.status)) {
+    acts.push(`<a class="b sm sec" href="#" data-go="interview?c=${c.id}&amp;re=${p.id}">${p.status === "declined" ? "Propose new times" : "Reschedule"}</a>`);
+    if (p.status !== "declined") acts.push(`<button class="b sm ghost" type="button" data-do="iv-cancel" data-id="${p.id}">Cancel interview</button>`);
+  }
+  if (acts.length) parts.push(`<div class="iv-acts">${acts.join("")}</div>`);
+  return `<div class="iv-card${p.status === "confirmed" ? " iv-ok" : ""}" id="iv-${p.id}">${parts.join("")}</div>`;
+}
+const ivThreadItems = c => S.ivs.filter(p => p.c === c.id).map(p => [p.at, ivCard(c, p)])
+  .concat(S.ivEvents.filter(e => e.c === c.id).map(e => [e.at, `<div class="iv-sys" role="note">${icon("calendar", 13)} <span>${esc(e.text)}</span></div>`]));
+const canPropose = c => isEmployer() && me().id === c.employer && approvedEmp(me().id) && !c.blocked_by;
+P.interview = () => {
+  if (!me()) return needLogin("messages");
+  const c = S.convos.find(x => x.id === Number(S.route.q.c) && (x.student === me().id || x.employer === me().id));
+  if (!c) return pageHead("Messages") + banner("info", "That conversation isn't available.");
+  if (!canPropose(c)) return pageHead("Propose interview times") + banner("info", isEmployer() && !approvedEmp(me().id) ? "Scheduling opens once a reviewer approves your organization." : c.blocked_by ? "This conversation is closed." : "Only the employer in this conversation can propose interview times.") + `<a class="b sec" href="#" data-go="messages?c=${c.id}">Back to the conversation</a>`;
+  const re = Number(S.route.q.re || 0), old = re ? S.ivs.find(p => p.id === re && p.c === c.id) : null;
+  const v = S.ivDraft && S.ivDraft.c === c.id ? S.ivDraft : Object.assign({re}, old ? {format: old.format, location: old.location, note: old.note} : {});
+  const today = etISO(NOW()), last = etISO(NOW() + IV_AHEAD_DAYS * 864e5);
+  const rows = Array.from({length: IV_MAX}, (_, k) => { const i = k + 1, m = String(v["m" + i] || "30");
+    return `<fieldset class="iv-row"><legend>Time ${i}${i > 1 ? " (optional)" : ""}</legend><div><label for="d${i}">Date</label><input id="d${i}" type="date" name="d${i}" min="${today}" max="${last}" value="${esc(v["d" + i] || "")}"${i === 1 ? " required" : ""}></div><div><label for="t${i}">Start (ET)</label><input id="t${i}" type="time" name="t${i}" step="300" value="${esc(v["t" + i] || "")}"${i === 1 ? " required" : ""}></div><div><label for="m${i}">Length</label><select id="m${i}" name="m${i}">${IV_DUR.map(d => `<option value="${d}"${String(d) === m ? " selected" : ""}>${d} min</option>`).join("")}</select></div></fieldset>`; }).join("");
+  const fmt = v.format || "video";
+  const chips = Object.entries(IV_FORMATS).map(([k, lab]) => `<label class="chk"><input type="radio" name="format" value="${k}"${k === fmt ? " checked" : ""}><span>${esc(lab)}</span></label>`).join("");
+  return `<a class="back" href="#" data-go="messages?c=${c.id}">← Back to the conversation</a>` + pageHead(re ? "Reschedule the interview" : "Propose interview times", `Offer ${esc(who(c.student)[0])} up to ${IV_MAX} times. They pick one in Messages, and you both get the confirmed time by email with a calendar file.`, "Messages") + takeFlash()
+    + `<form class="card iv-form" id="ivForm" data-c="${c.id}" data-re="${re}"><p class="iv-tz">${icon("calendar", 15)} All times are Eastern Time (${IV_TZ}).</p>${rows}
+<div class="form-field"><span class="lbl" id="fmt-l">Format</span><div class="checks" role="radiogroup" aria-labelledby="fmt-l">${chips}</div></div>
+<div class="form-field"><label for="iv-loc">Meeting link, phone details or address</label><p class="hint">Zoom, Microsoft Teams and Google Meet links are clickable for the student; anything else shows as plain text. For a phone call, say who calls whom. Don't ask for the student's phone number here; they can share it in a message.</p><input id="iv-loc" name="location" maxlength="${IV_LOC_MAX}" value="${esc(v.location || "")}" placeholder="https://zoom.us/j/… or 123 College Ave, Suite 4"></div>
+<div class="form-field"><label for="iv-note">Note (optional)</label><textarea id="iv-note" name="note" maxlength="${IV_NOTE_MAX}" rows="3" placeholder="Who they'll meet and what to prepare.">${esc(v.note || "")}</textarea></div>
+<p class="small faint">The note and location are scanned like every message. Anything asking for money, bank details or a chat on another app is blocked.</p>
+<div class="row"><button class="b" type="submit">${icon("send", 15)} Send times</button><a class="b ghost" href="#" data-go="messages?c=${c.id}">Cancel</a></div></form>`;
+};
+function ivSubmit(f, g) {
+  const c = S.convos.find(x => x.id === Number(f.dataset.c)); if (!c || !canPropose(c)) return go("messages");
+  const v = {c: c.id, re: Number(f.dataset.re || 0), format: g("format"), location: g("location").replace(/\s+/g, " ").slice(0, IV_LOC_MAX), note: g("note").slice(0, IV_NOTE_MAX)};
+  for (let i = 1; i <= IV_MAX; i++) { v["d" + i] = g("d" + i); v["t" + i] = g("t" + i); v["m" + i] = g("m" + i); }
+  let [slots, err] = ivParseSlots(g);
+  const fmt = IV_FORMATS[v.format] ? v.format : "";
+  if (!err && !fmt) err = "Pick a format: video, phone or in person.";
+  if (!err && fmt === "video" && !v.location) err = "Add the meeting link for the video call.";
+  if (!err && fmt === "in_person" && !v.location) err = "Add the address for the in-person interview.";
+  if (!err && fmt === "video" && /^http:\/\//i.test(v.location)) err = "Use an https:// meeting link.";
+  if (!err) err = ivScanProblem(v.note, v.location);
+  if (err) { S.ivDraft = v; flash("warning", err); return render(); }
+  S.ivDraft = null;
+  const p = ivPropose(c, fmt, v.location, v.note, slots);
+  flash("verified", `Sent ${slots.length} time${slots.length !== 1 ? "s" : ""}. ${who(c.student)[0]} picks one here; you'll both get an email when it's confirmed.`);
+  go(`messages?c=${c.id}#iv-${p.id}`);
+}
+function ivDownload(p) {
+  const c = S.convos.find(x => x.id === p.c), s = p.slots.find(x => x.id === p.chosen); if (!c || !s) return;
+  const st = ms => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, ""), tx = t => String(t || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+  const other = me().id === c.student ? who(c.employer)[0] : who(c.student)[0], job = ivJob(c), link = meetingLink(p.location);
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//NoleCareerShield//Interviews//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "BEGIN:VEVENT",
+    `UID:interview-${p.id}-${s.id}@nolecareershield.demo`, `DTSTAMP:${st(NOW())}`, `DTSTART:${st(s.at)}`, `DTEND:${st(s.at + s.min * 60e3)}`,
+    `SUMMARY:${tx("Interview with " + other + (job ? ": " + job : ""))}`, `DESCRIPTION:${tx(IV_FORMATS[p.format] + " scheduled on NoleCareerShield." + (p.note ? "\n" + p.note : ""))}`]
+    .concat(p.location ? [`LOCATION:${tx(p.location)}`] : [], link ? [`URL:${link}`] : [], ["STATUS:CONFIRMED", "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:Interview reminder", "TRIGGER:-PT30M", "END:VALARM", "END:VEVENT", "END:VCALENDAR"]);
+  try {
+    const url = URL.createObjectURL(new Blob([lines.join("\r\n") + "\r\n"], {type: "text/calendar"})), a = document.createElement("a");
+    a.href = url; a.download = `interview-${p.id}.ics`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { flash("info", "Downloads are blocked in this preview. On the site the calendar file downloads directly."); render(true); }
+}
+// Message templates. Four defaults are added once per employer; deleted ones don't come back.
+const TPL_MAX = 30, TPL_TITLE = 80, TPL_BODY = 2000;
+const TPL_DEFAULTS = [
+  ["Thanks for applying", "Hi {first_name},\n\nThanks for applying to the {job_title} role at {company}. We're reviewing applications now and will get back to you within a week about next steps.\n\nThanks again for your interest!"],
+  ["Next steps", "Hi {first_name},\n\nThanks again for your interest in {job_title}. The next step is a short interview with our team. I'll send a few times here in Messages; pick whichever works best for you. If none of them fit, just let me know."],
+  ["Not moving forward", "Hi {first_name},\n\nThank you for applying for {job_title} at {company}, and for the time you put into it. After careful review, we've decided not to move forward with your application for this role. It was a hard decision, and it isn't a reflection of your potential.\n\nWe'd be glad to see you apply for future openings. Best of luck in your search."],
+  ["Interview confirmation", "Hi {first_name},\n\nYour interview for {job_title} at {company} is confirmed. The time and details are in this conversation, and you can add it to your calendar from there. Let me know here if anything changes. Looking forward to talking!"]];
+function myTemplates(eid) {
+  if (!S.tplSeeded[eid]) { S.tplSeeded[eid] = true; S.tpls.push(...TPL_DEFAULTS.map(([title, body]) => ({id: ++S.ivN, emp: eid, title, body}))); }
+  return S.tpls.filter(t => t.emp === eid).slice(0, TPL_MAX);
+}
+function tplFill(body, sid, jobTitle) {
+  const first = ((SP(sid) || {}).display_name || "").split(/\s+/)[0] || "there", co = (EP(me().id) || {}).company || "our team";
+  return body.replace(/\{first_name\}/g, first).replace(/\{job_title\}/g, jobTitle || "this role").replace(/\{company\}/g, co);
+}
+function tplPicker(sid, jobTitle, target) {
+  if (!isEmployer()) return "";
+  const items = myTemplates(me().id).map(t => { const f = tplFill(t.body, sid, jobTitle); return `<li><a href="#" data-do="tpl-insert" data-for="${target}" data-fill="${esc(f)}"><b>${esc(t.title)}</b><span>${esc(f.replace(/\n/g, " ").slice(0, 90))}</span></a></li>`; }).join("") || '<li class="tpl-empty">No templates yet.</li>';
+  return `<details class="tpl-pick"><summary>${icon("file", 14)} Insert template</summary><ul class="tpl-list">${items}</ul><a class="tpl-manage" href="#" data-go="templates">Manage templates →</a></details>`;
+}
+function tplValidate(title, body) {
+  title = title.replace(/\s+/g, " ").trim(); body = body.trim();
+  if (!title) return [title, body, "Give the template a title."];
+  if (title.length > TPL_TITLE) return [title, body, `Titles can be up to ${TPL_TITLE} characters.`];
+  if (!body) return [title, body, "Write the template text."];
+  if (body.length > TPL_BODY) return [title, body, "Templates can be up to 2,000 characters."];
+  const plain = body.replace(/\{first_name\}/g, "there").replace(/\{job_title\}/g, "this role").replace(/\{company\}/g, "our team");
+  if (N.check(plain).band === "block") return [title, body, "That text matches scam patterns (for example asking for money, bank details, check deposits or a chat on another app), so it can't be saved."];
+  return [title, body, ""];
+}
+P.templates = () => {
+  if (!me()) return needLogin("messages", "employer");
+  if (!isEmployer()) return pageHead("Message templates") + banner("info", "That page is for employers.");
+  const tpls = myTemplates(me().id), full = tpls.length >= TPL_MAX, d = S.tplDraft || {}, openId = S.tplEditErr ? S.tplEditErr[0] : 0;
+  const cards = tpls.map(t => `<article class="tpl-card" id="t${t.id}"><details${openId === t.id ? " open" : ""}><summary><span class="tpl-t">${esc(t.title)}</span><span class="tpl-b">${esc(t.body.replace(/\n/g, " ").slice(0, 140))}</span><span class="tpl-edit">Edit</span></summary>${openId === t.id ? banner("warning", S.tplEditErr[1]) : ""}
+<form id="tplEdit" data-id="${t.id}"><div class="form-field"><label for="tt${t.id}">Title</label><input id="tt${t.id}" name="title" maxlength="${TPL_TITLE}" required value="${esc(t.title)}"></div><div class="form-field"><label for="tb${t.id}">Text</label><textarea id="tb${t.id}" name="body" maxlength="${TPL_BODY}" required rows="6">${esc(t.body)}</textarea></div><div class="row"><button class="b sm" type="submit">Save</button></div></form>
+<form class="tpl-del"><button class="b sm ghost" type="button" data-do="tpl-del" data-id="${t.id}">Delete</button></form></details></article>`).join("") || "<p class=muted>No templates. Add one.</p>";
+  S.tplEditErr = null;
+  const err = S.tplErr || ""; S.tplErr = null; S.tplDraft = null;
+  const add = full ? "" : `<form class="card tpl-new" id="tplNew"><h2>New template</h2>${err ? banner("warning", err) : ""}<div class="form-field"><label for="nt-title">Title</label><input id="nt-title" name="title" maxlength="${TPL_TITLE}" required value="${esc(d.title || "")}" placeholder="Following up"></div><div class="form-field"><label for="nt-body">Text</label><textarea id="nt-body" name="body" maxlength="${TPL_BODY}" required rows="6" placeholder="Hi {first_name}, …">${esc(d.body || "")}</textarea></div><button class="b" type="submit">Save template</button></form>`;
+  return '<a class="back" href="#" data-go="messages">← Messages</a>' + pageHead("Message templates", "Saved replies you can drop into any conversation. <code>{first_name}</code>, <code>{job_title}</code> and <code>{company}</code> are filled in when you insert one.", "Messages")
+    + takeFlash() + (full && err ? banner("warning", err) : "") + `<p class="small muted tpl-count">${tpls.length} of ${TPL_MAX} templates. Every template is scanned for scam patterns when you save it.</p><div class="tpl-grid"><div class="tpl-cards">${cards}</div>${add}</div>`;
+};
 const REPLIES = ["Thanks for reaching out! I'll take a look and get back to you by the end of the week.", "Great to hear from you. Could you send your resume through our careers page so HR has it on file?",
   "Thanks! Are you available for a quick 15-minute call Thursday or Friday afternoon?"];
 function sendMessage(c, text) {
@@ -2628,6 +2829,23 @@ document.addEventListener("click", e => {
     "del-version": () => { S.versions = S.versions.filter(x => x.id !== id); render(true); },
     block: () => { c.blocked_by = me().id; render(true); }, unblock: () => { c.blocked_by = null; render(true); },
     archive: () => { c.hidden[me().id] = true; go("messages"); },
+    "iv-pick": () => { const p = S.ivs.find(x => x.id === id), cv = p && S.convos.find(x => x.id === p.c); if (!p || !cv || cv.student !== me().id || cv.blocked_by) return;
+      if (p.status !== "open") { flash("info", "These times aren't open any more."); return render(true); }
+      const sl = p.slots.find(x => x.id === Number(d.dataset.slot)); if (!sl) return;
+      if (sl.at <= NOW()) { flash("warning", "That time has already passed. Pick another, or tell them none of these work."); return render(true); }
+      p.status = "confirmed"; p.chosen = sl.id; const when = ivSlotText(sl.at, sl.min), sn = who(cv.student)[0], en = who(cv.employer)[0], job = ivJob(cv);
+      ivEvent(p, `${sn} picked ${when}. Interview confirmed.`);
+      [[cv.student, en], [cv.employer, sn]].forEach(([uid, other]) => ivMail(uid, `Interview confirmed: ${when}`, `Your interview is confirmed.\n\nWhen: ${when} (${IV_TZ})\nFormat: ${IV_FORMATS[p.format]}\nWith: ${other}\n${job ? "Role: " + job + "\n" : ""}\nThe meeting details and a calendar file (.ics) are in the conversation.`));
+      flash("verified", `Interview confirmed for ${when}. You both got an email, and you can add it to your calendar below.`); render(true); },
+    "iv-cancel": () => { const p = S.ivs.find(x => x.id === id), cv = p && S.convos.find(x => x.id === p.c); if (!p || !cv || cv.employer !== me().id || !["open", "confirmed"].includes(p.status)) return;
+      const sl = p.status === "confirmed" ? p.slots.find(x => x.id === p.chosen) : null, when = sl ? ivSlotText(sl.at, sl.min) : "", en = who(cv.employer)[0], job = ivJob(cv);
+      p.status = "cancelled"; ivEvent(p, `${en} cancelled the interview${when ? " on " + when : ""}.`);
+      ivMail(cv.student, `${en} cancelled the interview`, `${en} cancelled the interview${when ? " on " + when : ""}${job ? " for " + job : ""}. If you added it to your calendar, remove it.`); render(true); },
+    "iv-ics": () => { const p = S.ivs.find(x => x.id === id); if (p && p.status === "confirmed") ivDownload(p); },
+    "tpl-insert": () => { const box = document.getElementById(d.dataset.for); if (!box) return; const t = d.dataset.fill || "";
+      if (box.value.trim() && typeof box.selectionStart === "number") { const a = box.selectionStart, b = box.selectionEnd; box.value = box.value.slice(0, a) + t + box.value.slice(b); box.selectionStart = box.selectionEnd = a + t.length; } else box.value = t;
+      box.value = box.value.slice(0, 4000); const det = d.closest("details"); if (det) det.removeAttribute("open"); box.focus(); },
+    "tpl-del": () => { S.tpls = S.tpls.filter(t => !(t.id === id && t.emp === me().id)); flash("verified", "Template deleted."); render(true); },
     "report-convo": () => { const last = c.messages.filter(m => m.from !== me().id).pop(); S.reports.push({what: "Conversation reported", by: me().id, employer: isStudent() ? c.employer : null, text: last ? last.body : "(no messages)", at: NOW()}); flash("verified", "Reported. A reviewer will look at this conversation. You can also block the sender."); render(true); },
     helpful: () => { const p = S.posts.find(x => x.id === id); p.helpful.has(me().id) ? p.helpful.delete(me().id) : p.helpful.add(me().id); render(true); },
     comments: () => { S.openComments = S.openComments === id ? null : id; render(true); },
@@ -2806,10 +3024,26 @@ document.addEventListener("submit", e => {
     S.posts = S.posts.filter(p => p.author !== uid); S.posts.forEach(p => { p.comments = p.comments.filter(c => c.author !== uid); });
     S.convos.forEach(c => { c.messages.forEach(m => { if (m.from === uid) { m.body = ""; m.status = "removed"; } }); if (c.student === uid || c.employer === uid) c.blocked_by = uid; });
     S.versions = S.versions.filter(v => v.user !== uid); S.apps = S.apps.filter(a => a.student !== uid && a.employer !== uid);
-    S.conns = S.conns.filter(c => c.a !== uid && c.b !== uid); S.follows = S.follows.filter(x => x.student !== uid && x.employer !== uid); S.savedJobs = S.savedJobs.filter(x => x.user !== uid); S.mems = (S.mems || []).filter(m => m.user !== uid); S.session = null;
+    S.conns = S.conns.filter(c => c.a !== uid && c.b !== uid); S.follows = S.follows.filter(x => x.student !== uid && x.employer !== uid); S.savedJobs = S.savedJobs.filter(x => x.user !== uid); S.mems = (S.mems || []).filter(m => m.user !== uid);
+    const ivc = new Set(S.convos.filter(c => c.student === uid || c.employer === uid).map(c => c.id)); S.ivs = S.ivs.filter(p => !ivc.has(p.c)); S.ivEvents = S.ivEvents.filter(e => !ivc.has(e.c));
+    S.tpls = S.tpls.filter(t => t.emp !== uid); delete S.tplSeeded[uid]; S.session = null;
     flash("verified", "Your account is deleted. Your profile, resume, posts and comments are gone, and the messages you sent were blanked."); S.route = {name: "about", q: {}}; return render();
   }
   // messaging
+  if (id === "ivForm") return ivSubmit(f, g);
+  if (id === "ivDecline") { const p = S.ivs.find(x => x.id === Number(f.dataset.id)), cv = p && S.convos.find(x => x.id === p.c); if (!p || !cv || cv.student !== me().id || p.status !== "open" || cv.blocked_by) return;
+    const note = g("note").slice(0, IV_SNOTE_MAX), bad = ivScanProblem(note, ""); if (bad) { flash("warning", bad); return render(true); }
+    p.status = "declined"; p.snote = note; const sn = who(cv.student)[0], job = ivJob(cv);
+    ivEvent(p, `${sn} said none of these times work${note ? " and left a note" : ""}.`);
+    ivMail(cv.employer, `${sn} needs different interview times`, `${sn} said none of the interview times you proposed${job ? " for " + job : ""} work.${note ? " They left a note in the conversation." : ""}\n\nPropose new times on NoleCareerShield, in Messages.`);
+    return render(true); }
+  if (id === "tplNew" || id === "tplEdit") {
+    const [title, body, err0] = tplValidate(g("title"), String(fd.get("body") || "")); let err = err0;
+    if (id === "tplNew" && !err && myTemplates(me().id).length >= TPL_MAX) err = `You can keep up to ${TPL_MAX} templates. Delete one to add another.`;
+    if (err) { if (id === "tplNew") { S.tplErr = err; S.tplDraft = {title, body}; } else S.tplEditErr = [Number(f.dataset.id), err]; return render(true); }
+    if (id === "tplNew") S.tpls.push({id: ++S.ivN, emp: me().id, title, body});
+    else { const t = S.tpls.find(x => x.id === Number(f.dataset.id) && x.emp === me().id); if (t) { t.title = title; t.body = body; } }
+    flash("verified", id === "tplNew" ? "Template added." : "Template saved."); return render(true); }
   if (id === "sendForm") { const c = S.convos.find(x => x.id === S.route.q.c), t = g("body"); if (!t || !c || c.blocked_by) return; sendMessage(c, t.slice(0, 4000)); return render(true); }
   if (id === "newMsgForm") { const to = Number(f.dataset.to), job = Number(f.dataset.job), t = g("body"); if (!t) return;
     const [ok, why] = canStart(me(), to); if (!ok) { flash("info", why); return go("messages"); }

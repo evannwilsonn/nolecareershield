@@ -572,7 +572,12 @@ def export(request: Request):
                 "assistant_chats": [dict(c, messages=store.rows(conn, "SELECT role, text, feedback, created_at FROM assistant_msgs WHERE chat_id = ? ORDER BY id", (c["id"],)))
                                     for c in store.rows(conn, "SELECT id, title, created_at, updated_at FROM assistant_chats WHERE user_id = ? ORDER BY id", (user["id"],))],
                 "assistant_memory": store.rows(conn, "SELECT fact, chat_id, created_at FROM assistant_memory WHERE user_id = ? ORDER BY id", (user["id"],)),
-                "job_listings": store.rows(conn, "SELECT title, company, description, review_status, created_at FROM jobs WHERE employer_id = ?", (user["id"],))}
+                "interviews": [dict(p, slots=store.rows(conn, "SELECT id, starts_at, minutes FROM interview_slots WHERE proposal_id = ? ORDER BY starts_at", (p["id"],)))
+                               for p in store.rows(conn, "SELECT id, conversation_id, employer_id, student_id, format, location, note, status, chosen_slot, "
+                                                         "student_note, created_at, updated_at FROM interview_proposals WHERE student_id = ? OR employer_id = ? ORDER BY id",
+                                                   (user["id"], user["id"]))],
+                "message_templates": store.rows(conn, "SELECT title, body, created_at, updated_at FROM message_templates WHERE employer_id = ? ORDER BY id", (user["id"],)),
+                "job_listings": store.rows(conn,"SELECT title, company, description, review_status, created_at FROM jobs WHERE employer_id = ?", (user["id"],))}
     return Response(json.dumps(data, indent=2, default=str), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="nolecareershield-my-data.json"', "Cache-Control": "no-store"})
 

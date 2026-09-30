@@ -336,6 +336,54 @@ CREATE TABLE IF NOT EXISTS assistant_pins (
     pinned INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (user_id, chat_id, job_id)
 );
+-- Interview scheduling inside Messages (scheduling.py). An employer proposes 1-5 slots; the student picks one.
+-- status: open | confirmed | declined | cancelled | rescheduled. Times are UTC epoch seconds.
+CREATE TABLE IF NOT EXISTS interview_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    employer_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    format TEXT NOT NULL DEFAULT 'video',
+    location TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    chosen_slot INTEGER,
+    student_note TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_iv_convo ON interview_proposals (conversation_id, id);
+CREATE INDEX IF NOT EXISTS idx_iv_student ON interview_proposals (student_id, status);
+CREATE INDEX IF NOT EXISTS idx_iv_employer ON interview_proposals (employer_id, status);
+CREATE TABLE IF NOT EXISTS interview_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id INTEGER NOT NULL,
+    starts_at REAL NOT NULL,
+    minutes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ivslot_p ON interview_slots (proposal_id);
+-- The in-thread system lines ("Jordan picked Tue, Oct 6 at 2:00 PM ET").
+CREATE TABLE IF NOT EXISTS interview_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id INTEGER NOT NULL,
+    conversation_id INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ivev_convo ON interview_events (conversation_id, id);
+-- Employers' saved replies (msg_templates.py). template_seeds marks that the four defaults were added once.
+CREATE TABLE IF NOT EXISTS message_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employer_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mtpl_emp ON message_templates (employer_id, id);
+CREATE TABLE IF NOT EXISTS template_seeds (
+    employer_id INTEGER PRIMARY KEY
+);
 """
 
 
@@ -383,6 +431,12 @@ def purge(conn) -> None:
     conn.execute("DELETE FROM assistant_pins WHERE chat_id NOT IN (SELECT id FROM assistant_chats)")
     # Assistant memories go when the account does, or after a year without being refreshed.
     conn.execute("DELETE FROM assistant_memory WHERE created_at < ?", (now - 365 * 86400,))
+    # Interviews go with their conversation, or 180 days after their last proposed time.
+    conn.execute("DELETE FROM interview_proposals WHERE conversation_id NOT IN (SELECT id FROM conversations)")
+    conn.execute("DELETE FROM interview_proposals WHERE updated_at < ? AND COALESCE((SELECT MAX(starts_at) FROM interview_slots s "
+                 "WHERE s.proposal_id = interview_proposals.id), 0) < ?", (now - 180 * 86400, now - 180 * 86400))
+    conn.execute("DELETE FROM interview_slots WHERE proposal_id NOT IN (SELECT id FROM interview_proposals)")
+    conn.execute("DELETE FROM interview_events WHERE proposal_id NOT IN (SELECT id FROM interview_proposals)")
     conn.commit()
 
 
@@ -420,6 +474,12 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM assistant_chats WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_memory WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_pins WHERE user_id = ?", (user_id,))
+    for (pid,) in conn.execute("SELECT id FROM interview_proposals WHERE student_id = ? OR employer_id = ?", (user_id, user_id)).fetchall():
+        conn.execute("DELETE FROM interview_slots WHERE proposal_id = ?", (pid,))
+        conn.execute("DELETE FROM interview_events WHERE proposal_id = ?", (pid,))
+    conn.execute("DELETE FROM interview_proposals WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
+    conn.execute("DELETE FROM message_templates WHERE employer_id = ?", (user_id,))
+    conn.execute("DELETE FROM template_seeds WHERE employer_id = ?", (user_id,))
     conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_tokens WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE jobs SET employer_id = NULL WHERE employer_id = ?", (user_id,))

@@ -42,6 +42,25 @@
     });
   });
 
+  // Messages: "Insert template" drops the filled-in text into the composer instead of reloading the page
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest ? e.target.closest("a[data-tpl-fill]") : null;
+    if (!a) return;
+    var box = document.getElementById(a.getAttribute("data-tpl-for") || "");
+    if (!box) return;
+    e.preventDefault();
+    var t = a.getAttribute("data-tpl-fill") || "", max = parseInt(box.getAttribute("maxlength") || "0", 10);
+    if (box.value.trim() && typeof box.selectionStart === "number") {
+      var s = box.selectionStart, en = box.selectionEnd;
+      box.value = box.value.slice(0, s) + t + box.value.slice(en);
+      box.selectionStart = box.selectionEnd = s + t.length;
+    } else { box.value = t; }
+    if (max && box.value.length > max) box.value = box.value.slice(0, max);
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    var d = a.closest("details"); if (d) d.removeAttribute("open");
+    box.focus();
+  });
+
   // Enter sends, Shift+Enter adds a line (chat and messages)
   function enterSends(textarea, form) {
     textarea.addEventListener("keydown", function (e) {

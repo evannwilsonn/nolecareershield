@@ -29,6 +29,7 @@ os.environ.setdefault("ENV", "development")
 import css_assist  # noqa: E402
 import ui  # noqa: E402
 import css_feed  # noqa: E402,F401  (appends the feed styles to ui.CSS)
+import css_msg  # noqa: E402,F401  (appends the interview and template styles to ui.CSS)
 
 TITLE = "NoleCareerShield Demo"
 
