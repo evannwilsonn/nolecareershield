@@ -40,3 +40,80 @@ services:
         value: "40"
       - key: AI_SITE_DAILY_LIMIT
         value: "3000"
+      - key: AI_MODEL
+        value: claude-sonnet-5-5
+      # ---- scam intel (optional: each outside check stays off until its key is set) ----
+      - key: INTEL_NETWORK
+        value: "1"
+      - key: INDICATOR_KEY          # empty = derived from SECRET_KEY; changing it later forgets stored contact details
+        sync: false
+      - key: URLHAUS_AUTH_KEY
+        sync: false
+      - key: SPAMHAUS_DQS_KEY
+        sync: false
+      - key: CHAINABUSE_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      # ---- sharing confirmed-scam details with partner schools (SHARE_HMAC_KEY must match theirs) ----
+      - key: SHARE_HMAC_KEY
+        sync: false
+      - key: SHARE_FEED_KEY
+        generateValue: true
+      - key: SHARE_SOURCE_NAME
+        value: NoleCareerShield (FSU)
+      - key: PEER_FEEDS
+        sync: false
+      - key: ARCHIVE_FEEDS
+        sync: false
+      # ---- forward-by-email checks and the decoy desk (decoys stay off until FSU legal signs off) ----
+      - key: INBOUND_EMAIL_TOKEN
+        generateValue: true
+      - key: DECOY_ENABLED
+        sync: false
+      # ---- scam model: retraining, staged release, measurement (defaults) ----
+      - key: SCAM_MODEL
+        value: "on"
+      - key: MODEL_AUTO_RELEASE
+        value: "1"
+      - key: RETRAIN_DAYS
+        value: "30"
+      - key: RETRAIN_MIN_NEW
+        value: "20"
+      - key: RETRAIN_EVIDENCE_MIN
+        value: "30"
+      - key: RETRAIN_CAMPAIGN_MIN
+        value: "3"
+      - key: RETRAIN_MIN_GAP_DAYS
+        value: "3"
+      - key: RETRAIN_WAVE_CAP
+        value: "3"
+      - key: RELEASE_SHADOW_DAYS
+        value: "7"
+      - key: RELEASE_STAGES
+        value: "10,50,100"
+      - key: RELEASE_STAGE_DAYS
+        value: "3"
+      - key: RELEASE_WATCH_DAYS
+        value: "14"
+      - key: RELEASE_FRESH_MIN
+        value: "5"
+      - key: RELEASE_TRAFFIC_MIN
+        value: "30"
+      - key: RELEASE_FP_MAX_RATE
+        value: "0.02"
+      - key: LOW_RISK_SAMPLE_RATE
+        value: "0.03"
+      - key: LOW_RISK_SAMPLE_DAILY_MAX
+        value: "8"
+      # ---- FSU single sign-on (leave empty until FSU ITS registers the app) ----
+      - key: SSO_NAME
+        value: FSU
+      - key: SSO_TENANT_ID
+        sync: false
+      - key: SSO_CLIENT_ID
+        sync: false
+      - key: SSO_CLIENT_SECRET
+        sync: false

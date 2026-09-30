@@ -23,7 +23,8 @@ FSU mail is strict. Send only from a domain whose SPF and DKIM records are verif
    - `CONTACT_EMAIL`: shown on the Privacy and Report pages.
    - `BASE_URL`: the public address, such as `https://nolecareershield.onrender.com`. Every email link is built from this.
    - `SMTP_*`: the values from step 1.
-   - `SECRET_KEY` is generated for you.
+   - `SECRET_KEY`, `SHARE_FEED_KEY` and `INBOUND_EMAIL_TOKEN` are generated for you.
+   - Render also asks for the optional keys listed under step 4 (scam intel, partner sharing, SSO, the decoy desk). Leave any of them empty to keep that feature off.
 4. Deploy. Then open `/healthz`, which should say `ok`.
 
 ## 3. Check it works
@@ -34,6 +35,12 @@ FSU mail is strict. Send only from a domain whose SPF and DKIM records are verif
 ## 4. Optional
 - **AI features:** create a key at console.anthropic.com, set a monthly spend limit there, and add it as `ANTHROPIC_API_KEY`. `AI_DAILY_LIMIT` (per person, default 40) and `AI_SITE_DAILY_LIMIT` (default 3000) cap usage. Without a key everything still works on the built-in engines.
 - **Bot check:** create a Cloudflare Turnstile widget for your hostname and add `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET`.
+- **Scam intel:** `INTEL_NETWORK=1` (set by the blueprint) turns on domain age, SPF/DMARC, link expansion and the daily look-alike-domain watch. `URLHAUS_AUTH_KEY`, `SPAMHAUS_DQS_KEY`, `CHAINABUSE_API_KEY` and `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` each switch on one outside check. `INDICATOR_KEY` is optional (empty = derived from `SECRET_KEY`); set it only on a fresh install, because changing it later forgets the stored contact details.
+- **Partner schools:** `SHARE_HMAC_KEY` (the same value at every school), `SHARE_FEED_KEY` (generated; give it to partners), `SHARE_SOURCE_NAME`, and `PEER_FEEDS` (`https://their-site/api/indicators|their-key`, comma-separated). `ARCHIVE_FEEDS` adds RSS/Atom feeds of published scams to the label queue weekly.
+- **Forward-by-email:** point SendGrid or Mailgun inbound parse at `{BASE_URL}/inbound/email?token=<INBOUND_EMAIL_TOKEN>`.
+- **Scam model:** the blueprint sets the defaults (`SCAM_MODEL`, `MODEL_AUTO_RELEASE`, `RETRAIN_*`, `RELEASE_*`, `LOW_RISK_SAMPLE_*`); `.env.example` explains each. `MODEL_AUTO_RELEASE=0` makes every release step wait for a reviewer. `SCAM_MODEL=off` runs rules only.
+- **Decoy desk:** leave `DECOY_ENABLED` empty until FSU legal has signed off.
+- **FSU single sign-on:** once FSU ITS registers the app, set `SSO_TENANT_ID`, `SSO_CLIENT_ID` and `SSO_CLIENT_SECRET`.
 - **Custom domain:** add it in Render → Settings → Custom Domains, then update `BASE_URL`.
 
 ## Backups

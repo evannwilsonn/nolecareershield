@@ -217,6 +217,9 @@ Built around "emerging scam → verified evidence → candidate update → evalu
 
 ## Next / waiting on someone
 
+Every setting the code reads is listed in `.env.example` (with defaults), declared in `render.yaml` (secrets as prompts, optional ones can stay empty) and explained in `DEPLOY.md` step 4 and the README table.
+
+
 1. **FSU single sign-on:** ask FSU ITS to register NoleCareerShield in FSU's Microsoft Entra tenant with redirect URI
    `https://<site>/sso/callback`, then set `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` on Render.
 2. Decide whether students keep the three privacy toggles (visible to employers, share resume, allow messages).

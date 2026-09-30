@@ -163,6 +163,12 @@ sensitive is in the code or the repository.
 | `TRUST_PROXY` | `1` behind one proxy | Use the proxy's client IP for rate limits |
 | `LISTING_TTL_DAYS` | 90 | How long approved listings show |
 | `PURGE_REJECTED_DAYS` | 90 | Retention for rejected/removed rows |
+| `ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_DAILY_LIMIT`, `AI_SITE_DAILY_LIMIT` | optional | AI for the career assistant, resume tools and the scam check's second opinion, with per-person and site-wide daily caps |
+| `INTEL_NETWORK`, `INDICATOR_KEY`, `URLHAUS_AUTH_KEY`, `SPAMHAUS_DQS_KEY`, `CHAINABUSE_API_KEY`, `TWILIO_*` | optional | Scam intel: network lookups, the hashed contact-detail memory, and outside reputation checks |
+| `SHARE_HMAC_KEY`, `SHARE_FEED_KEY`, `SHARE_SOURCE_NAME`, `PEER_FEEDS`, `ARCHIVE_FEEDS` | optional | Sharing confirmed-scam details with partner schools and pulling public scam feeds |
+| `INBOUND_EMAIL_TOKEN`, `DECOY_ENABLED` | optional | Forward-by-email checks; the decoy desk (off until FSU legal signs off) |
+| `SCAM_MODEL`, `SCAM_RULEPACK_EXTRA`, `MODEL_AUTO_RELEASE`, `RETRAIN_*`, `RELEASE_*`, `LOW_RISK_SAMPLE_*` | defaults in `.env.example` | The learned model, hot-fix rules, retraining triggers, staged release and random sampling of safe results |
+| `SSO_NAME`, `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` | optional | FSU single sign-on |
 
 In production the app **refuses to start** if `ADMIN_PASSWORD`, `SECRET_KEY`,
 `CONTACT_EMAIL`, `BASE_URL` (https) or the SMTP settings are missing or weak. Without
@@ -180,7 +186,7 @@ audience, expiry and tenant, and that the address is exactly @fsu.edu.
 
 A `Dockerfile` and Render blueprint (`render.yaml`) are included. On Render:
 New > Blueprint > pick this repo, enter `ADMIN_PASSWORD`, `CONTACT_EMAIL`,
-`BASE_URL`, `SMTP_HOST` and `SMTP_FROM` (plus `SMTP_USER`/`SMTP_PASSWORD`) when prompted, then attach your domain. TLS is terminated by the host. Railway
+`BASE_URL`, `SMTP_HOST` and `SMTP_FROM` (plus `SMTP_USER`/`SMTP_PASSWORD`) when prompted (the optional keys can stay empty; see `DEPLOY.md`), then attach your domain. TLS is terminated by the host. Railway
 and Fly.io work the same way from the Dockerfile; set the variables above and
 mount a volume at `/data`. Static hosts (Wix, GitHub Pages) cannot run this.
 
