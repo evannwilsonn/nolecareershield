@@ -41,22 +41,36 @@ people who posted (redact victim names/emails).
 One JSON object per line in a `.jsonl` file, matching the seed:
 
 ```json
-{"label": "scam", "title": "...", "company": "...", "description": "..."}
+{"label": "scam", "title": "...", "company": "...", "description": "...",
+ "url": "a -> b", "context_flags": [], "notes": "..."}
 ```
 
-`label` is `scam` or `legit`. `company` can be empty. Put the full posting or
-message text in `description`.
+`label` is `scam`, `lead_gen` (an aggregator wrapping a real job) or `legit`.
+`company` can be empty. Put ONLY the posting or message text in `description`:
+exactly what a user would paste. Your own observations ("the recruiter dodged my
+question", "signup wall", "same script from other accounts") go in `notes`, and,
+where the detector has a matching flag, in `context_flags`. Text you observed but
+did not receive from the poster must never be in `description`, or the detector
+gets to read your answer key. (The first version of this project's corpus made that
+mistake; `data/real_corpus_original_annotated.jsonl` is kept as the record and
+`data/real_corpus_clean.jsonl` is the fixed version.)
+
+Keep a separate file for anything you write yourself (synthetic examples) and
+never mix it into the real set.
 
 ## Then measure
 
 ```bash
 python -m scam_detector.tools.evaluate data/your_real_corpus.jsonl --threshold review
+python -m scam_detector.tools.regress          # the pass/fail gate across all corpora
 ```
 
 Read the misclassifications it prints. Each false positive is a rule that's too
-aggressive; each false negative is a tactic you're missing. Adjust weights and
-phrases in `rules.py`, re-run, repeat. Keep the corpus fixed while you tune, or
-you're just fitting to noise.
+aggressive; each false negative is a tactic you're missing. Add or adjust rules in
+`rulepack/core.json` (see `ADAPTING.md`), re-run, repeat. Keep a corpus you have
+NOT looked at while writing rules; once you have read an example, it is a
+development example and no longer a test. Copying phrases out of your test rows
+into the rules is how this project first reached a fake precision of 1.000.
 
 ## What a good result looks like
 

@@ -1,0 +1,799 @@
+"""Security and behavior tests. Run: python -m pytest -q"""
+import os, re, sys, importlib, sqlite3, time
+from contextlib import closing
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.setenv("ADMIN_PASSWORD", "correct-horse-battery")
+    monkeypatch.setenv("SECRET_KEY", "x" * 40)
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setenv("CONTACT_EMAIL", "ops@example.org")
+    monkeypatch.setenv("OUTBOX_LOG", str(tmp_path / "outbox.log"))
+    for k in ("SMTP_HOST", "SMTP_FROM", "TURNSTILE_SITE_KEY", "TURNSTILE_SECRET"):
+        monkeypatch.delenv(k, raising=False)
+    for m in ("security", "app"):
+        sys.modules.pop(m, None)
+    import security, app as appmod, accounts, mailer
+    from fastapi.testclient import TestClient
+    for lim in security.ALL_LIMITERS:
+        lim.reset_all()
+    mailer.outbox.clear()
+    with TestClient(appmod.app, follow_redirects=False) as c:
+        c.appmod, c.security, c.accounts, c.mailer = appmod, security, accounts, mailer
+        yield c
+
+
+def csrf_from(html):
+    # The nav can hold a log-out form (its own token) ahead of the page's form, so take the last one.
+    return re.findall(r'name="csrf" value="([^"]+)"', html)[-1]
+
+
+PW = "Str0ng!pass"
+
+
+def make_verified(client, role, email, pw=PW):
+    with closing(sqlite3.connect(client.appmod.DB_PATH)) as db:
+        uid = client.accounts.create_user(db, email, role, pw)
+        client.accounts.mark_verified(db, uid)
+    return uid
+
+
+def user_login(client, role, email, pw=PW, **over):
+    tok = csrf_from(client.get(f"/login/{role}").text)
+    data = {"email": email, "password": pw, "csrf": tok, "next": ""}
+    data.update(over)
+    return client.post(f"/login/{role}", data=data)
+
+
+def ensure_employer(client, email="boss@acme.example"):
+    if not getattr(client, "_employer", None):
+        make_verified(client, "employer", email)
+        assert user_login(client, "employer", email).status_code == 303
+        client._employer = email
+
+
+def mail_link(client, path):
+    """The most recent emailed link whose path starts with `path`, e.g. '/verify'."""
+    for m in reversed(client.mailer.outbox):
+        hit = re.search(re.escape(client.appmod.BASE_URL) + r"(" + re.escape(path) + r"\?token=[\w-]+)", m["body"])
+        if hit:
+            return hit.group(1)
+    raise AssertionError(f"no {path} link in outbox: {[m['subject'] for m in client.mailer.outbox]}")
+
+
+def submit(client, **over):
+    ensure_employer(client)
+    tok = csrf_from(client.get("/post").text)
+    data = dict(title="Data Analyst", company="Acme", category="Other", work_type="remote",
+                location="", description="Analyze data using SQL.", apply_url="https://acme.com/j",
+                contact="", csrf=tok, website="")
+    data.update(over)
+    return client.post("/post", data=data)
+
+
+def login(client, pw="correct-horse-battery"):
+    tok = csrf_from(client.get("/admin").text)
+    return client.post("/admin/login", data={"password": pw, "csrf": tok})
+
+
+def test_public_pages_ok(client):
+    for path in ("/", "/jobs", "/post", "/about", "/privacy", "/report", "/healthz", "/robots.txt"):
+        assert client.get(path).status_code == 200, path
+
+
+def test_docs_disabled(client):
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404
+
+
+def test_security_headers(client):
+    h = client.get("/").headers
+    assert "default-src 'none'" in h["content-security-policy"]
+    assert h["x-frame-options"] == "DENY"
+    assert h["x-content-type-options"] == "nosniff"
+    assert client.get("/admin").headers["cache-control"] == "no-store"
+
+
+def test_no_external_resources_or_cookies_for_visitors(client):
+    r = client.get("/jobs")
+    assert "googleapis" not in r.text and "<script" not in r.text
+    assert "set-cookie" not in r.headers
+
+
+def test_submission_requires_valid_csrf(client):
+    r = client.post("/post", data=dict(title="t", company="c", work_type="remote",
+                                       description="d", csrf="bad"))
+    assert r.status_code == 400
+
+
+def test_submission_is_pending_not_public(client):
+    assert submit(client).status_code == 200
+    assert "Data Analyst" not in client.get("/jobs").text
+
+
+def test_honeypot_stores_nothing(client):
+    submit(client, website="http://spam")
+    assert client.appmod.pending_count() == 0
+
+
+@pytest.mark.parametrize("field,value", [
+    ("title", "x" * 201), ("description", "x" * 8001),
+    ("apply_url", "javascript:alert(1)"), ("work_type", "<script>"),
+])
+def test_bad_input_rejected(client, field, value):
+    assert submit(client, **{field: value}).status_code == 400
+
+
+def test_xss_is_escaped_after_approval(client):
+    submit(client, title='<img src=x onerror=alert(1)>', company='"><b>x</b>')
+    login_resp = login(client)
+    assert login_resp.status_code == 303
+    page = client.get("/admin").text
+    assert "<img src=x" not in page and "&lt;img" in page
+    csrf = csrf_from(page)
+    client.post("/admin/approve/1", data={"csrf": csrf})
+    feed = client.get("/jobs").text
+    assert "<img src=x" not in feed and "<b>x</b>" not in feed
+
+
+def test_login_rate_limit_5_per_window(client):
+    tok = csrf_from(client.get("/admin").text)
+    codes = [client.post("/admin/login", data={"password": "no", "csrf": tok}).status_code for _ in range(6)]
+    assert codes == [401] * 5 + [429]
+    assert login(client).status_code == 429  # even the right password is blocked
+
+
+def test_login_needs_csrf_and_password(client):
+    assert client.post("/admin/login", data={"password": "correct-horse-battery", "csrf": "bad"}).status_code == 401
+    assert login(client).status_code == 303
+
+
+def test_admin_actions_need_session_and_csrf(client):
+    submit(client)
+    assert client.post("/admin/approve/1", data={"csrf": "x"}).headers["location"] == "/admin"
+    assert client.appmod.public_count() == 0
+    login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/approve/1", data={"csrf": "forged"})
+    assert client.appmod.public_count() == 0            # bad token refused
+    client.post("/admin/approve/1", data={"csrf": csrf})
+    assert client.appmod.public_count() == 1
+
+
+def test_csrf_token_bound_to_session(client):
+    login(client)
+    token_a = csrf_from(client.get("/admin").text)
+    sec = client.security
+    other = sec.make_csrf("admin:someone-else")
+    assert sec.verify_csrf(token_a, "admin:" + client.cookies.get("session"))
+    assert not sec.verify_csrf(other, "admin:" + client.cookies.get("session"))
+
+
+def test_takedown_removes_listing(client):
+    submit(client); login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/approve/1", data={"csrf": csrf})
+    assert "Data Analyst" in client.get("/jobs").text
+    csrf = csrf_from(client.get("/admin/live").text)
+    client.post("/admin/remove/1", data={"csrf": csrf})
+    assert "Data Analyst" not in client.get("/jobs").text
+    assert client.get("/job/1").status_code == 404
+
+
+def test_listing_expires(client):
+    submit(client); login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/approve/1", data={"csrf": csrf})
+    import sqlite3
+    with sqlite3.connect(client.appmod.DB_PATH) as db:
+        db.execute("UPDATE jobs SET created_at='2000-01-01T00:00:00'")
+    assert client.appmod.public_count() == 0
+
+
+def test_forwarded_header_ignored_unless_trusted(client):
+    tok = csrf_from(client.get("/admin").text)
+    codes = [client.post("/admin/login", data={"password": "no", "csrf": tok},
+                         headers={"X-Forwarded-For": f"9.9.9.{i}"}).status_code for i in range(6)]
+    assert codes[-1] == 429  # spoofed XFF does not evade the limiter
+
+
+def test_search_wildcards_are_literal(client):
+    submit(client, title="100% Remote"); login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/approve/1", data={"csrf": csrf})
+    assert "100%" in client.get("/jobs?search=100%25").text
+    assert "No listings match" in client.get("/jobs?search=%25%25zzz").text
+
+
+def test_prod_refuses_weak_config(monkeypatch):
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.setenv("ADMIN_PASSWORD", "changeme")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.delenv("CONTACT_EMAIL", raising=False)
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("SMTP_FROM", raising=False)
+    monkeypatch.setenv("BASE_URL", "http://insecure.example")
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "only-one-key")
+    monkeypatch.delenv("TURNSTILE_SECRET", raising=False)
+    sys.modules.pop("security", None)
+    import security
+    with pytest.raises(RuntimeError) as e:
+        security.validate_config()
+    msg = str(e.value)
+    for needle in ("ADMIN_PASSWORD", "SECRET_KEY", "CONTACT_EMAIL", "BASE_URL", "SMTP_HOST", "TURNSTILE"):
+        assert needle in msg, needle
+
+
+def test_prod_accepts_good_config_and_sets_secure_cookie(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.setenv("ADMIN_PASSWORD", "a-long-unique-passphrase")
+    monkeypatch.setenv("SECRET_KEY", "k" * 48)
+    monkeypatch.setenv("CONTACT_EMAIL", "ops@example.org")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "p.db"))
+    monkeypatch.setenv("BASE_URL", "https://testserver")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("SMTP_FROM", "NoleCareerShield <no-reply@example.org>")
+    monkeypatch.delenv("TURNSTILE_SITE_KEY", raising=False)
+    monkeypatch.delenv("TURNSTILE_SECRET", raising=False)
+    for m in ("security", "app"):
+        sys.modules.pop(m, None)
+    import app as appmod
+    from fastapi.testclient import TestClient
+    with TestClient(appmod.app, follow_redirects=False, base_url="https://testserver") as c:
+        assert "max-age" in c.get("/").headers["strict-transport-security"]
+        tok = csrf_from(c.get("/admin").text)
+        r = c.post("/admin/login", data={"password": "a-long-unique-passphrase", "csrf": tok})
+        sc = r.headers["set-cookie"].lower()
+        assert "httponly" in sc and "secure" in sc and "samesite=strict" in sc
+
+
+# ---------- adaptation loop: lead-gen axis, reviewer labels, export ----------
+
+def _rows(client, sql="SELECT * FROM jobs ORDER BY id"):
+    import sqlite3
+    with sqlite3.connect(client.appmod.DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        return [dict(r) for r in db.execute(sql).fetchall()]
+
+
+def test_lead_gen_listing_is_flagged_for_review_not_held(client):
+    submit(client, company="Torentify", title="Remote Data Entry",
+           apply_url="https://jooble.org/away/123?utm_source=affiliate&cpc=abc&extra_prev_uid=1")
+    row = _rows(client)[0]
+    assert row["scam_status"] == "flagged" and row["band"] == "clear"       # flagged, never 'held'
+    assert row["review_status"] == "pending"
+    assert any(f["rule_id"] == "lead_gen" for f in json_loads(row["findings_json"]))
+    assert row["ruleset_version"]
+
+
+def json_loads(s):
+    import json
+    return json.loads(s)
+
+
+def test_reviewer_decisions_are_recorded_as_labels(client):
+    for _ in range(4):
+        submit(client)
+    login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/approve/1", data={"csrf": csrf})
+    client.post("/admin/reject/2", data={"csrf": csrf, "reason": "scam"})
+    client.post("/admin/reject/3", data={"csrf": csrf, "reason": "lead_gen"})
+    client.post("/admin/reject/4", data={"csrf": csrf, "reason": "<script>"})   # junk becomes 'other'
+    labels = [r["review_label"] for r in _rows(client)]
+    assert labels == ["legit", "scam", "lead_gen", "other"]
+    assert all(r["reviewed_at"] for r in _rows(client))
+
+
+def test_removal_records_a_reason(client):
+    submit(client); login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/approve/1", data={"csrf": csrf})
+    csrf = csrf_from(client.get("/admin/live").text)
+    client.post("/admin/remove/1", data={"csrf": csrf, "reason": "scam"})
+    assert _rows(client)[0]["review_label"] == "scam"
+
+
+def test_agreement_stats_count_misses_and_false_alarms(client):
+    appmod = client.appmod
+    for _ in range(3):
+        submit(client)
+    # job 1: detector clear, reviewer says scam -> a miss; job 2: clear + legit -> agree;
+    # job 3: force a flagged listing that the reviewer approves -> false alarm.
+    import sqlite3
+    with sqlite3.connect(appmod.DB_PATH) as db:
+        db.execute("UPDATE jobs SET scam_status='flagged' WHERE id=3")
+    login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/reject/1", data={"csrf": csrf, "reason": "scam"})
+    client.post("/admin/approve/2", data={"csrf": csrf})
+    client.post("/admin/approve/3", data={"csrf": csrf})
+    st = appmod.agreement_stats()
+    assert st == {"n": 3, "agree": 1, "missed": 1, "false_alarm": 1}
+    assert "Too few to judge" in client.get("/admin").text
+
+
+def test_old_database_is_migrated(tmp_path, monkeypatch):
+    import sqlite3
+    old = tmp_path / "old.db"
+    with sqlite3.connect(old) as db:
+        db.execute("""CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
+            company TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'Other', work_type TEXT NOT NULL,
+            location TEXT, description TEXT NOT NULL, apply_url TEXT, contact TEXT, score INTEGER NOT NULL,
+            band TEXT NOT NULL, scam_status TEXT NOT NULL, review_status TEXT NOT NULL,
+            findings_json TEXT, created_at TEXT NOT NULL)""")
+        db.execute("INSERT INTO jobs (title,company,work_type,description,score,band,scam_status,review_status,created_at)"
+                   " VALUES ('t','c','remote','d',0,'clear','clear','approved','2026-01-01T00:00:00')")
+    monkeypatch.setenv("ENV", "development"); monkeypatch.setenv("SECRET_KEY", "x" * 40)
+    monkeypatch.setenv("DB_PATH", str(old)); monkeypatch.setenv("CONTACT_EMAIL", "ops@example.org")
+    for m in ("security", "app"):
+        sys.modules.pop(m, None)
+    import app as appmod
+    appmod.init_db()
+    with sqlite3.connect(old) as db:
+        cols = {r[1] for r in db.execute("PRAGMA table_info(jobs)")}
+        assert {"review_label", "ruleset_version", "reviewed_at"} <= cols
+        assert db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1     # data preserved
+
+
+def test_export_labels_masks_contact_details_and_skips_other(client, tmp_path):
+    import json, importlib
+    submit(client, description="Email jane.doe@gmail.com or call 850-555-0142 for details.",
+           contact="jane.doe@gmail.com")
+    submit(client); submit(client)
+    login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/reject/1", data={"csrf": csrf, "reason": "scam"})
+    client.post("/admin/approve/2", data={"csrf": csrf})
+    client.post("/admin/reject/3", data={"csrf": csrf, "reason": "other"})
+    sys.modules.pop("export_labeled", None)
+    exp = importlib.import_module("export_labeled")
+    out = tmp_path / "labeled.jsonl"
+    counts = exp.export(client.appmod.DB_PATH, out)
+    rows = [json.loads(l) for l in out.read_text().splitlines()]
+    assert [r["label"] for r in rows] == ["scam", "legit"]
+    assert counts["skipped_other"] == 1 and counts["detector_missed"] == 1
+    blob = out.read_text()
+    assert "jane.doe" not in blob and "555-0142" not in blob and "contact" not in blob
+    assert "[email]@gmail.com" in blob and "[phone]" in blob
+
+
+# ---------- behavior found by clicking through the real site ----------
+
+def test_error_pages_are_site_pages_not_json(client):
+    for path in ("/no-such-page", "/job/not-a-number"):
+        r = client.get(path)
+        assert r.status_code in (400, 404), path
+        assert "text/html" in r.headers["content-type"] and 'class="brand"' in r.text, path
+        assert '"detail"' not in r.text
+    r = client.get("/admin/approve/1")             # POST-only route opened as a link
+    assert r.status_code == 405 and "text/html" in r.headers["content-type"]
+    r = client.post("/post", data={"x": "1"})       # form with required fields missing
+    assert r.status_code == 400 and "text/html" in r.headers["content-type"] and '"loc"' not in r.text
+
+
+def test_rejected_submission_keeps_what_was_typed(client):
+    r = submit(client, description="A very long careful description " * 5, apply_url="not a url", company="Bayside Dental")
+    assert r.status_code == 400
+    assert "valid http(s) URL" in r.text
+    assert "A very long careful description" in r.text and "Bayside Dental" in r.text
+    assert re.search(r'name="csrf" value="[^"]+"', r.text)       # fresh token, can resubmit at once
+
+
+def test_expired_form_keeps_what_was_typed_and_resubmits(client):
+    ensure_employer(client)
+    r = client.post("/post", data=dict(title="Keep Me", company="Co", work_type="remote", description="Body text",
+                                       csrf="1.stale"))
+    assert r.status_code == 400 and "Keep Me" in r.text and "Body text" in r.text
+    tok = csrf_from(r.text)
+    ok = client.post("/post", data=dict(title="Keep Me", company="Co", work_type="remote", description="Body text",
+                                        csrf=tok))
+    assert ok.status_code == 200 and client.appmod.pending_count() == 1
+
+
+def test_every_form_field_has_a_label(client):
+    for path in ("/post", "/admin"):
+        html = client.get(path).text
+        for m in re.finditer(r'<input(?![^>]*type="hidden")[^>]*\bid="([^"]+)"|<(?:textarea|select)[^>]*\bid="([^"]+)"', html):
+            field_id = m.group(1) or m.group(2)
+            assert f'for="{field_id}"' in html, (path, field_id)
+        assert not re.search(r'<(?:input|textarea|select)(?![^>]*type="hidden")(?![^>]*\bid=)', html), path
+
+
+def test_stale_tab_cannot_flip_a_finished_decision(client):
+    submit(client); login(client)
+    csrf = csrf_from(client.get("/admin").text)
+    client.post("/admin/reject/1", data={"csrf": csrf, "reason": "scam"})
+    client.post("/admin/approve/1", data={"csrf": csrf})            # a second, stale tab
+    assert client.appmod.public_count() == 0
+    row = client.appmod.get_job(1)
+    assert (row["review_status"], row["review_label"]) == ("rejected", "scam")
+    # and a pending listing cannot be "removed" without ever having been live
+    submit(client, title="Second")
+    client.post("/admin/remove/2", data={"csrf": csrf})
+    assert client.appmod.get_job(2)["review_status"] == "pending"
+
+
+# ---------- accounts: students and employers ----------
+
+@pytest.mark.parametrize("pw,missing", [
+    ("Sh0rt!a", "at least 8 characters"),
+    ("alllower1!x", "a capital letter"),
+    ("NoDigits!here", "a number"),
+    ("NoSymbol1here", "a symbol"),
+    ("Password1!", "less guessable"),          # meets the character rules but is a top guess
+    ("Boss9!boss", "less guessable"),          # contains the local part of the email below
+])
+def test_password_rules(client, pw, missing):
+    problems = client.accounts.password_problems(pw, "boss@acme.example")
+    assert any(missing in p for p in problems), problems
+
+
+def test_good_password_passes(client):
+    assert client.accounts.password_problems("Tr1cky!Horse", "a@b.co") == []
+
+
+def test_only_the_exact_fsu_domain_counts_as_student(client):
+    ok = client.accounts.is_fsu_email
+    assert ok("jane@fsu.edu")
+    for bad in ("jane@fsu.edu.evil.com", "jane@notfsu.edu", "jane@my.fsu.edu", "jane@fsu.edu@evil.com", "fsu.edu", "@fsu.edu"):
+        assert not ok(bad), bad
+
+
+def test_email_normalizing_blocks_header_injection(client):
+    n = client.accounts.normalize_email
+    assert n("  Jane@FSU.edu ") == "jane@fsu.edu"
+    for bad in ("a@b.co\nBcc: x@y.co", "a b@c.co", "no-at-sign", "a@b", "x" * 300 + "@b.co", "<a>@b.co"):
+        with pytest.raises(ValueError):
+            n(bad)
+
+
+def test_passwords_are_hashed_and_verify(client):
+    h = client.accounts.hash_password(PW)
+    assert PW not in h and h.startswith("scrypt$")
+    assert client.accounts.verify_password(PW, h) and not client.accounts.verify_password("wrong", h)
+    assert client.accounts.hash_password(PW) != h        # fresh salt each time
+    assert not client.accounts.verify_password(PW, None) and not client.accounts.verify_password(PW, "garbage")
+
+
+def signup(client, role, email, pw=PW, pw2=None, **over):
+    tok = csrf_from(client.get(f"/signup/{role}").text)
+    data = {"email": email, "password": pw, "password2": pw2 or pw, "csrf": tok, "next": "", "website": ""}
+    data.update(over)
+    return client.post(f"/signup/{role}", data=data)
+
+
+def confirm(client, path="/verify", password=PW):
+    link = mail_link(client, path)
+    page = client.get(link)
+    tok = csrf_from(page.text)
+    token = re.search(r"token=([\w-]+)", link).group(1)
+    return client.post("/verify", data={"token": token, "csrf": tok, "password": password})
+
+
+def test_student_signup_needs_an_fsu_address(client):
+    r = signup(client, "student", "jane@gmail.com")
+    assert r.status_code == 400 and "@fsu.edu" in r.text and not client.mailer.outbox
+    r = signup(client, "student", "jane@fsu.edu.evil.com")
+    assert r.status_code == 400 and not client.mailer.outbox
+
+
+def test_signup_enforces_password_rules_and_matching(client):
+    for pw, needle in (("short", "8 characters"), ("nocapitals1!", "capital"), ("NoNumbers!!", "number"), ("NoSymbols11", "symbol")):
+        r = signup(client, "student", "jane@fsu.edu", pw=pw)
+        assert r.status_code == 400 and needle in r.text, (pw, r.text[:300])
+    r = signup(client, "student", "jane@fsu.edu", pw2="Different1!x")
+    assert r.status_code == 400 and "do not match" in r.text
+    assert not client.mailer.outbox
+
+
+def test_student_confirms_email_and_is_logged_in(client):
+    r = signup(client, "student", "Jane@FSU.edu")
+    assert r.status_code == 200 and "Check your email" in r.text
+    assert [m["to"] for m in client.mailer.outbox] == ["jane@fsu.edu"]
+    assert user_login(client, "student", "jane@fsu.edu").status_code == 403        # not confirmed yet
+    link = mail_link(client, "/verify")
+    page = client.get(link)                                                          # opening the link changes nothing
+    assert "Confirm my email" in page.text and user_login(client, "student", "jane@fsu.edu").status_code == 403
+    done = confirm(client)
+    assert done.status_code == 200 and "Email confirmed" in done.text and "usession" in client.cookies
+    assert confirm(client).status_code == 400                                        # link is single-use
+    client.cookies.clear()
+    assert user_login(client, "student", "jane@fsu.edu").status_code == 303
+
+
+def test_signup_reveals_nothing_about_existing_accounts(client):
+    make_verified(client, "student", "jane@fsu.edu")
+    first = signup(client, "student", "new@fsu.edu")
+    again = signup(client, "student", "jane@fsu.edu")
+    assert first.status_code == again.status_code == 200
+    strip = lambda t, e: re.sub(r"csrf\" value=\"[^\"]+", "", t.replace(e, "X"))
+    assert strip(first.text, "new@fsu.edu") == strip(again.text, "jane@fsu.edu")
+    assert any("already have" in m["subject"] for m in client.mailer.outbox if m["to"] == "jane@fsu.edu")
+
+
+def test_login_errors_are_identical_for_unknown_and_wrong_password(client):
+    make_verified(client, "student", "jane@fsu.edu")
+    a = user_login(client, "student", "jane@fsu.edu", pw="Wrong1!pass")
+    b = user_login(client, "student", "nobody@fsu.edu")
+    assert a.status_code == b.status_code == 401
+    msg = lambda r: re.search(r'role="alert">([^<]+)<', r.text).group(1)
+    assert msg(a) == msg(b)
+
+
+def test_student_and_employer_accounts_are_separate(client):
+    make_verified(client, "student", "jane@fsu.edu")
+    assert user_login(client, "employer", "jane@fsu.edu").status_code == 401
+    make_verified(client, "employer", "jane@fsu.edu", pw="Other1!password")     # same address, other kind: allowed
+    assert user_login(client, "employer", "jane@fsu.edu", pw="Other1!password").status_code == 303
+
+
+def test_login_rate_limits(client):
+    make_verified(client, "student", "jane@fsu.edu")
+    codes = [user_login(client, "student", "jane@fsu.edu", pw="Wrong1!pass").status_code for _ in range(9)]
+    assert codes[:8] == [401] * 8 and codes[8] == 429                     # per-account cap of 8 per 15 minutes
+    assert user_login(client, "student", "jane@fsu.edu").status_code == 429   # even the right password waits
+
+
+def test_forgot_and_reset_password(client):
+    make_verified(client, "student", "jane@fsu.edu")
+    def ask(email):
+        tok = csrf_from(client.get("/forgot/student").text)
+        return client.post("/forgot/student", data={"email": email, "csrf": tok})
+    known, unknown = ask("jane@fsu.edu"), ask("nobody@fsu.edu")
+    assert known.status_code == unknown.status_code == 200
+    scrub = lambda h: re.sub(r'name="csrf" value="[^"]+"', "", h)
+    assert scrub(known.text) == scrub(unknown.text)                # same page whether or not the account exists
+    assert [m["to"] for m in client.mailer.outbox] == ["jane@fsu.edu"]
+    link = mail_link(client, "/reset")
+    token = re.search(r"token=([\w-]+)", link).group(1)
+    page = client.get(link); tok = csrf_from(page.text)
+    weak = client.post("/reset", data={"token": token, "password": "weak", "password2": "weak", "csrf": tok})
+    assert weak.status_code == 400 and "8 characters" in weak.text
+    ok = client.post("/reset", data={"token": token, "password": "N3w!Password", "password2": "N3w!Password", "csrf": tok})
+    assert ok.status_code == 200 and "Password updated" in ok.text
+    again = client.post("/reset", data={"token": token, "password": "An0ther!Pass", "password2": "An0ther!Pass", "csrf": tok})
+    assert again.status_code == 400                                      # single use
+    assert user_login(client, "student", "jane@fsu.edu").status_code == 401
+    assert user_login(client, "student", "jane@fsu.edu", pw="N3w!Password").status_code == 303
+
+
+def test_reset_logs_out_other_devices(client):
+    make_verified(client, "student", "jane@fsu.edu")
+    assert user_login(client, "student", "jane@fsu.edu").status_code == 303
+    assert "Log out" in client.get("/").text
+    with closing(sqlite3.connect(client.appmod.DB_PATH)) as db:
+        uid = client.accounts.get_user(db, "jane@fsu.edu", "student")["id"]
+        client.accounts.set_password(db, uid, "N3w!Password")
+    assert "Log out" not in client.get("/").text and "Log in" in client.get("/").text
+
+
+def test_tokens_and_sessions_are_stored_hashed(client):
+    signup(client, "student", "jane@fsu.edu")
+    raw = re.search(r"token=([\w-]+)", mail_link(client, "/verify")).group(1)
+    confirm(client)
+    session = client.cookies.get("usession")
+    with closing(sqlite3.connect(client.appmod.DB_PATH)) as db:
+        blob = " ".join(str(v) for t in ("user_tokens", "user_sessions", "users") for row in db.execute(f"SELECT * FROM {t}") for v in row)
+    assert raw not in blob and session not in blob and PW not in blob
+
+
+def test_logout_needs_its_own_token(client):
+    make_verified(client, "student", "jane@fsu.edu"); user_login(client, "student", "jane@fsu.edu")
+    client.post("/logout", data={"csrf": "forged"})
+    assert "Log out" in client.get("/").text
+    tok = csrf_from(client.get("/").text)
+    r = client.post("/logout", data={"csrf": tok})
+    assert r.status_code == 303 and "Log out" not in client.get("/").text
+
+
+def test_next_parameter_cannot_leave_the_site(client):
+    make_verified(client, "student", "jane@fsu.edu")
+    for bad in ("https://evil.example", "//evil.example", "/admin", "javascript:alert(1)"):
+        r = user_login(client, "student", "jane@fsu.edu", next=bad)
+        assert r.status_code == 303 and r.headers["location"] == "/", bad
+        client.cookies.clear()
+    r = user_login(client, "student", "jane@fsu.edu", next="/job/7")
+    assert r.headers["location"] == "/job/7"
+
+
+# ---------- the submit-a-job gate ----------
+
+def _post_data(client, **over):
+    tok = csrf_from(client.get("/post").text)
+    d = dict(title="Data Analyst", company="Acme", category="Other", work_type="remote", location="",
+             description="Analyze data using SQL.", apply_url="https://acme.com/j", contact="", csrf=tok, website="")
+    d.update(over)
+    return d
+
+
+def test_post_page_says_login_comes_first(client):
+    assert "log in or sign up before it sends" in client.get("/post").text
+    ensure_employer(client)
+    assert "Sending as boss@acme.example" in client.get("/post").text
+
+
+def test_logged_out_submit_redirects_to_employer_login_and_stores_nothing(client):
+    r = client.post("/post", data=_post_data(client))
+    assert r.status_code == 303 and r.headers["location"] == "/login/employer?next=/post"
+    assert client.appmod.pending_count() == 0 and "draft" in client.cookies
+    page = client.get("/login/employer?next=/post").text
+    assert "your listing is sent for review automatically" in page
+
+
+def test_invalid_listing_is_rejected_before_any_login(client):
+    r = client.post("/post", data=_post_data(client, apply_url="javascript:x"))
+    assert r.status_code == 400 and "valid http(s) URL" in r.text and "draft" not in client.cookies
+
+
+def test_new_employer_signup_then_confirm_sends_the_saved_listing(client):
+    client.post("/post", data=_post_data(client, title="Saved While Logged Out"))
+    r = signup(client, "employer", "hr@acme.example", next="/post")
+    assert r.status_code == 200 and client.appmod.pending_count() == 0
+    done = confirm(client)
+    assert "Your listing was sent for review" in done.text
+    rows = _rows(client)
+    assert len(rows) == 1 and rows[0]["title"] == "Saved While Logged Out" and rows[0]["review_status"] == "pending"
+    assert rows[0]["employer_id"] is not None
+    assert any("We received your listing" in m["subject"] and m["to"] == "hr@acme.example" for m in client.mailer.outbox)
+    assert confirm(client).status_code == 400
+    assert len(_rows(client)) == 1                                        # the draft is used exactly once
+
+
+def test_existing_employer_login_sends_the_saved_listing(client):
+    make_verified(client, "employer", "hr@acme.example")
+    client.post("/post", data=_post_data(client, title="Login Path"))
+    r = user_login(client, "employer", "hr@acme.example")
+    assert r.status_code == 303 and r.headers["location"] == "/submitted"
+    assert [j["title"] for j in _rows(client)] == ["Login Path"]
+    assert client.get("/submitted").status_code == 200
+
+
+def test_student_account_cannot_post(client):
+    make_verified(client, "student", "jane@fsu.edu"); user_login(client, "student", "jane@fsu.edu")
+    r = client.post("/post", data=_post_data(client))
+    assert r.status_code == 303 and "/login/employer" in r.headers["location"]
+    assert client.appmod.pending_count() == 0
+    nav = client.get("/jobs").text.split("</header>")[0]
+    assert "Log out" in nav and "Post a job" not in nav          # students are not offered the post button
+
+
+def test_reviewer_sees_which_confirmed_account_posted(client):
+    submit(client)
+    login(client)
+    page = client.get("/admin").text
+    assert "Posted by: boss@acme.example" in page
+
+
+# ---------- only signed-in FSU students get the apply link ----------
+
+def _approved_job(client):
+    submit(client, apply_url="https://acme.example/secret-apply-link", contact="hr@acme.example")
+    client.cookies.clear(); client._employer = None
+    login(client)
+    client.post("/admin/approve/1", data={"csrf": csrf_from(client.get("/admin").text)})
+    client.cookies.clear()
+
+
+def test_apply_link_is_hidden_from_visitors_and_employers(client):
+    _approved_job(client)
+    page = client.get("/job/1").text
+    assert "Data Analyst" in page and "Log in as an FSU student to apply" in page
+    assert "secret-apply-link" not in page and "hr@acme.example" not in page
+    make_verified(client, "employer", "other@corp.example"); user_login(client, "employer", "other@corp.example")
+    assert "secret-apply-link" not in client.get("/job/1").text
+
+
+def test_signed_in_student_sees_the_apply_link(client):
+    _approved_job(client)
+    make_verified(client, "student", "jane@fsu.edu"); user_login(client, "student", "jane@fsu.edu")
+    page = client.get("/job/1").text
+    assert 'href="https://acme.example/secret-apply-link"' in page and "Log in as an FSU student" not in page
+
+
+# ---------- page policy ----------
+
+def test_only_the_hashed_script_can_run_and_only_on_account_pages(client):
+    csp = client.get("/").headers["content-security-policy"]
+    assert f"script-src '{client.appmod.PAGE_SCRIPT_HASH}'" in csp and "unsafe-inline'" in csp.split("style-src")[1].split(";")[0]
+    assert "script-src 'unsafe" not in csp
+    for path in ("/", "/jobs", "/post", "/about", "/privacy"):
+        assert "<script" not in client.get(path).text, path
+    for path in ("/login/student", "/signup/employer", "/forgot/student"):
+        html = client.get(path).text
+        assert html.count("<script>") == 1 and f"<script>{client.appmod.PAGE_SCRIPT}</script>" in html, path
+    import base64, hashlib
+    assert client.appmod.PAGE_SCRIPT_HASH == "sha256-" + base64.b64encode(hashlib.sha256(client.appmod.PAGE_SCRIPT.encode()).digest()).decode()
+
+
+def test_password_fields_have_show_buttons_and_labels(client):
+    html = client.get("/signup/student").text
+    assert html.count("data-showpw") >= 2 and 'for="f-password"' in html and "data-pwcheck" in html
+    assert 'href="/forgot/student"' in client.get("/login/student").text
+
+
+def test_unknown_role_is_404(client):
+    for path in ("/login/admin", "/signup/hacker", "/forgot/root"):
+        assert client.get(path).status_code == 404
+
+
+def test_login_button_and_chooser(client):
+    assert 'href="/login">Log in</a>' in client.get("/").text
+    page = client.get("/login").text
+    assert 'href="/login/student"' in page and 'href="/signup/employer"' in page
+
+
+def test_unconfirmed_accounts_are_purged_after_a_week(client):
+    signup(client, "student", "jane@fsu.edu")
+    with closing(sqlite3.connect(client.appmod.DB_PATH)) as db:
+        db.execute("UPDATE users SET created_at = ?", (time.time() - 8 * 86400,)); db.commit()
+        client.accounts.purge_expired(db)
+        assert db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+
+
+def test_expired_draft_is_not_sent(client):
+    make_verified(client, "employer", "hr@acme.example")
+    client.post("/post", data=_post_data(client))
+    with closing(sqlite3.connect(client.appmod.DB_PATH)) as db:
+        db.execute("UPDATE drafts SET expires_at = ?", (time.time() - 5,)); db.commit()
+    assert user_login(client, "employer", "hr@acme.example").headers["location"] == "/"
+    assert client.appmod.pending_count() == 0
+
+
+def test_turnstile_is_off_by_default_and_enforced_when_configured(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENV", "development"); monkeypatch.setenv("SECRET_KEY", "x" * 40)
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "ts.db")); monkeypatch.setenv("OUTBOX_LOG", str(tmp_path / "o.log"))
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "site-key"); monkeypatch.setenv("TURNSTILE_SECRET", "secret")
+    for m in ("security", "app"):
+        sys.modules.pop(m, None)
+    import security, app as appmod
+    from fastapi.testclient import TestClient
+    with TestClient(appmod.app, follow_redirects=False) as c:
+        for lim in security.ALL_LIMITERS:
+            lim.reset_all()
+        csp = c.get("/").headers["content-security-policy"]
+        assert "https://challenges.cloudflare.com" in csp and "frame-src" in csp
+        page = c.get("/signup/student").text
+        assert 'class="cf-turnstile"' in page and "challenges.cloudflare.com/turnstile/v0/api.js" in page
+        tok = csrf_from(page)
+        data = {"email": "jane@fsu.edu", "password": PW, "password2": PW, "csrf": tok, "next": "", "website": ""}
+        assert c.post("/signup/student", data=data).status_code == 400        # no token: refused
+        monkeypatch.setattr(security, "verify_turnstile", lambda token, ip: token == "good")
+        monkeypatch.setattr(appmod.security, "verify_turnstile", security.verify_turnstile)
+        assert c.post("/signup/student", data={**data, "cf-turnstile-response": "bad"}).status_code == 400
+        assert c.post("/signup/student", data={**data, "cf-turnstile-response": "good"}).status_code == 200
+
+
+def test_pre_registration_of_someone_elses_address_cannot_be_used(client):
+    # An attacker signs up the victim's address with the attacker's password...
+    signup(client, "employer", "victim@bigco.example", pw="Attack3r!pass")
+    stale_link = mail_link(client, "/verify")
+    # ...then the victim signs up for real. The newest sign-up wins and the old link dies.
+    client.cookies.clear()
+    signup(client, "employer", "victim@bigco.example", pw="Bl00m!ng#Tree")
+    assert client.get(stale_link).status_code == 400
+    # Even with the new link, only the victim's password confirms the account.
+    link = mail_link(client, "/verify")
+    tok = csrf_from(client.get(link).text); token = re.search(r"token=([\w-]+)", link).group(1)
+    bad = client.post("/verify", data={"token": token, "csrf": tok, "password": "Attack3r!pass"})
+    assert bad.status_code == 401 and "usession" not in client.cookies
+    assert user_login(client, "employer", "victim@bigco.example", pw="Attack3r!pass").status_code in (401, 403)
+    good = client.post("/verify", data={"token": token, "csrf": tok, "password": "Bl00m!ng#Tree"})
+    assert good.status_code == 200 and "Email confirmed" in good.text
+
+
+def test_confirming_needs_the_password(client):
+    signup(client, "student", "jane@fsu.edu")
+    link = mail_link(client, "/verify")
+    tok = csrf_from(client.get(link).text); token = re.search(r"token=([\w-]+)", link).group(1)
+    r = client.post("/verify", data={"token": token, "csrf": tok, "password": ""})
+    assert r.status_code == 401 and "usession" not in client.cookies
+    assert client.get(link).status_code == 200                      # a wrong try does not use the link up

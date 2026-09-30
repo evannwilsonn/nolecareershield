@@ -19,7 +19,10 @@ import concurrent.futures
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from .rules import Finding, run_text_rules, check_email_domains, extract_domains
+from .rules import (Finding, run_text_rules, check_email_domains, extract_domains,
+                    implied_hourly_finding, RULESET_VERSION)
+from . import rules as _rules
+from .leadgen import assess_lead_gen
 from .enrichment.domain_age import lookup_domain_age
 from .enrichment.mx_check import check_mx
 from .enrichment.compensation import check_compensation
@@ -33,11 +36,14 @@ class ScoreResult:
     verdict: str
     findings: List[dict] = field(default_factory=list)
     enrichment: dict = field(default_factory=dict)
+    lead_gen: dict = field(default_factory=dict)   # separate axis: aggregator / lead-generation
+    ruleset_version: str = ""
 
     def as_dict(self) -> dict:
         return {
             "score": self.score, "band": self.band, "verdict": self.verdict,
             "findings": self.findings, "enrichment": self.enrichment,
+            "lead_gen": self.lead_gen, "ruleset_version": self.ruleset_version,
         }
 
 
@@ -105,67 +111,27 @@ def _enrichment_findings(title: str, description: str, company: str,
 
 
 CONTEXT_FLAGS = {
-    # --- Connection / relationship signals ---
     "poster_distant_connection": ("note", 8, "Poster is a distant/no connection",
         "You reported the poster is a 2nd/3rd-degree or non-connection. Scam recruiters "
         "mass-contact strangers; weak alone, but it adds up with other signals."),
-
-    # --- Account age and activity signals ---
     "recruiter_new_account": ("warning", 14, "Recruiter account looks new",
         "You reported the recruiter's account appears newly created. Fresh accounts are "
         "spun up in bulk for these operations."),
-    "very_low_connections": ("warning", 18, "Recruiter has very few connections (under ~10)",
-        "You reported the recruiter has almost no connections. A real professional -- even "
-        "one who barely uses LinkedIn -- accumulates dozens from school, past jobs, and "
-        "colleagues. Single-digit connections means the account was just created for this."),
-    "low_connections": ("note", 8, "Recruiter has a thin connection count (under ~50)",
-        "You reported the recruiter has relatively few connections. Not damning alone -- "
-        "some real people are light LinkedIn users -- but it reduces the trust you'd "
-        "normally give a recruiter profile."),
-
-    # --- Profile quality signals ---
-    "no_profile_photo": ("warning", 12, "No profile photo (default silhouette)",
-        "You reported the recruiter has the default grey silhouette instead of a real "
-        "photo. Legitimate recruiters almost always have a headshot -- their job depends "
-        "on being approachable. A missing photo on a recruiter account is unusual."),
-    "stock_photo_face": ("warning", 14, "Profile photo looks like a stock image or AI-generated",
-        "You reported the profile photo looks fake -- overly polished, AI-generated, or "
-        "a stock headshot. Scam operations use generated faces to create accounts in bulk."),
-    "thin_profile": ("warning", 11, "Profile has very little content",
-        "You reported the recruiter's profile is bare -- no about section, no posts, "
-        "minimal or no experience listed. A real recruiter's livelihood depends on their "
-        "profile being filled out; an empty one signals an account created for a single purpose."),
-    "no_activity_history": ("note", 9, "No posts, comments, or activity visible",
-        "You reported the account has no visible activity -- no posts, no comments, "
-        "no engagement. Real professionals accumulate some trail over time; a completely "
-        "blank activity section suggests the account exists only to send messages."),
-
-    # --- Company verification signals ---
     "no_company_page": ("warning", 12, "No real company page",
         "You reported the named employer has no or a thin company page. Real employers "
         "have an established presence."),
-    "no_company_insights": ("warning", 13, "LinkedIn shows no quality data on the company",
-        "You reported LinkedIn's Premium insights panel said there is not enough data on "
-        "this company yet (fewer than 30 member profiles). Legitimate employers with real "
-        "employees generate this data naturally."),
-    "company_insights_present": ("note", -5, "LinkedIn shows full company insights",
-        "You reported LinkedIn's insights panel has real hiring trends, employee count, "
-        "and school data for this company. That is hard to fake and is a positive signal."),
-
-    # --- Behavioral signals ---
     "name_company_mismatch": ("warning", 13, "Recruiter name doesn't match the company",
         "You reported the recruiter's name doesn't match the company they claim to "
-        "represent -- common when one operation runs many fake recruiter accounts."),
+        "represent - common when one operation runs many fake recruiter accounts."),
     "dodged_verification": ("warning", 16, "Dodged a request to verify the employer",
         "You reported that when you asked for the official posting or company page, they "
         "evaded and pushed to move forward. Real recruiters can verify themselves."),
+    "individual_selling_training": ("warning", 14, "Posted by someone selling training, not hiring",
+        "You reported the poster is an individual selling a course or program rather than a "
+        "company hiring. Paid 'internship programs' are course sales dressed as jobs."),
     "same_script_seen_before": ("warning", 18, "Identical message seen from other accounts",
         "You reported this exact message from other accounts/companies. A shared copy-paste "
         "script across different employers is a coordinated scam operation."),
-    "duplicate_accounts": ("warning", 16, "Multiple accounts appear to be the same person or operation",
-        "You reported that several recruiter accounts share the same script, employer "
-        "name, or profile patterns. Coordinated account clusters are a hallmark of "
-        "scam operations running at scale."),
 }
 
 
@@ -185,6 +151,9 @@ def score_posting(title: str, description: str, company: str = "",
     full_text = f"{title}\n{description}"
 
     findings = run_text_rules(full_text)
+    hourly = implied_hourly_finding(full_text)
+    if hourly:
+        findings.append(hourly)
     findings += check_email_domains(full_text, company)
     enr_findings, enrichment = _enrichment_findings(title, description, company, full_text, run_network)
     findings += enr_findings
@@ -192,7 +161,7 @@ def score_posting(title: str, description: str, company: str = "",
     # Combination boost: the money-mule recruitment scam is far more dangerous when
     # its parts appear together (banking/ID ask + off-platform pivot + recruitment
     # framing) than any single phrase. When two or more of these fire, add a
-    # critical finding — the cluster is the signal, not the individual words.
+    # critical finding - the cluster is the signal, not the individual words.
     fired = {f.rule_id for f in findings}
     mule_parts = {"banking_pii", "mule_recruitment", "off_platform"}
     if len(fired & mule_parts) >= 2:
@@ -200,16 +169,22 @@ def score_posting(title: str, description: str, company: str = "",
             "mule_combo", "critical", 28,
             "Combined pattern: recruitment + banking/ID + off-platform",
             "This message combines a recruitment pitch, a request for banking or identity details, "
-            "and a push to an outside app. Together these are the money-mule hiring scam — walk away.",
+            "and a push to an outside app. Together these are the money-mule hiring scam - walk away.",
             ["multiple money-mule signals present together"],
         ))
 
     # Context flags the USER observed on the platform (not scraped). Each is a small
     # signal on its own; they raise suspicion, they don't convict alone.
-    findings += _context_flag_findings(context_flags or [])
+    flags = list(context_flags or [])
+    findings += _context_flag_findings(flags)
 
     # URL/flow signals from a chain the user actually followed (see enrichment/url_flow.py).
-    findings += analyze_url_chain(url_chain or [], company)
+    # Redirects, tracking, paid clicks, signup walls and a landing domain unrelated to the
+    # named employer all describe an aggregator, not fraud, so they feed the separate
+    # lead-gen axis instead of the fraud score. (Impersonation domains are caught by the
+    # domain-age and registry lookups in the enrichment step.)
+    url_findings = analyze_url_chain(url_chain or [], company)
+    lead_gen = assess_lead_gen(full_text, url_findings, flags)
 
     order = {"critical": 0, "warning": 1, "note": 2}
     findings.sort(key=lambda f: (order[f.severity], -f.weight))
@@ -221,4 +196,5 @@ def score_posting(title: str, description: str, company: str = "",
     return ScoreResult(
         score=score, band=band, verdict=verdict,
         findings=[f.as_dict() for f in findings], enrichment=enrichment,
+        lead_gen=lead_gen, ruleset_version=_rules.RULESET_VERSION,
     )
