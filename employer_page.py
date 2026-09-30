@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 
 from scam_detector.rules import FREE_MAIL
 
+import events
 import network
 import store
 import ui
@@ -258,5 +259,5 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
                     + (f'<span class="chip">{esc(j["location"])}</span>' if j["location"] else "") + '</div></a>' for j in jobs)
     cards = cards or '<p class="small muted">No open listings right now.</p>'
     listings = f'<section class="card pcard"><div class="phead"><h2>Open listings</h2><span class="small faint">{len(jobs)}</span></div>{cards}</section>'
-    main = about + fsu + roles + perk_html + listings
+    main = about + fsu + roles + perk_html + events.upcoming_for_employer(conn, uid) + listings
     return notice + hero + f'<div class="pgrid"><aside class="pside">{side}</aside><div class="pmain">{main}</div></div>'

@@ -27,6 +27,7 @@ import ai
 import matching
 import network
 import employer_page
+import events
 import profile_page
 import resume_engine
 import security
@@ -572,7 +573,9 @@ def export(request: Request):
                 "assistant_chats": [dict(c, messages=store.rows(conn, "SELECT role, text, feedback, created_at FROM assistant_msgs WHERE chat_id = ? ORDER BY id", (c["id"],)))
                                     for c in store.rows(conn, "SELECT id, title, created_at, updated_at FROM assistant_chats WHERE user_id = ? ORDER BY id", (user["id"],))],
                 "assistant_memory": store.rows(conn, "SELECT fact, chat_id, created_at FROM assistant_memory WHERE user_id = ? ORDER BY id", (user["id"],)),
-                "job_listings": store.rows(conn, "SELECT title, company, description, review_status, created_at FROM jobs WHERE employer_id = ?", (user["id"],))}
+                "job_listings": store.rows(conn, "SELECT title, company, description, review_status, created_at FROM jobs WHERE employer_id = ?", (user["id"],)),
+                "events": store.rows(conn, "SELECT id, title, kind, description, starts_at, duration_min, format, location, meeting_url, capacity, majors, class_years, status, created_at FROM events WHERE employer_id = ?", (user["id"],)),
+                "event_rsvps": store.rows(conn, "SELECT event_id, status, created_at, reminded_at FROM event_rsvps WHERE student_id = ?", (user["id"],))}
     return Response(json.dumps(data, indent=2, default=str), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="nolecareershield-my-data.json"', "Cache-Control": "no-store"})
 
@@ -588,7 +591,9 @@ def delete_account(request: Request, password: str = Form(""), csrf: str = Form(
         if not full or not accounts.verify_password(password[:accounts.PW_MAX], full["pw_hash"]):
             return web.page(ui.banner("warning", "That password isn't right, so nothing was deleted.") + '<a class="b sec" href="/profile">Back to profile</a>',
                             "Delete account", active="/profile", status=401)
+        event_mail = events.before_account_delete(conn, user["id"])
         store.delete_account(conn, user["id"])
+    events.send_all(event_mail)
     resp = HTMLResponse(ui.shell(ui.page_head("Your account is deleted", "Your profile, resume, posts and comments are gone, and the messages you sent were blanked. Thanks for using NoleCareerShield.") +
                                  '<a class="b" href="/">Home</a>', title="Account deleted — NoleCareerShield"))
     resp.delete_cookie("usession", path="/")

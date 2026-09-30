@@ -329,6 +329,46 @@ CREATE TABLE IF NOT EXISTS assistant_memory (
 );
 CREATE INDEX IF NOT EXISTS idx_amem_user ON assistant_memory (user_id, id);
 -- Jobs the assistant showed in a chat are pinned to its side panel; a row with pinned = 0 means the student unpinned it.
+-- Employer events (events.py): info sessions, career fair tables, workshops, coffee chats. Reviewed like listings
+-- (pending -> approved). Times are UTC epoch seconds; pages show them in America/New_York.
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employer_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    description TEXT NOT NULL,
+    starts_at REAL NOT NULL,
+    duration_min INTEGER NOT NULL DEFAULT 60,
+    format TEXT NOT NULL DEFAULT 'in_person',  -- 'in_person' | 'virtual'
+    location TEXT NOT NULL DEFAULT '',
+    meeting_url TEXT NOT NULL DEFAULT '',
+    capacity INTEGER NOT NULL DEFAULT 0,       -- 0 = no limit
+    majors TEXT NOT NULL DEFAULT '[]',
+    class_years TEXT NOT NULL DEFAULT '[]',
+    job_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'pending',    -- pending | approved | rejected | cancelled | removed
+    scan_band TEXT NOT NULL DEFAULT 'clear',
+    scan_json TEXT NOT NULL DEFAULT '[]',
+    review_note TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    reviewed_at REAL,
+    cancelled_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events (status, starts_at);
+CREATE INDEX IF NOT EXISTS idx_events_employer ON events (employer_id, starts_at);
+-- RSVPs: going | waitlist | not_going. A student who RSVPs agrees the employer sees their name and major.
+-- reminded_at records the day-before reminder so it is sent once.
+CREATE TABLE IF NOT EXISTS event_rsvps (
+    event_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    reminded_at REAL,
+    PRIMARY KEY (event_id, student_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rsvps_student ON event_rsvps (student_id);
 CREATE TABLE IF NOT EXISTS assistant_pins (
     user_id INTEGER NOT NULL,
     chat_id INTEGER NOT NULL,
@@ -383,6 +423,10 @@ def purge(conn) -> None:
     conn.execute("DELETE FROM assistant_pins WHERE chat_id NOT IN (SELECT id FROM assistant_chats)")
     # Assistant memories go when the account does, or after a year without being refreshed.
     conn.execute("DELETE FROM assistant_memory WHERE created_at < ?", (now - 365 * 86400,))
+    # Events: gone a year after they happened; rejected or removed ones after 30 days; RSVPs go with their event.
+    conn.execute("DELETE FROM events WHERE starts_at < ?", (now - 365 * 86400,))
+    conn.execute("DELETE FROM events WHERE status IN ('rejected','removed') AND updated_at < ?", (now - 30 * 86400,))
+    conn.execute("DELETE FROM event_rsvps WHERE event_id NOT IN (SELECT id FROM events)")
     conn.commit()
 
 
@@ -420,6 +464,8 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM assistant_chats WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_memory WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_pins WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM event_rsvps WHERE student_id = ? OR event_id IN (SELECT id FROM events WHERE employer_id = ?)", (user_id, user_id))
+    conn.execute("DELETE FROM events WHERE employer_id = ?", (user_id,))
     conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_tokens WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE jobs SET employer_id = NULL WHERE employer_id = ?", (user_id,))

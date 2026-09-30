@@ -52,6 +52,7 @@ _ICON_PATHS = {
     "send": '<path d="M4 12 20 4l-5 16-3-7z"/>',
     "check": '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     "out": '<path d="M14 4h5v16h-5"/><path d="M10 8l-4 4 4 4M6 12h9"/>',
+    "calendar": '<rect x="3.5" y="5.5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3.5v4M16 3.5v4"/><path d="M7.5 13.5h2M11 13.5h2M14.5 13.5h2M7.5 17h2M11 17h2"/>',
 }
 
 
@@ -839,13 +840,13 @@ def _nav_links(admin: bool) -> str:
 _STUDENT_NAV = [
     ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("spark", "/assistant", "Career assistant"),
           ("feed", "/feed", "Feed"), ("chat", "/messages", "Messages"), ("mail", "/emails", "Emails"), ("people", "/network", "Network")]),
-    ("Career tools", [("send", "/applications", "Applications"), ("file", "/resume", "Resume studio"), ("shield", "/check", "Scam check")]),
+    ("Career tools", [("send", "/applications", "Applications"), ("calendar", "/events", "Events"), ("file", "/resume", "Resume studio"), ("shield", "/check", "Scam check")]),
     ("You", [("user", "/profile", "Profile")]),
 ]
 _EMPLOYER_NAV = [
     ("", [("home", "/", "Home"), ("jobs", "/jobs", "Jobs"), ("feed", "/feed", "Feed"),
           ("chat", "/messages", "Messages"), ("mail", "/emails", "Emails"), ("people", "/talent", "Find students")]),
-    ("Hiring", [("jobs", "/hiring", "Your listings"), ("plus", "/post", "Post a job"), ("shield", "/check", "Scam check")]),
+    ("Hiring", [("jobs", "/hiring", "Your listings"), ("plus", "/post", "Post a job"), ("calendar", "/events/manage", "Events"), ("shield", "/check", "Scam check")]),
     ("You", [("user", "/profile", "Company profile")]),
 ]
 

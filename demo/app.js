@@ -25,6 +25,7 @@ const ICONS = {
   people: '<circle cx="9" cy="9" r="3"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5"/><circle cx="16.5" cy="8" r="2.5"/><path d="M15.5 13.6c2.4-.3 4.4 1.1 5 3.9"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', flag: '<path d="M6 21V4"/><path d="M6 4h11l-2 4 2 4H6"/>',
   send: '<path d="M4 12 20 4l-5 16-3-7z"/>', check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  calendar: '<rect x="3.5" y="5.5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3.5v4M16 3.5v4"/><path d="M7.5 13.5h2M11 13.5h2M14.5 13.5h2M7.5 17h2M11 17h2"/>',
 };
 const icon = (n, s) => `<svg class="ic" viewBox="0 0 24 24" width="${s || 18}" height="${s || 18}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 
@@ -164,6 +165,7 @@ function reset() {
   ];
   S.posts[2].comments.push({author: j.id, body: "Yes, go. They collect resumes at the door and it's a low-pressure way to meet recruiters.", at: t - 12000e3});
   S.posts[0].helpful.add(j.id); S.posts[0].helpful.add(m.id);
+  seedEvents(t);
 }
 function scoreJob(j) {
   const r = N.scorePosting(j.title, j.description + ((j.questions || []).length ? "\n" + j.questions.map(q => q.q).join("\n") : ""), j.company, j.apply_url ? [j.apply_url] : null);
@@ -373,9 +375,9 @@ function scorePill(j) {
 
 // ---------------- layout ----------------
 const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Career assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "network", "Network"]]],
-  ["Career tools", [["send", "applications", "Applications"], ["file", "resume", "Resume studio"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Profile"]]]];
+  ["Career tools", [["send", "applications", "Applications"], ["calendar", "events", "Events"], ["file", "resume", "Resume studio"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Profile"]]]];
 const EMPLOYER_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "talent", "Find students"]]],
-  ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Company profile"]]]];
+  ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"], ["calendar", "emanage", "Events"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Company profile"]]]];
 function sidebar(active) {
   const n = unread(me().id), reqs = isStudent() ? incomingReqs(me().id).length : 0, mails = myEmails().filter(m => !m.read).length, out = [];
   for (const [grp, items] of (isStudent() ? STUDENT_NAV : EMPLOYER_NAV)) {
@@ -1779,7 +1781,7 @@ P.feed = () => {
   const topic = q && tab !== "saved" ? `<p class="fd-topic">Topic: ${esc(q)} <a href="#" data-go="${feedUrl(tab, f)}" aria-label="Clear topic">✕ Clear</a></p>` : "";
   const top = `<div class="fd-top"><div class="fd-bar"><h1>Feed</h1></div>${feedShowMenu(cur, q)}${composer}${flashed}${topic}${note}</div>`;
   const here = tab === "saved" ? "feed?tab=saved" : feedUrl(tab, f, q);
-  const items = posts.map(p => {
+  const items = evFeedMix(tab === "saved" || f !== "all" || q ? "" : tab, posts, posts.map(p => {
     const st = p.status !== "published" ? `<span class="pill ${p.status === "rejected" ? "bad" : "warn"}">${{pending: "Waiting for review", held: "Held for a safety check", rejected: "Not approved"}[p.status]}</span>` : "";
     const open = S.openComments === p.id, mine = p.author === meId, helped = p.helpful.has(meId), sv = isSaved(meId, p.id);
     const save = p.status === "published" ? `<span class="fd-save"><button type="button" data-do="${sv ? "unsave" : "save"}" data-id="${p.id}" data-next="${esc(here)}" aria-label="${sv ? "Remove from saved posts" : "Save post"}" title="${sv ? "Remove from saved posts" : "Save post"}" aria-pressed="${sv}">${bookmark(sv, 18)}</button></span>` : "";
@@ -1788,7 +1790,7 @@ P.feed = () => {
 <div class="fd-body"><div class="fd-line"><span class="fd-who"><a class="fd-nm" href="#" data-go="${go}">${esc(n)}</a>${kind === "emp" ? '<span class="fd-emp">Employer</span>' : ""}<span class="fd-sub">${esc(sub)}</span><span class="fd-time">· ${ago(p.at)}</span></span><span class="fd-kind ${KIND_CLASS[p.kind] || ""}">${KINDS[p.kind]}</span>${st}${save}</div>
 <div class="fd-text">${esc(p.body)}</div>${p.link ? `<p class="lnk">${icon("jobs", 14)} <a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer nofollow ugc">${esc(p.link.slice(0, 90))}</a> <span class="faint">(opens another site)</span></p>` : ""}
 <div class="fd-acts">${p.status === "published" ? `<button type="button" data-do="helpful" data-id="${p.id}"${helped ? ' class="on"' : ""} aria-pressed="${helped}">Helpful · ${p.helpful.size}</button><button type="button" data-do="comments" data-id="${p.id}">Comments · ${p.comments.length}</button>${mine ? "" : `<button type="button" data-do="report-post" data-id="${p.id}">${p.reports.has(meId) ? "Reported" : "Report"}</button>`}${!mine && isStudent() && U(p.author).role === "employer" && approvedEmp(p.author) ? `<a href="#" data-go="newmsg?to=${p.author}">Message</a>` : ""}` : ""}${mine ? `<button type="button" data-do="del-post" data-id="${p.id}">Delete</button>` : ""}</div>
-${open ? `<div class="comments">${p.comments.map(c => `<div class="comment"><b>${esc(who(c.author)[0])}</b> ${esc(c.body)} <span class="small faint">${ago(c.at)}</span></div>`).join("") || '<p class="faint small">No comments yet.</p>'}<form class="commentForm row" data-id="${p.id}" style="margin-top:8px"><label for="cm-${p.id}" class="hp">Comment</label><input id="cm-${p.id}" name="body" maxlength="500" required placeholder="Add a comment" style="flex:1;min-width:160px"><button class="b sm" type="submit">Comment</button></form></div>` : ""}</div></article>`; }).join("");
+${open ? `<div class="comments">${p.comments.map(c => `<div class="comment"><b>${esc(who(c.author)[0])}</b> ${esc(c.body)} <span class="small faint">${ago(c.at)}</span></div>`).join("") || '<p class="faint small">No comments yet.</p>'}<form class="commentForm row" data-id="${p.id}" style="margin-top:8px"><label for="cm-${p.id}" class="hp">Comment</label><input id="cm-${p.id}" name="body" maxlength="500" required placeholder="Add a comment" style="flex:1;min-width:160px"><button class="b sm" type="submit">Comment</button></form></div>` : ""}</div></article>`; }));
   return `<div class="fd"><div class="fd-grid"><div class="fd-main">${top}<div class="fd-list">${items || empty}</div></div>${feedCircle()}</div></div>`;
 };
 
@@ -1907,7 +1909,7 @@ function companyHtml(p, uid, notice) {
   const main = (p.about ? sec("About", `<p class="desc">${esc(p.about)}</p>`) : "") + (p.fsu_connection ? sec("Working with FSU students", `<p class="desc">${esc(p.fsu_connection)}</p>`) : "")
     + ((p.hires_for || []).length ? sec("Hires for", `<div class="chips">${p.hires_for.map(x => `<span class="pill">${esc(x)}</span>`).join("")}</div>`) : "")
     + ((p.perks || []).length ? sec("Perks for student hires", `<div class="chips">${p.perks.map(x => `<span class="chip">✓ ${esc(x)}</span>`).join("")}</div>`) : "")
-    + `<section class="card pcard"><div class="phead"><h2>Open listings</h2><span class="small faint">${jobs.length}</span></div>${jobs.map(j => `<a class="job" href="#" data-go="job?id=${j.id}"><div class="job-title">${esc(j.title)}</div><div class="job-meta"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div></a>`).join("") || '<p class="small muted">No open listings right now.</p>'}</section>`;
+    + evCompanySection(uid) + `<section class="card pcard"><div class="phead"><h2>Open listings</h2><span class="small faint">${jobs.length}</span></div>${jobs.map(j => `<a class="job" href="#" data-go="job?id=${j.id}"><div class="job-title">${esc(j.title)}</div><div class="job-meta"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div></a>`).join("") || '<p class="small muted">No open listings right now.</p>'}</section>`;
   return (notice || "") + hero + `<div class="pgrid"><aside class="pside">${trustCard(t, owner)}${glance}${contact}</aside><div class="pmain">${main}</div></div>`;
 }
 
@@ -2286,6 +2288,8 @@ function exportData() {
     assistant_memory: csMems(u.id).slice().reverse().map(m => ({fact: m.fact, chat_id: m.chat, created_at: new Date(m.at).toISOString()})),
     saved_jobs: S.savedJobs.filter(x => x.user === u.id).map(x => ({job_id: x.job, created_at: new Date(x.at).toISOString()})),
     follows: S.follows.filter(f => f.student === u.id).map(f => ({employer_id: f.employer, created_at: new Date(f.at).toISOString()})),
+    events: S.events.filter(e => e.employer === u.id).map(e => ({id: e.id, title: e.title, kind: e.kind, starts_at: new Date(e.starts).toISOString(), status: e.status})),
+    event_rsvps: S.rsvps.filter(r => r.student === u.id).map(r => ({event_id: r.event, status: r.status, created_at: new Date(r.at).toISOString()})),
     emails: myEmails().slice().reverse().map(m => ({subject: m.subject, body: emailBody(m), sent_at: new Date(m.at).toISOString(), read_at: m.read ? "yes" : null}))};
   return JSON.stringify(d, (k, v) => v instanceof Set ? [...v] : v, 2);
 }
@@ -2453,9 +2457,9 @@ P.inbox = () => pageHead("Demo inbox", "On the real site these go to the person'
   (S.inbox.map(m => `<div class="card"><div class="small faint">To: ${esc(m.to)}</div><b>${esc(m.subject)}</b><pre style="white-space:pre-wrap;font:13px/1.55 var(--mono);background:var(--sunk);padding:10px 12px;border-radius:8px;margin:10px 0">${esc(m.body)}</pre>${m.link ? `<a class="b sm" href="#" data-go="${esc(m.link.go)}">${esc(m.link.label)}</a>` : ""}</div>`).join("") || '<div class="empty">No mail yet. Create an account and the confirmation email appears here.</div>');
 
 // ---- reviewer ----
-const ADMIN_TABS = [["admin", "Listings"], ["aemployers", "Employers"], ["aposts", "Feed"], ["amessages", "Held messages"], ["areports", "Reports"], ["aschools", "School requests"]];
+const ADMIN_TABS = [["admin", "Listings"], ["aemployers", "Employers"], ["aposts", "Feed"], ["amessages", "Held messages"], ["areports", "Reports"], ["aschools", "School requests"], ["aevents", "Events"]];
 function adminCounts() { return {admin: S.jobs.filter(j => j.review_status === "pending").length, aemployers: Object.values(S.employers).filter(p => p.status === "pending").length,
-  aposts: S.posts.filter(p => ["pending", "held"].includes(p.status)).length, amessages: S.convos.reduce((n, c) => n + c.messages.filter(m => m.status === "held").length, 0), areports: S.reports.filter(r => !r.resolved).length, aschools: new Set(S.schoolRequests.map(x => x.school.toLowerCase())).size}; }
+  aposts: S.posts.filter(p => ["pending", "held"].includes(p.status)).length, amessages: S.convos.reduce((n, c) => n + c.messages.filter(m => m.status === "held").length, 0), areports: S.reports.filter(r => !r.resolved).length, aschools: new Set(S.schoolRequests.map(x => x.school.toLowerCase())).size, aevents: S.events.filter(e => e.status === "pending").length}; }
 P.aschools = () => { const m = new Map();
   for (const x of S.schoolRequests) { const k = x.school.toLowerCase(); const e = m.get(k) || {school: x.school, n: 0, last: 0}; e.n++; e.last = Math.max(e.last, x.at); m.set(k, e); }
   const rows = [...m.values()].sort((a, b) => b.n - a.n || b.last - a.last).map(e => `<tr><td><b>${esc(e.school)}</b></td><td>${e.n}</td><td class="small muted">${ago(e.last)}</td></tr>`).join("");
@@ -2500,6 +2504,338 @@ ${m.findings.map(f => `<div class="finding critical"><b>${esc(f)}</b></div>`).jo
 <div class="rev-actions"><button class="btn-approve" type="button" data-do="msg-deliver" data-c="${c.id}" data-id="${m.id}">Deliver anyway</button><button class="btn-reject" type="button" data-do="msg-remove" data-c="${c.id}" data-id="${m.id}">Remove</button>${U(m.from).role === "employer" ? `<button class="btn-reject" type="button" data-do="emp-suspend" data-id="${m.from}">Remove and suspend sender</button>` : ""}</div></div>`)).join("") || '<div class="empty">No held messages.</div>');
 P.areports = () => adminPage("Reports", "areports", S.reports.filter(r => !r.resolved).map((r, i) => `<div class="rev-card"><div class="row between"><b>${esc(r.what)}</b><span class="small faint">${ago(r.at)}</span></div><p class="small muted">Reported by ${esc(who(r.by)[0])}</p><div class="detail-desc" style="font-size:14px;background:var(--sunk);padding:10px 12px;border-radius:8px">${esc(r.text)}</div>
 <div class="rev-actions"><button class="btn-approve" type="button" data-do="report-resolve" data-i="${S.reports.indexOf(r)}">Resolve</button></div></div>`).join("") || '<div class="empty">No open reports. Report a message or feed post to see one here.</div>');
+
+// ---- events (twin of events.py): employer events, reviewer approval, RSVPs with a waitlist, .ics, reminders, feed cards ----
+const EV_KINDS = {info_session: "Info session", career_fair: "Career fair table", workshop: "Workshop", coffee_chat: "Coffee chat", other: "Other"};
+const EV_FORMATS = {in_person: "In person", virtual: "Virtual"};
+const EV_DURATIONS = [[30, "30 min"], [45, "45 min"], [60, "1 hour"], [90, "1.5 hours"], [120, "2 hours"], [180, "3 hours"], [240, "4 hours"]];
+const EV_HOSTS = ["zoom.us", "teams.microsoft.com", "meet.google.com"], EV_MAX_MAJORS = 6, EV_REMIND_H = 30, EV_FEED_MAX = 3, EV_CAP_MAX = 5000;
+const EV_MAJOR = /^[A-Za-z][A-Za-z &,.'/()-]{0,59}$/;
+Object.assign(APP_PAGES, {events: "events", event: "events", emanage: "emanage", eventnew: "emanage", eventedit: "emanage"});
+const ET_FMT = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short"});
+const ET_MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], ET_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function etParts(ts) { const o = {}; ET_FMT.formatToParts(new Date(ts)).forEach(x => { o[x.type] = x.value; }); return {y: +o.year, mo: +o.month, d: +o.day, h: (+o.hour) % 24, mi: +o.minute, wd: o.weekday}; }
+function etToTs(date, time) {   // "2026-10-08", "18:30" on the clock in Tallahassee -> ms, or null
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || ""), t = /^(\d{2}):(\d{2})$/.exec(time || ""); if (!m || !t) return null;
+  let ts = Date.UTC(+m[1], +m[2] - 1, +m[3], +t[1], +t[2]) + 5 * 3600e3; if (etParts(ts).h !== +t[1]) ts -= 3600e3;
+  const p = etParts(ts); return p.y === +m[1] && p.mo === +m[2] && p.d === +m[3] && p.h === +t[1] ? ts : null;
+}
+const pad2 = n => String(n).padStart(2, "0");
+const etDate = ts => { const p = etParts(ts); return `${p.y}-${pad2(p.mo)}-${pad2(p.d)}`; };
+const etClock = p => `${p.h % 12 || 12}:${pad2(p.mi)} ${p.h < 12 ? "AM" : "PM"}`;
+function evWhen(e, short) {
+  const a = etParts(e.starts), b = etParts(e.starts + e.dur * 60e3), day = `${a.wd}, ${cap(ET_MON[a.mo - 1].toLowerCase())} ${a.d}`;
+  if (short) return `${day} · ${etClock(a)}`;
+  let start = etClock(a); if (a.d === b.d && (a.h < 12) === (b.h < 12)) start = start.slice(0, -3);
+  return `${day} · ${start} – ${etClock(b)} ET`;
+}
+function evWeekEnd(now) { const p = etParts(now), wd = ET_DAYS.indexOf(p.wd), d = new Date(Date.UTC(p.y, p.mo - 1, p.d + 7 - wd)); return etToTs(d.toISOString().slice(0, 10), "00:00") || now + 7 * 864e5; }
+function evMonthEnd(now) { const p = etParts(now), d = new Date(Date.UTC(p.y, p.mo, 1)); return etToTs(d.toISOString().slice(0, 10), "00:00") || now + 31 * 864e5; }
+const evCompany = e => (EP(e.employer) || {}).company || "Employer";
+const evLive = e => e.status === "approved" && e.starts + e.dur * 60e3 > NOW();
+const evUpcoming = () => S.events.filter(e => evLive(e) && approvedEmp(e.employer)).sort((a, b) => a.starts - b.starts);
+const evRsvp = (eid, uid) => S.rsvps.find(r => r.event === eid && r.student === uid);
+const evState = (eid, uid) => (evRsvp(eid, uid) || {}).status || "";
+function evCounts(eid) { const c = {going: 0, waitlist: 0, not_going: 0}; S.rsvps.filter(r => r.event === eid).forEach(r => { c[r.status]++; }); return c; }
+const evClassYear = p => { const t = ((p || {}).grad_term || "").split(" ").pop(); return /^\d+$/.test(t) ? t : ""; };
+const evMatchesMajor = (e, p) => { const m = ((p || {}).major || "").trim().toLowerCase(); return !!m && e.majors.some(x => x.trim().toLowerCase() === m); };
+function evHostOk(url) { try { const u = new URL(url), h = u.hostname.toLowerCase(); return u.protocol === "https:" && EV_HOSTS.some(x => h === x || h.endsWith("." + x)); } catch (err) { return false; } }
+const evYears = () => { const y = etParts(NOW()).y; return [0, 1, 2, 3, 4].map(i => String(y + i)); };
+const evPage = e => "event?id=" + e.id;
+const evWhereLine = e => e.format === "in_person" ? "Where: " + e.location : "Where: online. The meeting link is on the event page.";
+function evSeed(emp, o) { const e = Object.assign({id: S.evN++, employer: emp, kind: "info_session", dur: 60, format: "in_person", location: "", meeting_url: "", capacity: 0, majors: [], years: [], job: 0, status: "approved", scan: "clear", flags: [], review_note: "", created: NOW(), reviewed: NOW()}, o); S.events.push(e); return e; }
+function seedEvents(t) {   // two live events and one waiting for the reviewer
+  S.events = []; S.rsvps = []; S.evN = 1;
+  let six = etToTs(etDate(t), "18:00"); if (six < t + 6 * 3600e3) six = etToTs(etDate(t + 864e5), "18:00");   // the first 6 PM ET at least 6 hours away, so the reminder is due
+  const g = evSeed(4, {title: "Summer data internships: info session", starts: six, dur: 60, location: "Career Center, room 2", capacity: 40, majors: ["Statistics", "Computer Science", "Marketing"], years: [String(etParts(t).y + 1)], job: 1,
+    description: "Meet the Garnet Analytics team and hear how our summer interns build survey dashboards for Florida nonprofits. We'll walk through a real project, talk about what we look for, and answer questions. Bring a resume if you have one. Pizza provided.", created: t - 3 * 864e5, reviewed: t - 2 * 864e5});
+  const b = evSeed(5, {title: "Career fair table: front desk and patient services", kind: "career_fair", starts: etToTs(etDate(t + 6 * 864e5), "11:00"), dur: 180, location: "Fall career fair, table 14", capacity: 2, majors: ["Biology", "Health Science", "Psychology"],
+    description: "Stop by the Bayside Dental table to talk about part-time front desk and patient services roles for pre-health students. Flexible hours around classes; no experience needed. We'll have quick 10-minute chats all morning.", created: t - 2 * 864e5, reviewed: t - 30 * 3600e3});
+  evSeed(6, {title: "Research assistant Q&A", kind: "workshop", starts: etToTs(etDate(t + 9 * 864e5), "16:00"), format: "virtual", meeting_url: "https://meet.google.com/abc-defg-hij", capacity: 25, majors: ["Political Science", "Statistics"], status: "pending", reviewed: 0,
+    description: "An open Q&A with Coastal Policy Lab about paid undergraduate research assistant roles: what the work looks like, how many hours, and how to apply for spring.", created: t - 5 * 3600e3});
+  const going = (e, uid, st, ago_) => S.rsvps.push({event: e.id, student: uid, status: st, at: t - ago_, reminded: 0});
+  const jid = findUser("jordan@fsu.edu", "student").id, mid = findUser("maya@fsu.edu", "student").id, bid = findUser("blairn@fsu.edu", "student").id, cid = findUser("caseyd@fsu.edu", "student").id;
+  going(g, jid, "going", 20 * 3600e3); going(g, cid, "going", 10 * 3600e3); going(b, mid, "going", 8 * 3600e3); going(b, bid, "going", 4 * 3600e3);
+  sendEventReminders();   // the daily maintenance: Jordan gets the reminder for tomorrow's info session
+}
+function sendEventReminders() {   // twin of events.send_event_reminders: once per RSVP, for events starting within EV_REMIND_H hours
+  const now = NOW(); let n = 0;
+  S.rsvps.filter(r => r.status === "going" && !r.reminded).forEach(r => { const e = S.events.find(x => x.id === r.event);
+    if (!e || e.status !== "approved" || !approvedEmp(e.employer) || e.starts <= now || e.starts > now + EV_REMIND_H * 3600e3) return;
+    r.reminded = now; n++; const u = U(r.student); if (!u) return;
+    mail(u.email, `Reminder: ${e.title} is coming up`, `You're going to ${e.title} with ${evCompany(e)}.\n\nWhen: ${evWhen(e)}\n${evWhereLine(e)}\n\nCan't make it? Cancel your RSVP on the event page so someone on the waitlist can take your spot.`, {label: "Open the event page", go: evPage(e)}); });
+  return n;
+}
+function evPromote(e) {
+  const wait = S.rsvps.filter(r => r.event === e.id && r.status === "waitlist").sort((a, b) => a.at - b.at);
+  const free = e.capacity ? Math.max(0, e.capacity - evCounts(e.id).going) : wait.length;
+  wait.slice(0, free).forEach(r => { r.status = "going"; const u = U(r.student);
+    if (u && e.status === "approved") mail(u.email, `You're in: ${e.title}`, `A spot opened up and you're now going to ${e.title} with ${evCompany(e)}.\n\nWhen: ${evWhen(e)}\n${evWhereLine(e)}`, {label: "Open the event page", go: evPage(e)}); });
+}
+function evCancel(e, why) {
+  const ids = S.rsvps.filter(r => r.event === e.id && ["going", "waitlist"].includes(r.status)).map(r => r.student), was = e.status;
+  e.status = "cancelled";
+  if (was === "approved") ids.forEach(s => { const u = U(s); if (u) mail(u.email, `Cancelled: ${e.title}`, `${evCompany(e)} cancelled ${e.title} (${evWhen(e)}).\n\n${why ? why + "\n\n" : ""}You don't need to do anything. Browse other events on NoleCareerShield.`, null); });
+}
+const evDateBlock = e => { const a = etParts(e.starts); return `<span class="ev-date" aria-hidden="true"><small>${ET_MON[a.mo - 1]}</small><b>${a.d}</b><i>${a.wd}</i></span>`; };
+const evStatePill = st => ({going: '<span class="pill ok">✓ Going</span>', waitlist: '<span class="pill gold">On the waitlist</span>', not_going: "<span class=\"pill\">Can't go</span>"})[st] || "";
+const evStatusPill = e => e.status === "approved" && !evLive(e) ? '<span class="pill">Ended</span>' : ({pending: '<span class="pill warn">Waiting for review</span>', rejected: '<span class="pill bad">Not approved</span>', cancelled: '<span class="pill bad">Cancelled</span>', removed: '<span class="pill bad">Removed</span>', approved: '<span class="pill ok">Live</span>'})[e.status] || "";
+const evSpots = (e, c) => { if (!e.capacity) return `${c.going} going`; const left = e.capacity - c.going; return `${c.going} going · ` + (left > 0 ? `${left} spot${left !== 1 ? "s" : ""} left` : "Full, waitlist open"); };
+const evSpotsLong = (e, c) => !e.capacity ? `No limit · ${c.going} going` : `${c.going} of ${e.capacity} going` + (c.going >= e.capacity ? ` · full, ${c.waitlist} on the waitlist` : "");
+const evWhere = e => e.format === "in_person" ? esc(e.location) : "Virtual";
+function evRsvpForm(e, st, next, compact) {   // twin of events.rsvp_form
+  if (st === "going" || st === "waitlist") return `<div class="ev-rsvp">${evStatePill(st)}<button class="b sm sec" type="button" data-ev="cancel-rsvp" data-id="${e.id}" data-next="${esc(next)}">Cancel RSVP</button></div>`;
+  const full = e.capacity && evCounts(e.id).going >= e.capacity, label = full ? "Join the waitlist" : (compact ? "RSVP" : "Going"), consent = `RSVPing shares your name, major and class year with ${evCompany(e)}.`;
+  return `<div class="ev-rsvp"><button class="b sm" type="button" data-ev="rsvp" data-status="going" data-id="${e.id}" data-next="${esc(next)}" title="${esc(consent)}">${icon("check", 14)} ${label}</button>`
+    + (compact ? "" : `<button class="b sm sec" type="button" data-ev="rsvp" data-status="not_going" data-id="${e.id}" data-next="${esc(next)}"${st === "not_going" ? " aria-pressed=true" : ""}>Can't go</button>`)
+    + `<span class="ev-consent">${esc(consent)}</span></div>`;
+}
+function evRow(e, st) {   // twin of events._row
+  const c = evCounts(e.id), tags = e.majors.slice(0, 3).map(m => `<span class="chip">${esc(m)}</span>`).join("");
+  return `<a class="ev-row" href="#" data-go="${evPage(e)}">${evDateBlock(e)}<span class="ev-main"><span class="ev-kind k-${esc(e.kind)}">${esc(EV_KINDS[e.kind] || "Event")}</span><b class="ev-title">${esc(e.title)}</b><span class="ev-co">${esc(evCompany(e))}</span>`
+    + `<span class="ev-meta">${esc(evWhen(e, true))} · ${evWhere(e)} · ${esc(evSpots(e, c))}</span>${tags ? `<span class="ev-tags">${tags}</span>` : ""}</span><span class="ev-side">${evStatePill(st || "")}</span></a>`;
+}
+function evFeedCard(e, next) {   // twin of events.feed_card
+  const c = evCounts(e.id), st = evState(e.id, me().id);
+  return `<article class="fd-post fd-ev" id="event-${e.id}"><div class="fd-gut">${evDateBlock(e)}</div><div class="fd-body"><div class="fd-line"><span class="fd-who"><a class="fd-nm" href="#" data-go="company?id=${e.employer}">${esc(evCompany(e))}</a><span class="fd-emp">Employer</span><span class="fd-sub">${esc(evWhen(e, true))}</span></span><span class="fd-kind k-event">${esc(EV_KINDS[e.kind] || "Event")}</span></div>`
+    + `<a class="ev-card-t" href="#" data-go="${evPage(e)}">${esc(e.title)}</a><p class="ev-card-m">${icon("calendar", 14)} ${esc(evWhen(e))} · ${evWhere(e)} · ${esc(evSpots(e, c))}</p>`
+    + `<div class="ev-card-a">${isStudent() ? evRsvpForm(e, st, next, true) : ""}<a class="ev-more" href="#" data-go="${evPage(e)}">Details</a></div></div></article>`;
+}
+function evFeedMix(tab, posts, htmls) {   // twin of events.feed_mix
+  const html = posts.map((p, i) => [p.at, htmls[i]]);
+  if (!isStudent() || !["feed", "foryou"].includes(tab)) return html.map(x => x[1]).join("");
+  const evs = evUpcoming().filter(e => evState(e.id, me().id) !== "not_going");
+  if (!evs.length) return html.map(x => x[1]).join("");
+  const next = tab === "feed" ? "feed" : "feed?tab=foryou";
+  if (tab === "foryou") {
+    const p = SP(me().id) || {}, yr = evClassYear(p), score = e => 4 * evMatchesMajor(e, p) + 2 * !!(yr && e.years.includes(yr));
+    const out = html.map(x => x[1]); evs.sort((a, b) => score(b) - score(a) || a.starts - b.starts).slice(0, EV_FEED_MAX).forEach((e, i) => out.splice(Math.min(out.length, i * 4), 0, evFeedCard(e, next)));
+    return out.join("");
+  }
+  const oldest = html.length ? html[html.length - 1][0] : 0;
+  return html.concat(evs.slice(0, EV_FEED_MAX).map(e => [Math.max(e.reviewed || e.created, oldest), evFeedCard(e, next)])).sort((a, b) => b[0] - a[0]).map(x => x[1]).join("");
+}
+function evCompanySection(uid) {   // twin of events.upcoming_for_employer
+  const evs = evUpcoming().filter(e => e.employer === uid).slice(0, 5);
+  return evs.length ? `<section class="card pcard"><div class="phead"><h2>Upcoming events</h2><span class="small faint">${evs.length}</span></div><div class="ev-list tight">${evs.map(e => evRow(e, "")).join("")}</div></section>` : "";
+}
+function evVisible(e) {
+  if (!e || !me()) return false;
+  if (me().id === e.employer) return e.status !== "removed";
+  if (e.status === "approved" && approvedEmp(e.employer)) return isStudent() || approvedEmp(me().id);
+  return e.status === "cancelled" && isStudent() && !!evState(e.id, me().id);
+}
+const EV_FILTER_WHEN = [["", "Any time"], ["week", "This week"], ["month", "This month"]];
+const evUrl = (kind, when, major) => { const q = [kind ? "type=" + kind : "", when ? "when=" + when : "", major ? "major=1" : ""].filter(Boolean); return "events" + (q.length ? "?" + q.join("&amp;") : ""); };
+P.events = () => {
+  if (!me()) return needLogin("events");
+  if (isEmployer() && !approvedEmp(me().id)) return pageHead("Events", "", "Career events") + banner("info", "Events open to employers once a reviewer approves your organization.");
+  const rq = S.route.q, kind = EV_KINDS[rq.type] ? rq.type : "", when = ["week", "month"].includes(rq.when) ? rq.when : "", major = rq.major && isStudent() ? 1 : 0, now = NOW();
+  const p = isStudent() ? SP(me().id) : null;
+  let evs = evUpcoming();
+  if (kind) evs = evs.filter(e => e.kind === kind);
+  if (when) { const end = when === "week" ? evWeekEnd(now) : evMonthEnd(now); evs = evs.filter(e => e.starts < end); }
+  if (major) evs = evs.filter(e => evMatchesMajor(e, p));
+  const chips = [["", "All types"]].concat(Object.entries(EV_KINDS)).map(([k, t]) => `<a class="chipf${kind === k ? " active" : ""}" href="#" data-go="${evUrl(k, when, major)}"${kind === k ? " aria-current=true" : ""}>${esc(t)}</a>`).join("");
+  const whens = EV_FILTER_WHEN.map(([k, t]) => `<a class="chipf${when === k ? " active" : ""}" href="#" data-go="${evUrl(kind, k, major)}"${when === k ? " aria-current=true" : ""}>${esc(t)}</a>`).join("");
+  const maj = isStudent() ? `<a class="chipf${major ? " active" : ""}" href="#" data-go="${evUrl(kind, when, major ? 0 : 1)}"${major ? " aria-current=true" : ""}>${esc("My major" + (p && p.major ? ": " + p.major : ""))}</a>` : "";
+  const going = kind || when || major ? [] : evUpcoming().filter(e => ["going", "waitlist"].includes(evState(e.id, me().id)));
+  const empty = `<div class="card empty ev-empty"><b>No events match</b><p class="small muted">${kind || when || major ? "Try another filter. " : ""}${major ? "Events with your major tagged show up under My major." : "When approved employers schedule info sessions and workshops, they show up here."}</p></div>`;
+  let head = pageHead("Events", "Info sessions, career fair tables, workshops and coffee chats from employers our reviewers approved.", "Career events");
+  if (isEmployer()) head += '<p style="margin:-6px 0 16px"><a class="b sm" href="#" data-go="emanage">Your events</a></p>';
+  const yours = going.length ? `<h2 class="ev-sec">You're going</h2><div class="ev-list">${going.map(e => evRow(e, evState(e.id, me().id))).join("")}</div>${evs.length > going.length ? `<h2 class="ev-sec">Upcoming</h2>` : ""}` : "";
+  return head + takeFlash() + `<div class="ev-filters"><div class="filter-row"><span class="label">Type</span>${chips}</div><div class="filter-row"><span class="label">When</span>${whens}${maj}</div></div>` + yours
+    + `<div class="ev-list">${evs.filter(e => !going.includes(e)).map(e => evRow(e, isStudent() ? evState(e.id, me().id) : "")).join("") || (going.length ? "" : empty)}</div>`;
+};
+function evMeeting(e) {
+  if (evHostOk(e.meeting_url)) return `<a class="b sm" href="${esc(e.meeting_url)}" target="_blank" rel="noopener noreferrer nofollow">${icon("send", 14)} Join the meeting</a> <span class="small faint">${esc(new URL(e.meeting_url).hostname)}</span>`;
+  return `<code class="ev-url">${esc(e.meeting_url)}</code><p class="small muted" style="margin-top:4px">This link isn't from Zoom, Teams or Google Meet, so it isn't clickable. Check it with the employer before you open it.</p>`;
+}
+function evOwnerPanel(e, c) {   // twin of events._owner_panel
+  const rs = S.rsvps.filter(r => r.event === e.id && ["going", "waitlist"].includes(r.status)).sort((a, b) => (a.status > b.status) - (a.status < b.status) || a.at - b.at);
+  const rows = rs.map(r => { const p = SP(r.student) || {}, yr = evClassYear(p), [ok] = canStart(me(), r.student);
+    return `<tr><td><b>${esc(p.display_name || "FSU student")}</b></td><td>${esc(p.major || "")}</td><td>${yr ? "Class of " + yr : ""}</td><td>${evStatePill(r.status)}</td><td>${ok ? `<a class="b sm ghost" href="#" data-go="newmsg?to=${r.student}">${icon("chat", 14)} Message</a>` : "<span class=\"small faint\">No messages</span>"}</td></tr>`; }).join("");
+  const table = rows ? `<div class="ev-tablewrap"><table class="t"><tr><th>Name</th><th>Major</th><th>Year</th><th>RSVP</th><th></th></tr>${rows}</table></div>` : '<p class="small muted">No RSVPs yet.</p>';
+  const acts = (e.status === "approved" && evLive(e)) || e.status === "pending" ? `<div class="row" style="margin-top:14px"><a class="b sm sec" href="#" data-go="eventedit?id=${e.id}">Edit</a><button class="b sm danger" type="button" data-ev="cancel" data-id="${e.id}">Cancel event</button></div><p class="small faint" style="margin-top:6px">Cancelling emails everyone who is going or waitlisted.</p>` : "";
+  return `<section class="card"><div class="row between"><h2 class="ev-h" style="margin:0">RSVPs</h2><span class="small muted">${c.going} going · ${c.waitlist} waitlisted</span></div><p class="small muted" style="margin:6px 0 12px">Students who RSVP agree to share their name, major and class year with you. Message them only about this event or your openings.</p>${table}${acts}</section>`;
+}
+P.event = () => {
+  if (!me()) return needLogin("events");
+  const e = S.events.find(x => x.id === S.route.q.id);
+  if (!evVisible(e)) return '<p class="empty" style="margin:40px 0">That event isn\'t available.</p>';
+  const c = evCounts(e.id), owner = me().id === e.employer, st = isStudent() ? evState(e.id, me().id) : "", live = evLive(e), a = etParts(e.starts);
+  let notice = takeFlash();
+  if (e.status === "cancelled" && !owner) notice += banner("warning", "This event was cancelled by the employer.");
+  if (e.status === "rejected" && e.review_note) notice += banner("warning", "A reviewer didn't approve this event: " + e.review_note);
+  const facts = [["calendar", "When", esc(evWhen(e))], [e.format === "in_person" ? "home" : "chat", "Where", evWhere(e)], ["people", "Spots", esc(evSpotsLong(e, c))]];
+  if (e.majors.length || e.years.length) facts.push(["user", "For", esc(e.majors.concat(e.years.map(y => "Class of " + y)).join(", "))]);
+  const job = e.job ? approvedJobs().find(j => j.id === e.job) : null;
+  if (job) facts.push(["jobs", "Related listing", `<a href="#" data-go="job?id=${job.id}">${esc(job.title)}</a>`]);
+  let side = "";
+  if (isStudent()) {
+    if (!live) side = `<p class="muted small">${e.status === "cancelled" ? "This event was cancelled." : "This event has ended."}</p>${evStatePill(st)}`;
+    else if (!studentReady(SP(me().id))) side = banner("info", "Add your name and major to your profile to RSVP. They are what the employer sees.") + '<a class="b sm" href="#" data-go="setup?step=1">Set up profile</a>';
+    else { side = evRsvpForm(e, st, evPage(e)); if (st === "waitlist") side += '<p class="small muted" style="margin-top:8px">You\'ll get an email if a spot opens up.</p>'; }
+    if (["going", "waitlist"].includes(st) || live) side += `<p style="margin-top:12px"><button class="b sm ghost" type="button" data-ev="ics" data-id="${e.id}">${icon("calendar", 14)} Add to calendar (.ics)</button></p>`;
+  }
+  if (e.format === "virtual") {
+    if (owner || (st === "going" && live)) side += `<div class="ev-join"><small>Meeting link</small>${evMeeting(e)}</div>`;
+    else if (isStudent() && live) side += '<p class="small faint" style="margin-top:10px">The meeting link is shown here once you\'re going.</p>';
+  }
+  const msg = isStudent() && live ? `<a class="b sm ghost" href="#" data-go="newmsg?to=${e.employer}">${icon("chat", 14)} Message ${esc(evCompany(e))}</a>` : "";
+  const head = `<a class="back" href="#" data-go="${owner ? "emanage" : "events"}">← ${owner ? "Your events" : "Events"}</a><section class="card ev-hero">${evDateBlock(e)}<div class="ev-hero-t"><div class="row"><span class="ev-kind k-${esc(e.kind)}">${esc(EV_KINDS[e.kind] || "Event")}</span>${owner || e.status !== "approved" || !live ? evStatusPill(e) : ""}</div><h1>${esc(e.title)}</h1><p class="ev-co"><a href="#" data-go="company?id=${e.employer}">${esc(evCompany(e))}</a> · ${esc({Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday"}[a.wd])}</p></div></section>`;
+  return notice + head + `<div class="ev-grid"><div class="ev-mainc"><section class="card"><div class="ev-facts">${facts.map(([i, k, v]) => `<div class="ev-fact">${icon(i, 16)}<div><small>${esc(k)}</small><span>${v}</span></div></div>`).join("")}</div></section>`
+    + `<section class="card"><h2 class="ev-h">About this event</h2><p class="ev-desc">${esc(e.description)}</p>${msg}</section>${owner ? evOwnerPanel(e, c) : ""}</div><aside class="ev-aside">${side ? `<section class="card ev-act">${side}</section>` : ""}</aside></div>`;
+};
+P.emanage = () => {
+  if (!isEmployer()) return me() ? pageHead("That page is for employers") : needLogin("events", "employer");
+  const head = pageHead("Your events", "Info sessions, career fair tables, workshops and coffee chats. A reviewer approves each one before students see it.", "Hiring");
+  if (!approvedEmp(me().id)) return head + banner("info", "Events open to employers once a reviewer approves your organization.");
+  const now = NOW(), evs = S.events.filter(e => e.employer === me().id && e.status !== "removed");
+  const up = evs.filter(e => e.starts + e.dur * 60e3 > now && ["pending", "approved"].includes(e.status)).sort((a, b) => a.starts - b.starts), past = evs.filter(e => !up.includes(e)).sort((a, b) => b.starts - a.starts);
+  const card = e => { const c = evCounts(e.id); return `<a class="ev-row" href="#" data-go="${evPage(e)}">${evDateBlock(e)}<span class="ev-main"><span class="ev-kind k-${esc(e.kind)}">${esc(EV_KINDS[e.kind] || "Event")}</span><b class="ev-title">${esc(e.title)}</b><span class="ev-meta">${esc(evWhen(e, true))} · ${evWhere(e)}</span></span><span class="ev-side">${evStatusPill(e)}<span class="ev-n"><b>${c.going}</b> going${c.waitlist ? ` · ${c.waitlist} waitlist` : ""}</span></span></a>`; };
+  return head + takeFlash() + `<div class="row" style="margin:-4px 0 18px"><a class="b" href="#" data-go="eventnew">${icon("plus", 15)} New event</a><a class="b sec" href="#" data-go="events">All events</a></div>`
+    + `<h2 class="ev-sec">Upcoming</h2><div class="ev-list">${up.map(card).join("") || '<div class="card empty ev-empty"><b>No upcoming events</b><p class="small muted">Host an info session or a coffee chat to meet FSU students.</p></div>'}</div>`
+    + (past.length ? `<h2 class="ev-sec">Past and cancelled</h2><div class="ev-list">${past.slice(0, 30).map(card).join("")}</div>` : "");
+};
+function evForm(v, eid) {   // twin of events._form
+  const jobs = approvedJobs().filter(j => j.employer_id === me().id), fmt = v.format || "in_person", today = etDate(NOW());
+  const sel = (a, b) => String(a) === String(b) ? " selected" : "";
+  return `<form id="eventForm" class="card ev-form" data-id="${eid || ""}">
+<div class="form-field"><label for="e-title">Title</label><input id="e-title" name="title" required maxlength="120" value="${esc(v.title || "")}" placeholder="Summer data internships: info session"></div>
+<div class="grid2"><div class="form-field"><label for="e-kind">Type</label><select id="e-kind" name="kind">${Object.entries(EV_KINDS).map(([k, t]) => `<option value="${k}"${sel(v.kind, k)}>${esc(t)}</option>`).join("")}</select></div>
+<div class="form-field"><label for="e-job">Related listing (optional)</label><select id="e-job" name="job_id"><option value="">None</option>${jobs.map(j => `<option value="${j.id}"${sel(v.job_id, j.id)}>${esc(j.title)}</option>`).join("")}</select></div></div>
+<div class="form-field"><label for="e-desc">Description</label><p class="hint">What students will learn or do, who should come, and what to bring. Don't ask for payment or personal details.</p><textarea id="e-desc" name="description" required maxlength="3000">${esc(v.description || "")}</textarea></div>
+<fieldset class="ev-fs"><legend>When <span class="faint small">(Eastern time)</span></legend><div class="ev-when"><div class="form-field"><label for="e-date">Date</label><input id="e-date" type="date" name="date" required min="${today}" value="${esc(v.date || "")}"></div>
+<div class="form-field"><label for="e-time">Start time</label><input id="e-time" type="time" name="time" required step="900" value="${esc(v.time || "")}"></div>
+<div class="form-field"><label for="e-dur">Length</label><select id="e-dur" name="duration">${EV_DURATIONS.map(([d, l]) => `<option value="${d}"${sel(v.duration || 60, d)}>${l}</option>`).join("")}</select></div></div></fieldset>
+<fieldset class="ev-fs"><legend>Format</legend><div class="checks" style="margin-bottom:12px">${Object.entries(EV_FORMATS).map(([k, t]) => `<label class="chk"><input type="radio" name="format" value="${k}"${fmt === k ? " checked" : ""}><span>${t}</span></label>`).join("")}</div>
+<div class="grid2"><div class="form-field"><label for="e-loc">Location (in person)</label><input id="e-loc" name="location" maxlength="200" value="${esc(v.location || "")}" placeholder="Career Center, room 2"></div>
+<div class="form-field"><label for="e-url">Meeting link (virtual)</label><input id="e-url" name="meeting_url" maxlength="300" value="${esc(v.meeting_url || "")}" placeholder="https://zoom.us/j/..."></div></div>
+<p class="hint">Zoom, Microsoft Teams and Google Meet links are clickable for students who are going. Other links are shown as text.</p></fieldset>
+<div class="grid2"><div class="form-field"><label for="e-cap">Capacity (optional)</label><input id="e-cap" name="capacity" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="${esc(v.capacity || "")}" placeholder="No limit"><p class="hint" style="margin-top:5px">When it's full, students can join a waitlist.</p></div>
+<div class="form-field"><label for="e-majors">Majors (optional)</label><input id="e-majors" name="majors" maxlength="400" value="${esc(v.majors || "")}" placeholder="Statistics, Computer Science"><p class="hint" style="margin-top:5px">Up to ${EV_MAX_MAJORS}, separated by commas. Everyone can still RSVP.</p></div></div>
+<div class="form-field"><span class="lbl-like">Class years (optional)</span><div class="checks">${evYears().map(y => `<label class="chk"><input type="checkbox" name="class_years" value="${y}"${(v.class_years || []).includes(y) ? " checked" : ""}><span>Class of ${y}</span></label>`).join("")}</div></div>
+<p class="small muted">A reviewer approves every event before students see it${eid ? ", and changing the title, description or meeting link sends it back for review" : ""}.</p>
+<div class="row" style="margin-top:12px"><button class="submit-btn" type="submit">${eid ? "Save changes" : "Submit for review"}</button><a class="b sec" href="#" data-go="${eid ? "event?id=" + eid : "emanage"}">Cancel</a></div></form>`;
+}
+function evNeedEmployer() {
+  if (!isEmployer()) return me() ? pageHead("That page is for employers") : needLogin("events", "employer");
+  if (!approvedEmp(me().id)) return pageHead("New event", "", "Events") + banner("info", "Events open to employers once a reviewer approves your organization.");
+  return "";
+}
+P.eventnew = () => evNeedEmployer() || pageHead("New event", "Info sessions, career fair tables, workshops and coffee chats for FSU students.", "Events") + takeFlash() + evForm(S.evDraft || {duration: 60, format: "in_person", kind: "info_session"}, 0);
+P.eventedit = () => { const bad = evNeedEmployer(); if (bad) return bad;
+  const e = S.events.find(x => x.id === S.route.q.id && x.employer === me().id && ["pending", "approved"].includes(x.status)); if (!e) return '<p class="empty" style="margin:40px 0">That event isn\'t available.</p>';
+  const v = S.evDraft || {title: e.title, kind: e.kind, description: e.description, date: etDate(e.starts), time: `${pad2(etParts(e.starts).h)}:${pad2(etParts(e.starts).mi)}`, duration: e.dur, format: e.format, location: e.location, meeting_url: e.meeting_url,
+    capacity: e.capacity || "", majors: e.majors.join(", "), class_years: e.years, job_id: e.job || ""};
+  return pageHead("Edit event", "", "Events") + takeFlash() + evForm(v, e.id); };
+function evClean(f) {   // twin of events._clean: [fields, ""] or [null, reason]
+  const title = f.title.slice(0, 120), desc = f.description.slice(0, 3000);
+  if (title.length < 4) return [null, "Give the event a title (at least 4 characters)."];
+  if (desc.length < 20) return [null, "Describe the event in a sentence or two (at least 20 characters)."];
+  if (!EV_KINDS[f.kind]) return [null, "Pick a type."];
+  const ts = etToTs(f.date, f.time); if (ts === null) return [null, "Pick a date and a start time."];
+  if (ts < NOW() + 30 * 60e3) return [null, "Pick a start time at least 30 minutes from now."];
+  if (ts > NOW() + 366 * 864e5) return [null, "Events can be posted up to a year ahead."];
+  const dur = Number(f.duration); if (!EV_DURATIONS.some(([d]) => d === dur)) return [null, "Pick a length."];
+  if (!EV_FORMATS[f.format]) return [null, "Pick in person or virtual."];
+  let loc = f.location.slice(0, 200), url = f.meeting_url.slice(0, 300);
+  if (f.format === "in_person") { if (loc.length < 3) return [null, "Add where the event is (building and room, or an address)."]; url = ""; }
+  else { if (url && !/^https?:\/\//i.test(url)) url = "https://" + url; if (!/^https:\/\/[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/?#][^\s<>"']*)?$/.test(url)) return [null, "Add the meeting link (it must start with https://)."]; loc = ""; }
+  if (f.capacity && !/^\d+$/.test(f.capacity)) return [null, "Capacity is a number of students, or leave it blank for no limit."];
+  const capn = Number(f.capacity || 0); if (capn > EV_CAP_MAX) return [null, `Capacity can be up to ${EV_CAP_MAX}.`];
+  const majors = [];
+  for (const raw of f.majors.split(/[,;\n]/)) { const m = raw.split(/\s+/).filter(Boolean).join(" "); if (!m) continue;
+    if (!EV_MAJOR.test(m)) return [null, `Majors are names like Statistics or Computer Science ('${m.slice(0, 40)}' isn't).`];
+    if (!majors.some(x => x.toLowerCase() === m.toLowerCase())) majors.push(m); }
+  if (majors.length > EV_MAX_MAJORS) return [null, `List up to ${EV_MAX_MAJORS} majors.`];
+  const years = evYears().filter(y => f.class_years.includes(y)), job = Number(f.job_id) || 0;
+  if (job && !approvedJobs().some(j => j.id === job && j.employer_id === me().id)) return [null, "Pick one of your live listings, or None."];
+  const scan = N.check([title, desc, loc, url].filter(Boolean).join("\n"));
+  if (scan.band === "block") return [null, `This event can't be posted because it matches scam patterns (${scan.findings.slice(0, 2).map(x => x.title).join("; ")}). Remove requests for payment, personal details or off-platform contact.`];
+  return [{title, kind: f.kind, description: desc, starts: ts, dur, format: f.format, location: loc, meeting_url: url, capacity: capn, majors, years, job, scan: scan.band, flags: scan.findings.slice(0, 5).map(x => x.title)}, ""];
+}
+document.addEventListener("submit", e => {
+  if (e.target.id !== "eventForm") return;
+  e.preventDefault();
+  const fd = new FormData(e.target), g = k => String(fd.get(k) || "").trim(), eid = Number(e.target.dataset.id) || 0;
+  const raw = {title: g("title"), kind: g("kind"), description: String(fd.get("description") || "").replace(/\r\n/g, "\n").trim(), date: g("date"), time: g("time"), duration: g("duration"), format: g("format"), location: g("location"),
+    meeting_url: g("meeting_url"), capacity: g("capacity"), majors: g("majors"), class_years: fd.getAll("class_years").map(String), job_id: g("job_id")};
+  const [clean, err] = evClean(raw);
+  if (!clean) { S.evDraft = raw; flash("warning", err); return render(true); }
+  S.evDraft = null;
+  if (!eid) {
+    const n = S.events.filter(x => x.employer === me().id && ["pending", "approved"].includes(x.status) && x.starts > NOW()).length;
+    if (n >= 40) { flash("warning", "You can have up to 40 upcoming events at once."); return render(true); }
+    const ev = evSeed(me().id, Object.assign(clean, {status: "pending", created: NOW(), reviewed: 0}));
+    mail(me().email, "We received your event", `We received your event "${ev.title}". A reviewer checks every event before students see it. We'll email you when it's live.`, null);
+    flash("verified", "Submitted. A reviewer checks every event before students see it; we'll email you when it's live. Open the reviewer view to approve it in the demo.");
+    return go(evPage(ev));
+  }
+  const ev = S.events.find(x => x.id === eid && x.employer === me().id); if (!ev) return go("emanage");
+  const rereview = ev.status === "approved" && ["title", "description", "meeting_url"].some(k => clean[k] !== ev[k]);
+  const moved = ev.status === "approved" && ["starts", "dur", "format", "location"].some(k => clean[k] !== ev[k]);
+  Object.assign(ev, clean); if (rereview) ev.status = "pending";
+  if (ev.status === "approved") evPromote(ev);
+  if (moved) S.rsvps.filter(r => r.event === ev.id).forEach(r => { r.reminded = 0; if (["going", "waitlist"].includes(r.status) && U(r.student)) mail(U(r.student).email, `Updated: ${ev.title}`, `${evCompany(ev)} changed the time or place of ${ev.title}.\n\nWhen: ${evWhen(ev)}\n${evWhereLine(ev)}`, {label: "Open the event page", go: evPage(ev)}); });
+  flash(rereview ? "info" : "verified", rereview ? "Saved. Your changes go to a reviewer before students see the event again." : "Saved.");
+  go(evPage(ev));
+});
+function evIcs(e, withLink) {   // twin of events.ics
+  const tx = s => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+  const stamp = ts => new Date(ts).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const fold = line => { const out = []; let s = line; while (new TextEncoder().encode(s).length > 74) { let cut = 74; while (new TextEncoder().encode(s.slice(0, cut)).length > 74) cut--; out.push(s.slice(0, cut)); s = " " + s.slice(cut); } out.push(s); return out.join("\r\n"); };
+  let desc = e.description + "\n\nEvent page: NoleCareerShield demo"; if (withLink && e.meeting_url && evHostOk(e.meeting_url)) desc += "\nMeeting link: " + e.meeting_url;
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//NoleCareerShield//Events//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "BEGIN:VEVENT", `UID:event-${e.id}@nolecareershield`, `DTSTAMP:${stamp(NOW())}`, `DTSTART:${stamp(e.starts)}`,
+    `DTEND:${stamp(e.starts + e.dur * 60e3)}`, `SUMMARY:${tx(e.title + " (" + evCompany(e) + ")")}`, `DESCRIPTION:${tx(desc)}`, `LOCATION:${tx(e.format === "in_person" ? e.location : "Online")}`,
+    "STATUS:" + (e.status === "cancelled" ? "CANCELLED" : "CONFIRMED"), "END:VEVENT", "END:VCALENDAR"].map(fold).join("\r\n") + "\r\n";
+}
+document.addEventListener("click", ev => {
+  const d = ev.target.closest("[data-ev]"); if (!d) return; ev.preventDefault();
+  const k = d.dataset.ev, e = S.events.find(x => x.id === Number(d.dataset.id)), next = d.dataset.next || (e ? evPage(e) : "events");
+  if (!e) return;
+  if (k === "rsvp" && isStudent()) {
+    if (!evLive(e) || !approvedEmp(e.employer)) { flash("warning", "That event isn't taking RSVPs."); return go(evPage(e)); }
+    if (!studentReady(SP(me().id))) return go("setup?step=1");
+    const cur = evRsvp(e.id, me().id), was = cur ? cur.status : "";
+    if (d.dataset.status === "going" && ["going", "waitlist"].includes(was)) return go(next);
+    const st = d.dataset.status === "going" ? (e.capacity && evCounts(e.id).going >= e.capacity ? "waitlist" : "going") : "not_going";
+    if (cur) Object.assign(cur, {status: st, at: NOW(), reminded: 0}); else S.rsvps.push({event: e.id, student: me().id, status: st, at: NOW(), reminded: 0});
+    if (was === "going" && st !== "going") evPromote(e);
+    if (!next.startsWith("feed")) flash(st === "going" ? "verified" : "info", {going: "You're going. We'll email you a reminder the day before.", waitlist: "The event is full, so you're on the waitlist. We'll email you if a spot opens up.", not_going: "Got it, you can't go. The employer isn't told."}[st]);
+    return next.startsWith("feed") ? render(true) : go(next);
+  }
+  if (k === "cancel-rsvp" && isStudent()) {
+    const was = evState(e.id, me().id); S.rsvps = S.rsvps.filter(r => !(r.event === e.id && r.student === me().id));
+    if (was === "going" && evLive(e)) evPromote(e);
+    if (!next.startsWith("feed")) flash("info", "Your RSVP is cancelled.");
+    return next.startsWith("feed") ? render(true) : go(next);
+  }
+  if (k === "ics") { const going = me().id === e.employer || evState(e.id, me().id) === "going";
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([evIcs(e, going)], {type: "text/calendar"})); a.download = `nolecareershield-event-${e.id}.ics`; document.body.appendChild(a); a.click(); a.remove(); return; }
+  if (k === "cancel" && isEmployer() && e.employer === me().id && ["pending", "approved"].includes(e.status)) { evCancel(e, ""); flash("info", "This event is cancelled. Everyone who was going or waitlisted was emailed."); return go(evPage(e)); }
+  if (!S.admin) return;
+  const to = U(e.employer);
+  if (k === "a-approve" && e.status === "pending") { e.status = "approved"; e.reviewed = NOW(); e.review_note = ""; evPromote(e);
+    if (to) mail(to.email, `Your event is live: ${e.title}`, `A reviewer approved "${e.title}" (${evWhen(e)}). FSU students can now see it and RSVP.`, null); }
+  else if (k === "a-reject" && e.status === "pending") { e.status = "rejected"; e.review_note = d.dataset.note; if (to) mail(to.email, `Your event wasn't approved: ${e.title}`, `A reviewer didn't approve "${e.title}". ${d.dataset.note}`, null); }
+  else if (k === "a-remove" && e.status === "approved") { evCancel(e, "A NoleCareerShield reviewer took the event down."); e.status = "removed"; }
+  render(true);
+});
+const EV_REJECT = [["scam", "It matched scam patterns."], ["not fsu", "It isn't relevant to FSU students."], ["details", "The time, place or description was unclear."], ["other", "It didn't meet our guidelines."]];
+P.aevents = () => {
+  const pend = S.events.filter(e => e.status === "pending").sort((a, b) => a.created - b.created), live = evUpcoming();
+  const cards = pend.map(e => { const aud = e.majors.concat(e.years.map(y => "Class of " + y)).join(", "), u = U(e.employer);
+    const where = e.format === "in_person" ? esc(e.location) : `Virtual · ${esc(e.meeting_url)}${evHostOk(e.meeting_url) ? "" : ' <span class="pill warn">not a known meeting service</span>'}`;
+    return `<div class="rev-card"><div class="row between"><div><div class="job-title">${esc(e.title)}</div><div class="job-co">${esc(evCompany(e))} · ${esc(u ? u.email : "")}</div></div><span class="pill warn">${esc(EV_KINDS[e.kind])} · scan: ${esc(e.scan)}</span></div>
+<p class="small" style="margin-top:6px"><b>${esc(evWhen(e))}</b> · ${where}${e.capacity ? " · capacity " + e.capacity : ""}${aud ? " · for " + esc(aud) : ""}</p>${e.flags.map(f => `<div class="finding warning"><b>${esc(f)}</b></div>`).join("")}
+<div class="detail-desc" style="font-size:14px;background:var(--sunk);padding:10px 12px;border-radius:8px;white-space:pre-wrap">${esc(e.description)}</div>
+<div class="rev-actions"><button class="btn-approve" type="button" data-ev="a-approve" data-id="${e.id}">Approve</button>${EV_REJECT.map(([k, n]) => `<button class="btn-reject" type="button" data-ev="a-reject" data-id="${e.id}" data-note="${esc(n)}">Reject: ${k}</button>`).join("")}</div></div>`; }).join("");
+  const rows = live.map(e => `<tr><td><b>${esc(e.title)}</b><div class="small faint">${esc(evCompany(e))}</div></td><td class="small">${esc(evWhen(e, true))}</td><td><button class="b sm danger" type="button" data-ev="a-remove" data-id="${e.id}">Remove</button></td></tr>`).join("");
+  return adminPage("Events", "aevents", '<p class="lead">Employer events wait here, like listings. Approve one only when it is a real event for FSU students with a clear time and place. Changing the title, description or meeting link sends an event back here.</p>'
+    + (cards || '<div class="empty">No events waiting.</div>') + (rows ? `<h3 class="sec">Upcoming live events</h3><div class="card"><table class="t">${rows}</table></div>` : ""));
+};
 
 // ---------------- router ----------------
 function render(keepScroll) {
