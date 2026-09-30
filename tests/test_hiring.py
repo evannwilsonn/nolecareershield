@@ -131,7 +131,8 @@ def test_risk_gauge_follows_the_score():
     assert ui.risk_position(37)[1] == 37 and ui.risk_position(100, "held")[1] == 96      # the marker sits at the score, never 0 or 100
     assert ui.risk_position(0)[1] == 4
     zone, pos, _ = ui.risk_position(0, "flagged", aggregator=True)
-    assert zone == 0 and pos == 4                                  # being an aggregator never moves the scam-risk number
+    assert zone == 1 and pos == 40                                 # a flagged aggregator sits mid-yellow, with its own label
     html = ui.risk_meter(0, "flagged", aggregator=True)
-    assert "Scam risk 4 of 100" in html and '<span class="rl">4</span>' in html and ">Aggregator</span>" in html
+    assert "Scam risk 40 of 100" in html and '<span class="rl">40</span>' in html and ">Aggregator</span>" in html
+    assert ui.risk_position(4, "flagged")[0] == 1 and ui.risk_position(4, "held")[0] == 3   # never below its status band
     assert '<span class="rl">93</span>' in ui.risk_meter(93, "held")

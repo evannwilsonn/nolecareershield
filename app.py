@@ -423,7 +423,7 @@ def _score_pill(j: dict) -> str:
     """The reviewer's verdict pill. The scam score only counts scam rules; a listing flagged by the separate
     aggregator/lead-gen check says so instead of showing "Score 0 · flagged"."""
     lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
-    text = f"Scam risk {ui.shown_score(j['score'])} · {j['scam_status']}"
+    text = f"Scam risk {ui.shown_score(j['score'], lead_gen, j['scam_status'])} · {j['scam_status']}"
     return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}{" · Aggregator" if lead_gen else ""}</span>'
 
 
@@ -431,7 +431,7 @@ def _scan_chip(j: dict) -> str:
     """The job card's scan-status chip (ui.scan_chip): Secure / Caution / Threat and the shown score. The older
     "Scam risk N · status" wording stays as screen-reader text."""
     lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
-    sc = ui.shown_score(j["score"], lead_gen)
+    sc = ui.shown_score(j["score"], lead_gen, j["scam_status"])
     return ui.scan_chip(ui.scan_state(j["scam_status"]), sc, label=f"Scam risk {sc} · {j['scam_status']}")
 
 

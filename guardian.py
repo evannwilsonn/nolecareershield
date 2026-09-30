@@ -262,7 +262,7 @@ def is_lead_gen(j: dict) -> bool:
 
 
 def shown_score(j: dict) -> int:
-    return ui.shown_score(int(j.get("score") or 0), is_lead_gen(j))
+    return ui.shown_score(int(j.get("score") or 0), is_lead_gen(j), j.get("scam_status") or "")
 
 
 def level_of_job(j: dict) -> int:

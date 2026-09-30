@@ -31,21 +31,13 @@ def esc(s) -> str:
 
 
 def crest(size: int = 36, label: str = "", key: str = "") -> str:
-    """The NoleCareerShield crest: a gold-foil shield with a darker gold edge and a deep navy check and inner line.
-    `size` is the width in px (the shield is 10% taller). The gradient id is ncsf-<key or size>, so pages render the same
-    every time; give a copy its own `key` if another crest of the same size could sit inside a display:none block before
-    it (the sidebar and header copies have their own). demo/app.js has a twin (crest)."""
-    n = "-" + "".join(ch for ch in (key or str(size)) if ch.isalnum())
-    h = round(size * 1.1)
+    """The NoleCareerShield crest: the original garnet shield with a gold four-point star. `size` is the width and
+    height in px. Colours are literal so the same SVG works as the favicon. `key` is accepted for older callers.
+    demo/app.js has a twin (crest)."""
     a11y = f'role="img" aria-label="{esc(label)}"' if label else 'aria-hidden="true"'
-    sw = 2.6 if size >= 28 else 3     # a slightly heavier check at small sizes stays crisp
-    return (f'<svg class="crest" viewBox="0 0 40 44" width="{size}" height="{h}" {a11y} focusable="false">'
-            f'<defs><linearGradient id="ncsf{n}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FBE7AE"/>'
-            f'<stop offset=".35" stop-color="#E2BE6A"/><stop offset=".62" stop-color="#A9812F"/><stop offset="1" stop-color="#EBCB7F"/>'
-            f'</linearGradient></defs>'
-            f'<path d="M20 1.5 37 7v13.5C37 31 29.6 39 20 42.5 10.4 39 3 31 3 20.5V7z" fill="url(#ncsf{n})" stroke="#8A6526" stroke-width="1.4"/>'
-            f'<path d="M20 7.2 31.8 11v9.3C31.8 27.8 26.8 33.3 20 36.2 13.2 33.3 8.2 27.8 8.2 20.3V11z" fill="none" stroke="#08111F" stroke-opacity=".5" stroke-width="1.1"/>'
-            f'<path d="m13.6 21.2 4.5 4.5 8.6-9" fill="none" stroke="#08111F" stroke-width="{sw}" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+    return (f'<svg class="crest" viewBox="0 0 40 40" width="{size}" height="{size}" {a11y} focusable="false">'
+            '<path d="M20 3 L34 8 V19 C34 28 28 34 20 37 C12 34 6 28 6 19 V8 Z" fill="#782F40"/>'
+            '<path d="M20 11 L22.4 17.6 L29 20 L22.4 22.4 L20 29 L17.6 22.4 L11 20 L17.6 17.6 Z" fill="#CEB888"/></svg>')
 
 
 EMBLEM = crest(30)       # kept for older imports (app.py); new code calls crest(size)
@@ -1556,10 +1548,18 @@ RISK_BANDS = ((0, 25), (26, 50), (51, 75), (76, 100))       # green, yellow, ora
 RISK_MIN, RISK_MAX = 4, 96      # a check is never a perfect 0 or 100, so the gauge never shows one
 
 
-def shown_score(score: int, aggregator: bool = False) -> int:
-    """The number the reviewer sees: never 0 or 100. Only scam evidence moves it; being an aggregator or lead-generation
-    listing is a separate label (AGG_TAG), never a risk number. `aggregator` is accepted for old callers and ignored."""
-    return max(RISK_MIN, min(RISK_MAX, int(score)))
+STATUS_FLOOR = {"flagged": 26, "held": 76}   # the marker never sits below the band its status belongs to
+AGG_SCORE = 40                                  # an aggregator/lead-gen listing sits mid-yellow ("check carefully")
+
+
+def shown_score(score: int, aggregator: bool = False, status: str = "") -> int:
+    """The number the reviewer sees: never 0 or 100, and never in a lower band than the listing's status (a flagged
+    listing reads as yellow, a held one as red). Aggregator/lead-gen listings show at least AGG_SCORE and keep their
+    separate Aggregator label."""
+    sc = max(RISK_MIN, min(RISK_MAX, int(score)))
+    if aggregator:
+        sc = max(sc, AGG_SCORE)
+    return max(sc, STATUS_FLOOR.get(status or "", 0))
 
 
 AGG_TAG = '<span class="agg-tag" title="Not a scam signal: this looks like a job aggregator or lead-generation listing">Aggregator</span>'
@@ -1568,7 +1568,7 @@ AGG_TAG = '<span class="agg-tag" title="Not a scam signal: this looks like a job
 def risk_position(score: int, status: str = "", aggregator: bool = False) -> tuple[int, float, float]:
     """Where a listing sits on the reviewer's gauge: (zone 0-3, percent along the track, how far into its zone
     0-1). The marker sits at the shown score."""
-    sc = shown_score(score, aggregator)
+    sc = shown_score(score, aggregator, status)
     zone = next(i for i, (lo, hi) in enumerate(RISK_BANDS) if sc <= hi)
     lo, hi = RISK_BANDS[zone]
     return zone, float(sc), round((sc - lo) / (hi - lo), 2)

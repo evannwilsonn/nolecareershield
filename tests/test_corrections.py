@@ -114,5 +114,6 @@ def test_revoked_details_leave_the_partner_feed(client, monkeypatch):
 
 def test_aggregators_are_labeled_not_scored(client):
     import ui
-    assert ui.shown_score(0, True) == 4
+    assert ui.shown_score(0, True) == 40 and ui.shown_score(0, True, "flagged") == 40 and ui.shown_score(0, False, "flagged") == 26
+    assert ui.shown_score(10, False, "held") == 76 and ui.shown_score(4) == 4
     assert "Aggregator" in ui.risk_meter(0, "flagged", aggregator=True) and "Aggregator" not in ui.risk_meter(0, "flagged")
