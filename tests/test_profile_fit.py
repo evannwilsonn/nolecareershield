@@ -171,14 +171,16 @@ def test_pdf_and_docx_uploads_fill_the_resume(net):
     import resume_engine
     pdf = make_pdf(EVAN.splitlines())
     text = resume_engine.extract_text("evan.pdf", pdf)
-    assert "Today's Dental Network" in text and "NoleCareerShield" in text
+    # pypdf 6 reads this PDF's apostrophe as a curly one (StandardEncoding 0x27 is quoteright), so compare loosely.
+    straight = lambda s: s.replace("\u2019", "'").replace("&#x27;", "'")
+    assert "Today's Dental Network" in straight(text) and "NoleCareerShield" in text
     s, sid = student(net, resume=None)
     t = ucsrf(s)
     r = s.post("/resume/upload", data={"csrf": t}, files={"resume": ("Evan Wilson Resume.pdf", pdf, "application/pdf")})
     assert r.status_code == 303
     assert "Resume score" in s.get("/resume").text
     prof = s.get("/profile").text
-    assert "Today&#x27;s Dental Network" in prof or "Today's Dental Network" in prof      # filled from the PDF
+    assert "Today's Dental Network" in straight(prof)      # filled from the PDF
     docx = resume_engine.to_docx(RESUME)
     r = s.post("/resume/upload", data={"csrf": t}, files={"resume": ("jr.docx", docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")})
     assert r.status_code == 303 and "Leon County Health Department" in s.get("/resume?tab=edit").text

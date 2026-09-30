@@ -9,8 +9,9 @@ stand, what was decided and why, and what's next.
 - **Demo:** `demo/index.html` (full page) and `demo/NoleCareerShield_Demo.html` (body only, published as the Claude artifact
   "NoleCareerShield Demo (Copy)"). Rebuild with `python demo/build.py` after any site change. The demo runs the real
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
-- **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it before each commit (see the snippet in git history).
-- **Tests:** `python -m pytest -q` (135 passing at handoff).
+- **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
+  commit; `tests/test_installer.py` fails if it's out of date.
+- **Tests:** `python -m pytest -q` (136 passing at handoff).
 
 ## Rules Evan set (keep them)
 
@@ -43,8 +44,9 @@ stand, what was decided and why, and what's next.
 - **Trust score 100 = good; listing number is labelled "scam risk":** two opposite scales must never share a label.
 - **Employer view counts are totals only:** employers never see which students viewed or clicked Apply. Students appear in
   a tracker only when they message, are invited, or are saved from matches.
-- **"Let approved employers find me" is checked by default at setup;** students can uncheck it. Evan questioned whether
-  students should control visibility at all. Open question, not changed yet.
+- **"Let approved employers find me" is checked by default at setup** (site and demo), and students can uncheck it.
+  Without it the employer side has almost no students to match. **Revisit if FSU buys or partners on it:** a university
+  will likely want students to opt in, so switch the default to unchecked then.
 - **Demo never imitates FSU's sign-in page;** it shows a labelled stand-in, because a copy of a university login is what
   phishing looks like.
 - **An "applicant tracker" that scores students on reply speed was dropped** (Evan's call after discussing privacy and
