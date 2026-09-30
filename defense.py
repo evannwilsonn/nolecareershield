@@ -55,7 +55,19 @@ CREATE TABLE IF NOT EXISTS ct_lookalikes (domain TEXT PRIMARY KEY, brand TEXT NO
     found_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS feed_items (link TEXT PRIMARY KEY, source TEXT NOT NULL, fetched_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS defense_runs (job TEXT PRIMARY KEY, last_run REAL NOT NULL, detail TEXT NOT NULL DEFAULT '');
+-- A reviewer's decision about one contact detail: revoked (stop treating it as scam evidence), with who and why.
+CREATE TABLE IF NOT EXISTS indicator_decisions (hash TEXT PRIMARY KEY, status TEXT NOT NULL, kind TEXT NOT NULL DEFAULT '',
+    shown TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', reviewer TEXT NOT NULL DEFAULT '', decided_at REAL NOT NULL);
+-- Every label decision and undo, with who made it and why (labels on the checks and listings hold only the latest).
+CREATE TABLE IF NOT EXISTS label_log (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT NOT NULL, target_id INTEGER NOT NULL,
+    label TEXT, reviewer TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', at REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS ix_label_log_target ON label_log(target, target_id);
+CREATE TABLE IF NOT EXISTS reviewer_names (session_hash TEXT PRIMARY KEY, name TEXT NOT NULL, set_at REAL NOT NULL);
 """
+
+# How long one confirmed scam keeps a contact detail flagged without a newer confirmation. Phone numbers get reassigned
+# and domains change hands, so evidence expires unless reviewers see the detail in a scam again.
+INDICATOR_TTL_DAYS = {"phone": 180, "email": 365, "domain": 365, "telegram": 365, "cashtag": 365, "wallet": 730}
 
 # Rough windows when scams aimed at students peak. Month-day, recurring every year; reviewers can edit them.
 DEFAULT_WINDOWS = [
@@ -138,7 +150,8 @@ def extract(text: str) -> list[dict]:
         d = m.group(1)[-10:]
         add("phone", "+1" + d if len(m.group(1)) <= 11 else "+" + m.group(1), f"***-***-{d[-4:]}")
     email_domains = {e.split("@", 1)[1] for e in emails}
-    for m in _URL.finditer(text):
+    no_emails = _EMAIL.sub(" ", text)                    # an address's local part ("jane.careers@...") is not a web domain
+    for m in _URL.finditer(no_emails):
         raw = m.group(0).lower()
         host = re.sub(r"^(?:https?://)?(?:www\.)?", "", raw).split("/", 1)[0].split(":", 1)[0].strip(".")
         if not host or "@" in host:
@@ -184,36 +197,166 @@ def index_job(conn, job_id: int, text: str) -> None:
                      (job_id, i["hash"], i["kind"], i["shown"], i["peer_hash"]))
 
 
-def _confirmed(conn) -> dict:
-    """hash -> {kind, shown, scam, legit, peer_hash} from reviewer-confirmed sent-in checks and board listings."""
+def _ts(v) -> float:
+    """reviewed_at is a unix time on sent-in checks and an ISO string on board listings."""
+    if v is None or v == "":
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        import datetime as _dt
+        return _dt.datetime.fromisoformat(str(v)).replace(tzinfo=_dt.timezone.utc).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def ttl_days(kind: str) -> int:
+    return int(os.environ.get(f"INDICATOR_TTL_{kind.upper()}", INDICATOR_TTL_DAYS.get(kind, 365)))
+
+
+def evidence(conn, hashes: list[str] | None = None) -> dict:
+    """hash -> {kind, shown, peer_hash, scam, legit, last_scam, first_scam, sources[], status, expires}: every reviewer-labeled
+    report behind a contact detail, whether it is still active, and why not. `hashes=None` means all of them."""
+    where, params = "", ()
+    if hashes is not None:
+        if not hashes:
+            return {}
+        where = " AND x.hash IN (%s)" % ",".join("?" * len(hashes))
+        params = tuple(hashes)
+    q = f"""SELECT x.hash, x.kind, x.shown, x.peer_hash, 'check' AS target, sc.id AS tid, sc.review_label AS label, sc.reviewed_at AS at,
+                   COALESCE(sc.reviewer, '') AS reviewer, COALESCE(sc.review_reason, '') AS reason
+            FROM check_indicators x JOIN submitted_checks sc ON sc.id = x.check_id WHERE sc.review_label IN ('scam','legit'){where}
+            UNION ALL
+            SELECT x.hash, x.kind, x.shown, x.peer_hash, 'job', j.id, j.review_label, j.reviewed_at, COALESCE(j.reviewer, ''), ''
+            FROM job_indicators x JOIN jobs j ON j.id = x.job_id WHERE j.review_label IN ('scam','legit'){where}"""
     out: dict = {}
-    q = """SELECT ci.hash, ci.kind, ci.shown, ci.peer_hash, sc.review_label AS label FROM check_indicators ci
-           JOIN submitted_checks sc ON sc.id = ci.check_id WHERE sc.review_label IN ('scam','legit')
-           UNION ALL SELECT ji.hash, ji.kind, ji.shown, ji.peer_hash, j.review_label FROM job_indicators ji
-           JOIN jobs j ON j.id = ji.job_id WHERE j.review_label IN ('scam','legit')"""
-    for r in store.rows(conn, q):
-        d = out.setdefault(r["hash"], {"kind": r["kind"], "shown": r["shown"], "scam": 0, "legit": 0, "peer_hash": r["peer_hash"]})
+    for r in store.rows(conn, q, params + params):
+        d = out.setdefault(r["hash"], {"kind": r["kind"], "shown": r["shown"], "peer_hash": r["peer_hash"], "scam": 0, "legit": 0,
+                                       "last_scam": 0.0, "first_scam": 0.0, "sources": []})
         d[r["label"]] += 1
+        t = _ts(r["at"])
+        if r["label"] == "scam":
+            d["last_scam"] = max(d["last_scam"], t)
+            d["first_scam"] = min(d["first_scam"] or t, t)
+        d["sources"].append({"target": r["target"], "id": r["tid"], "label": r["label"], "at": t, "reviewer": r["reviewer"], "reason": r["reason"]})
+    if out:
+        marks = ",".join("?" * len(out))
+        decided = {r["hash"]: dict(r) for r in store.rows(conn, f"SELECT * FROM indicator_decisions WHERE hash IN ({marks})", tuple(out))}
+    else:
+        decided = {}
+    now = time.time()
+    for h, d in out.items():
+        d["expires"] = d["last_scam"] + ttl_days(d["kind"]) * 86400 if d["scam"] else 0
+        dec = decided.get(h)
+        if dec and dec["status"] == "revoked":
+            d["status"], d["decision"] = "revoked", dec
+        elif not d["scam"]:
+            d["status"] = "legit_only"
+        elif d["legit"]:
+            d["status"] = "disputed"                     # seen in a confirmed scam AND a confirmed real report: not used
+        elif d["expires"] < now:
+            d["status"] = "expired"
+        else:
+            d["status"] = "active"
     return out
 
 
+def _confirmed(conn) -> dict:
+    """Active contact details (confirmed in scams, never in a real report, not revoked, not expired)."""
+    return {h: d for h, d in evidence(conn).items() if d["status"] == "active"}
+
+
 def known_bad(conn, items: list[dict]) -> list[dict]:
-    """Identifiers in `items` that reviewers have confirmed in scams (and never in a legit item)."""
-    if not items:
+    """Identifiers in `items` that are active scam evidence."""
+    ev = evidence(conn, [i["hash"] for i in items])
+    return [{**i, "scams": ev[i["hash"]]["scam"], "last_scam": ev[i["hash"]]["last_scam"]}
+            for i in items if ev.get(i["hash"], {}).get("status") == "active"]
+
+
+# ---------- corrections: provenance, revocation, recheck ----------
+
+def log_label(conn, target: str, target_id: int, label: str | None, reviewer: str = "", reason: str = "") -> None:
+    conn.execute("INSERT INTO label_log (target, target_id, label, reviewer, reason, at) VALUES (?,?,?,?,?,?)",
+                 (target, int(target_id), label, (reviewer or "")[:80], (reason or "")[:300], time.time()))
+
+
+def reviewer_name(session: str | None) -> str:
+    if not session:
+        return ""
+    import hashlib
+    with store.db() as conn:
+        ensure_schema(conn)
+        r = conn.execute("SELECT name FROM reviewer_names WHERE session_hash = ?", (hashlib.sha256(session.encode()).hexdigest(),)).fetchone()
+    return r[0] if r else ""
+
+
+def set_reviewer_name(session: str, name: str) -> None:
+    import hashlib
+    name = re.sub(r"\s+", " ", name or "").strip()[:80]
+    with store.db() as conn:
+        conn.execute("INSERT OR REPLACE INTO reviewer_names (session_hash, name, set_at) VALUES (?,?,?)",
+                     (hashlib.sha256(session.encode()).hexdigest(), name, time.time()))
+
+
+_JOB_SCANNER = None
+
+
+def set_job_scanner(fn) -> None:
+    """app.py registers its listing scanner (app._scan) so corrections can re-score affected listings."""
+    global _JOB_SCANNER
+    _JOB_SCANNER = fn
+
+
+def hashes_of(conn, target: str, ids: list[int]) -> list[str]:
+    if not ids:
         return []
-    marks = ",".join("?" * len(items))
-    rows = store.rows(conn, f"""SELECT ci.hash, SUM(sc.review_label = 'scam') AS scam, SUM(sc.review_label = 'legit') AS legit
-                                 FROM check_indicators ci JOIN submitted_checks sc ON sc.id = ci.check_id
-                                 WHERE ci.hash IN ({marks}) GROUP BY ci.hash""", tuple(i["hash"] for i in items))
-    rows += store.rows(conn, f"""SELECT ji.hash, SUM(j.review_label = 'scam') AS scam, SUM(j.review_label = 'legit') AS legit
-                                  FROM job_indicators ji JOIN jobs j ON j.id = ji.job_id
-                                  WHERE ji.hash IN ({marks}) GROUP BY ji.hash""", tuple(i["hash"] for i in items))
-    tally: dict = {}
-    for r in rows:
-        t = tally.setdefault(r["hash"], [0, 0])
-        t[0] += r["scam"] or 0
-        t[1] += r["legit"] or 0
-    return [{**i, "scams": tally[i["hash"]][0]} for i in items if i["hash"] in tally and tally[i["hash"]][0] > 0 and tally[i["hash"]][1] == 0]
+    table, col = ("check_indicators", "check_id") if target == "check" else ("job_indicators", "job_id")
+    marks = ",".join("?" * len(ids))
+    return [r[0] for r in conn.execute(f"SELECT DISTINCT hash FROM {table} WHERE {col} IN ({marks})", tuple(ids))]
+
+
+def recheck(conn, hashes: list[str]) -> dict:
+    """Re-score every waiting or live listing that contains one of these contact details, so a revoked, expired or newly
+    confirmed detail changes the verdict both ways. A waiting listing gets the new verdict. A live one keeps the verdict
+    its reviewer approved (that's the record agreement stats measure) but its signals are updated, and it's listed in
+    `live_now_risky` when the new evidence would hold it. Returns counts for the reviewer."""
+    if not hashes or _JOB_SCANNER is None:
+        return {"rechecked": 0, "changed": 0, "ids": []}
+    conn.commit()                                       # the scanner reads evidence on its own connection
+    marks = ",".join("?" * len(hashes))
+    jobs = store.rows(conn, f"""SELECT DISTINCT j.* FROM jobs j JOIN job_indicators x ON x.job_id = j.id
+                                WHERE x.hash IN ({marks}) AND j.review_status IN ('pending','approved')""", tuple(hashes))
+    changed, risky = [], []
+    for j in jobs:
+        data = {**j, "questions": store.jload(j.get("questions"), []) if hasattr(store, "jload") else []}
+        try:
+            result, status, findings = _JOB_SCANNER(data, int(j["id"]))
+        except Exception:                               # noqa: BLE001
+            log.exception("recheck of listing %s failed", j["id"])
+            continue
+        if j["review_status"] == "approved":
+            if status == "held" and j["scam_status"] != "held":
+                risky.append(int(j["id"]))
+            conn.execute("UPDATE jobs SET score = ?, band = ?, findings_json = ? WHERE id = ?",
+                         (result.score, result.band, json.dumps(findings), j["id"]))
+            continue
+        if status != j["scam_status"] or int(result.score) != int(j["score"] or 0):
+            changed.append(int(j["id"]))
+        conn.execute("UPDATE jobs SET score = ?, band = ?, scam_status = ?, findings_json = ? WHERE id = ?",
+                     (result.score, result.band, status, json.dumps(findings), j["id"]))
+    return {"rechecked": len(jobs), "changed": len(changed), "ids": changed, "live_now_risky": risky}
+
+
+def revoke(conn, h: str, reason: str, reviewer: str = "") -> dict:
+    ev = evidence(conn, [h]).get(h, {})
+    conn.execute("INSERT OR REPLACE INTO indicator_decisions (hash, status, kind, shown, reason, reviewer, decided_at) VALUES (?,?,?,?,?,?,?)",
+                 (h, "revoked", ev.get("kind", ""), ev.get("shown", ""), (reason or "")[:300], (reviewer or "")[:80], time.time()))
+    return recheck(conn, [h])
+
+
+def restore(conn, h: str) -> dict:
+    conn.execute("DELETE FROM indicator_decisions WHERE hash = ?", (h,))
+    return recheck(conn, [h])
 
 
 def peer_hits(conn, items: list[dict]) -> list[dict]:
@@ -563,7 +706,11 @@ def peer_feed_job(client=None) -> str:
             data = r.json() if r.status_code == 200 else {}
         except Exception:                               # noqa: BLE001
             continue
+        if not isinstance(data.get("indicators"), list):
+            continue
         with store.db() as conn:
+            # The partner's feed is the whole current list: anything they revoked or let expire disappears here too.
+            conn.execute("DELETE FROM peer_indicators WHERE source = ?", (str(data.get("source", url))[:80],))
             for it in (data.get("indicators") or [])[:20000]:
                 h = str(it.get("hash", ""))
                 if re.fullmatch(r"[0-9a-f]{64}", h):

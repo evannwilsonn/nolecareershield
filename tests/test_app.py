@@ -330,17 +330,17 @@ def test_removal_records_a_reason(client):
 
 def test_agreement_stats_count_misses_and_false_alarms(client):
     appmod = client.appmod
-    for _ in range(3):
-        submit(client)
+    for i in range(3):                                  # distinct apply links: a confirmed scam's link would re-score its twins
+        submit(client, apply_url=f"https://acme{i}.com/j")
     # job 1: detector clear, reviewer says scam -> a miss; job 2: clear + legit -> agree;
     # job 3: force a flagged listing that the reviewer approves -> false alarm.
     import sqlite3
-    with sqlite3.connect(appmod.DB_PATH) as db:
-        db.execute("UPDATE jobs SET scam_status='flagged' WHERE id=3")
     login(client)
     csrf = csrf_from(client.get("/admin").text)
     client.post("/admin/reject/1", data={"csrf": csrf, "reason": "scam"})
     client.post("/admin/approve/2", data={"csrf": csrf})
+    with sqlite3.connect(appmod.DB_PATH) as db:
+        db.execute("UPDATE jobs SET scam_status='flagged' WHERE id=3")
     client.post("/admin/approve/3", data={"csrf": csrf})
     st = appmod.agreement_stats()
     assert st == {"n": 3, "agree": 1, "missed": 1, "false_alarm": 1}
@@ -858,9 +858,9 @@ def test_confirming_needs_the_password(client):
 def test_reviewer_pill_names_aggregators_instead_of_score_zero(client):
     import json as _json
     pill = client.appmod._score_pill
-    assert ">Scam risk 60 · flagged<" in pill({"score": 0, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
+    assert ">Scam risk 4 · flagged · Aggregator<" in pill({"score": 0, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
     assert ">Scam risk 96 · held<" in pill({"score": 100, "scam_status": "held", "findings_json": "[]"})
-    assert ">Scam risk 40 · flagged<" in pill({"score": 40, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
+    assert ">Scam risk 40 · flagged · Aggregator<" in pill({"score": 40, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
 
 
 

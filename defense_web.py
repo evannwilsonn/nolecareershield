@@ -59,6 +59,93 @@ PROTOCOL = [
 ]
 
 
+# ---------- who is reviewing (labels record it) ----------
+
+def whoami_form(session: str | None, back: str) -> str:
+    name = defense.reviewer_name(session)
+    return (f'<form method="post" action="/admin/whoami" class="row small" style="margin:0 0 12px">{admin_extra._csrf(session)}'
+            f'<input type="hidden" name="back" value="{esc(back)}"><label for="who">Reviewing as</label>'
+            f'<input id="who" name="name" maxlength="80" value="{esc(name)}" placeholder="Your name (saved on every label you make)" required>'
+            f'<button class="b sm ghost" type="submit">Save</button></form>')
+
+
+@router.post("/admin/whoami")
+def whoami(name: str = Form(""), back: str = Form("/admin/checks"), session: str | None = Cookie(default=None), csrf: str = Form("")):
+    if not admin_extra._gate(session, csrf):
+        return RedirectResponse("/admin", status_code=303)
+    defense.set_reviewer_name(session, name)
+    return RedirectResponse(back if back.startswith("/admin") else "/admin", status_code=303)
+
+
+def _day(t: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(t)) if t else "-"
+
+
+def evidence_html(conn, csrf: str) -> str:
+    ev = sorted(defense.evidence(conn).items(), key=lambda kv: (kv[1]["status"] != "active", -kv[1]["last_scam"]))
+    rows = ""
+    for h, d in ev[:60]:
+        if d["status"] == "legit_only":
+            continue
+        who = sorted({s["reviewer"] for s in d["sources"] if s["reviewer"]})
+        why = [s["reason"] for s in d["sources"] if s["reason"]][:2]
+        src = ", ".join(f'{"report" if s["target"] == "check" else "listing"} #{s["id"]} {s["label"]}' for s in d["sources"][:4])
+        if d["status"] == "revoked":
+            dec = d["decision"]
+            act = (f'<form method="post" action="/admin/intel/indicator/restore" style="display:inline">{csrf}<input type="hidden" name="h" value="{h}">'
+                   f'<button class="b sm ghost" type="submit">Restore</button></form>')
+            status = f'<span class="pill">revoked {_day(dec["decided_at"])}{" by " + esc(dec["reviewer"]) if dec["reviewer"] else ""}: {esc(dec["reason"])}</span>'
+        else:
+            act = (f'<form method="post" action="/admin/intel/indicator/revoke" class="row" style="display:inline-flex">{csrf}'
+                   f'<input type="hidden" name="h" value="{h}"><input name="reason" required maxlength="300" placeholder="Why (e.g. number reassigned)">'
+                   f'<button class="b sm ghost" type="submit">Revoke</button></form>')
+            pill = {"active": "bad", "disputed": "warn", "expired": ""}[d["status"]]
+            note = {"active": f"active until {_day(d['expires'])}", "disputed": "also in a confirmed real report: not used",
+                    "expired": f"expired {_day(d['expires'])}: not used until confirmed again"}[d["status"]]
+            status = f'<span class="pill {pill}">{note}</span>'
+        rows += (f'<tr><td>{esc(d["kind"])}</td><td><code>{esc(d["shown"])}</code></td><td>{d["scam"]} scam · {d["legit"]} real</td>'
+                 f'<td>{_day(d["first_scam"])} to {_day(d["last_scam"])}</td><td class="small">{esc(src)}'
+                 f'{"<br>by " + esc(", ".join(who)) if who else ""}{"<br>" + esc(" / ".join(why)) if why else ""}</td>'
+                 f'<td>{status}<br>{act}</td></tr>')
+    if not rows:
+        return '<p class="muted">No contact details have been confirmed in scams yet.</p>'
+    return ('<table class="tbl"><tr><th>Kind</th><th>Detail</th><th>Reports</th><th>Confirmed</th><th>Evidence</th><th>Status</th></tr>'
+            + rows + "</table>")
+
+
+@router.post("/admin/intel/indicator/revoke")
+def indicator_revoke(h: str = Form(""), reason: str = Form(""), session: str | None = Cookie(default=None), csrf: str = Form("")):
+    if not admin_extra._gate(session, csrf):
+        return RedirectResponse("/admin", status_code=303)
+    if re.fullmatch(r"[0-9a-f]{64}", h) and reason.strip():
+        with store.db() as conn:
+            out = defense.revoke(conn, h, reason.strip(), defense.reviewer_name(session))
+        return RedirectResponse(f"/admin/intel?rechecked={out['rechecked']}&changed={out['changed']}#evidence", status_code=303)
+    return RedirectResponse("/admin/intel#evidence", status_code=303)
+
+
+def live_risky_html(conn) -> str:
+    """Live listings whose signals now include confirmed-scam contact details, for a reviewer to look at again."""
+    rows = store.rows(conn, """SELECT id, title, company FROM jobs WHERE review_status = 'approved' AND scam_status != 'held'
+                               AND findings_json LIKE '%known_scam_identifier%' ORDER BY id DESC LIMIT 20""")
+    if not rows:
+        return ""
+    items = "".join(f'<li><a href="/job/{r["id"]}">{esc(r["title"])}</a> · {esc(r["company"])}</li>' for r in rows)
+    return (f'<div class="banner warning" style="margin-bottom:10px"><b>Live listings that now share contact details with confirmed scams.</b>'
+            f' They stay up until a reviewer decides; remove them from Live listings if they are scams.<ul class="small">{items}</ul></div>')
+
+
+@router.post("/admin/intel/indicator/restore")
+def indicator_restore(h: str = Form(""), session: str | None = Cookie(default=None), csrf: str = Form("")):
+    if not admin_extra._gate(session, csrf):
+        return RedirectResponse("/admin", status_code=303)
+    if re.fullmatch(r"[0-9a-f]{64}", h):
+        with store.db() as conn:
+            out = defense.restore(conn, h)
+        return RedirectResponse(f"/admin/intel?rechecked={out['rechecked']}&changed={out['changed']}#evidence", status_code=303)
+    return RedirectResponse("/admin/intel#evidence", status_code=303)
+
+
 # ---------- the intel page ----------
 
 def _config_rows() -> str:
@@ -79,7 +166,7 @@ def _config_rows() -> str:
 
 
 @router.get("/admin/intel", response_class=HTMLResponse)
-def intel_page(session: str | None = Cookie(default=None)):
+def intel_page(session: str | None = Cookie(default=None), rechecked: int = -1, changed: int = 0):
     if not admin_extra._ok(session):
         return RedirectResponse("/admin", status_code=303)
     csrf = admin_extra._csrf(session)
@@ -97,6 +184,8 @@ def intel_page(session: str | None = Cookie(default=None)):
         windows = store.rows(conn, "SELECT * FROM risk_windows ORDER BY start_md")
         runs = store.rows(conn, "SELECT * FROM defense_runs ORDER BY job")
         peers = conn.execute("SELECT COUNT(*) FROM peer_indicators").fetchone()[0]
+        evid = evidence_html(conn, csrf)
+        live_risky = live_risky_html(conn)
     lv = {"bad": "warning", "warn": "warning", "info": "info"}
     al = "".join(f'<div class="banner {lv.get(a["level"], "info")}" style="margin-bottom:8px"><b>{esc(a["title"])}</b>'
                  f'<div class="small">{esc(a["detail"])}</div></div>' for a in alerts) or '<p class="muted">Nothing unusual this week.</p>'
@@ -110,7 +199,13 @@ def intel_page(session: str | None = Cookie(default=None)):
                  f'<button class="b sm ghost" type="submit">Remove</button></form></li>' for w in windows)
     rn = "".join(f'<li>{esc(r["job"])}: {esc(r["detail"])} <span class="muted small">{time.strftime("%b %d %H:%M", time.gmtime(r["last_run"]))} UTC</span></li>'
                  for r in runs) or "<li class=muted>No scheduled checks have run yet.</li>"
-    body = f"""<section class="card"><h2>Alerts</h2>{al}</section>
+    done = (f'<div class="banner info" style="margin-bottom:10px">Re-scored {rechecked} listing{"s" if rechecked != 1 else ""} '
+            f'containing that detail; {changed} changed verdict.</div>' if rechecked >= 0 else "")
+    body = f"""{whoami_form(session, "/admin/intel")}{done}{live_risky}<section class="card"><h2>Alerts</h2>{al}</section>
+<section class="card" id="evidence"><h2>Contact details used as scam evidence</h2>
+<p class="small muted">A detail counts only while it's backed by a reviewer-confirmed scam, has never appeared in a confirmed real report, hasn't
+been revoked and was confirmed recently enough (phones {defense.ttl_days("phone")} days, emails and domains {defense.ttl_days("email")}, wallets
+{defense.ttl_days("wallet")}). Revoking re-scores every waiting or live listing that contains it.</p>{evid}</section>
 <section class="card"><h2>Contact details seen in more than one report (last 90 days)</h2>
 <p class="small muted">Shown masked. Stored as keyed hashes, so the database alone can't be read back into phone numbers or emails.</p>
 {f'<table class="tbl"><tr><th>Kind</th><th>Detail</th><th>Reports</th><th>Labels</th></tr>{tp}</table>' if tp else '<p class="muted">None yet.</p>'}</section>

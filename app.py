@@ -154,7 +154,7 @@ WORK_TYPES = matching.WORK_TYPES
 # ---------- database ----------
 
 # Added after the first release; existing databases are migrated in place.
-_EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_at": "TEXT", "employer_id": "INTEGER",
+_EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_at": "TEXT", "reviewer": "TEXT NOT NULL DEFAULT ''", "employer_id": "INTEGER",
                   "easy_apply": "INTEGER NOT NULL DEFAULT 0", "questions": "TEXT NOT NULL DEFAULT '[]'",
                   "requirements": "TEXT NOT NULL DEFAULT '[]'",
                   "poster_name": "TEXT NOT NULL DEFAULT ''", "poster_title": "TEXT NOT NULL DEFAULT ''",
@@ -268,6 +268,9 @@ def _scan(data: dict, job_id: int | None = None) -> tuple:
         elif scam_status == "clear" and f["weight"] >= 10:
             scam_status = "flagged"
     return result, scam_status, findings
+
+defense.set_job_scanner(_scan)          # so revoking or confirming a contact detail re-scores the listings that contain it
+
 
 def add_job(data: dict, employer_id: int | None = None, posted_by: int | None = None) -> dict:
     result, scam_status, findings = _scan(data)
@@ -409,8 +412,8 @@ def _score_pill(j: dict) -> str:
     """The reviewer's verdict pill. The scam score only counts scam rules; a listing flagged by the separate
     aggregator/lead-gen check says so instead of showing "Score 0 · flagged"."""
     lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
-    text = f"Scam risk {ui.shown_score(j['score'], lead_gen)} · {j['scam_status']}"
-    return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
+    text = f"Scam risk {ui.shown_score(j['score'])} · {j['scam_status']}"
+    return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}{" · Aggregator" if lead_gen else ""}</span>'
 
 
 def _risk(j: dict) -> str:
@@ -1847,7 +1850,12 @@ def _review_action(job_id: int, request: Request, session, csrf, status: str, re
     enforce_rate_limit(request, general_limiter, "admin_action")
     label = "legit" if status == "approved" else clean_choice(reason, REVIEW_REASONS, "reason", default="other")
     # Approve/reject only act on waiting submissions; remove only acts on live ones.
-    set_review(job_id, status, label, only_from=("approved",) if status == "removed" else ("pending",))
+    if set_review(job_id, status, label, only_from=("approved",) if status == "removed" else ("pending",)):
+        who = defense.reviewer_name(session)
+        with store.db() as conn:
+            conn.execute("UPDATE jobs SET reviewer = ? WHERE id = ?", (who, job_id))
+            defense.log_label(conn, "job", job_id, label, who, reason)
+            defense.recheck(conn, defense.hashes_of(conn, "job", [job_id]))   # other listings sharing its contact details
     return RedirectResponse("/admin" if status != "removed" else "/admin/live", status_code=303)
 
 

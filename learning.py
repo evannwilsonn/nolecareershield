@@ -263,6 +263,11 @@ def prioritize(groups: dict, rings: dict, scam_styles: list) -> list:
     return out
 
 
+def defense_web_whoami(session, back: str) -> str:
+    import defense_web
+    return defense_web.whoami_form(session, back)
+
+
 def defense_style(r) -> dict:
     import defense
     return defense.style_vector(f"{r['title']}\n{r['body']}")
@@ -329,12 +334,15 @@ def label_queue(session: str | None = Cookie(default=None)):
                   f'<p class="small muted">{esc(time.strftime("%Y-%m-%d", time.gmtime(rs[-1]["created_at"])))}'
                   f'{" to " + esc(time.strftime("%Y-%m-%d", time.gmtime(r["created_at"]))) if len(rs) > 1 else ""}</p>'
                   f'<div class="detail-desc" style="font-size:14px;max-height:200px;overflow:auto;white-space:pre-wrap">{esc(r["body"][:3000])}</div>'
-                  f'<form class="rev-actions" method="post" action="/admin/checks/label">{csrf}<input type="hidden" name="group" value="{esc(str(k))}">{buttons}</form></div>')
+                  f'<form class="rev-actions" method="post" action="/admin/checks/label">{csrf}<input type="hidden" name="group" value="{esc(str(k))}">'
+                  f'<input name="reason" maxlength="300" placeholder="Why (optional): e.g. asks to deposit a check" style="flex:1;min-width:180px">{buttons}</form></div>')
     done = "".join(f'<li>{esc(time.strftime("%m-%d", time.gmtime(x["reviewed_at"] or x["created_at"])))} · '
-                   f'<b>{esc(x["review_label"])}</b> · {esc((x["title"] or x["body"])[:80])}'
+                   f'<b>{esc(x["review_label"])}</b>{" by " + esc(x["reviewer"]) if x["reviewer"] else ""}'
+                   f'{" (" + esc(x["review_reason"]) + ")" if x["review_reason"] else ""} · {esc((x["title"] or x["body"])[:80])}'
                    f'<form method="post" action="/admin/checks/undo" style="display:inline">{csrf}<input type="hidden" name="cid" value="{int(x["id"])}">'
                    f' <button class="linkbtn" type="submit">undo</button></form></li>' for x in recent)
-    body = ('<p class="lead">Things people sent in from the scam check. Your label is what the model learns from; '
+    import defense
+    body = (defense_web_whoami(session, "/admin/checks") + '<p class="lead">Things people sent in from the scam check. Your label is what the model learns from; '
             'nothing a visitor says counts until you confirm it. Near-copies from the last 30 days are grouped into one wave.</p>'
             + (cards or '<div class="empty">Nothing waiting. Labels you confirm train the next model.</div>')
             + (f'<h3 class="sec">Recently labeled</h3><ul class="small">{done}</ul>' if done else ""))
@@ -342,16 +350,26 @@ def label_queue(session: str | None = Cookie(default=None)):
 
 
 @router.post("/admin/checks/label")
-def label_group(group: str = Form(""), label: str = Form(""), session: str | None = Cookie(default=None), csrf: str = Form("")):
+def label_group(group: str = Form(""), label: str = Form(""), reason: str = Form(""), session: str | None = Cookie(default=None),
+                csrf: str = Form("")):
     if admin_extra._gate(session, csrf) and label in LABELS + ("skip",):
+        import defense
+        who, reason = defense.reviewer_name(session), reason.strip()[:300]
         with store.db() as conn:
             now = time.time()
             if group.startswith("i") and group[1:].isdigit():
-                conn.execute("UPDATE submitted_checks SET review_label = ?, reviewed_at = ? WHERE id = ? AND review_label IS NULL",
-                             (label, now, int(group[1:])))
+                ids = [int(group[1:])]
+                where, params = "id = ?", (ids[0],)
             elif group.isdigit():
-                conn.execute("UPDATE submitted_checks SET review_label = ?, reviewed_at = ? WHERE (campaign = ? OR id = ?) AND review_label IS NULL",
-                             (label, now, int(group), int(group)))
+                where, params = "(campaign = ? OR id = ?)", (int(group), int(group))
+            else:
+                return RedirectResponse("/admin/checks", status_code=303)
+            ids = [r[0] for r in conn.execute(f"SELECT id FROM submitted_checks WHERE {where} AND review_label IS NULL", params)]
+            for cid in ids:
+                conn.execute("UPDATE submitted_checks SET review_label = ?, reviewed_at = ?, reviewer = ?, review_reason = ? WHERE id = ?",
+                             (label, now, who, reason, cid))
+                defense.log_label(conn, "check", cid, label, who, reason)
+            defense.recheck(conn, defense.hashes_of(conn, "check", ids))
     return RedirectResponse("/admin/checks", status_code=303)
 
 
@@ -359,7 +377,10 @@ def label_group(group: str = Form(""), label: str = Form(""), session: str | Non
 def label_undo(cid: int = Form(0), session: str | None = Cookie(default=None), csrf: str = Form("")):
     if admin_extra._gate(session, csrf):
         with store.db() as conn:
-            conn.execute("UPDATE submitted_checks SET review_label = NULL, reviewed_at = NULL WHERE id = ?", (cid,))
+            import defense
+            conn.execute("UPDATE submitted_checks SET review_label = NULL, reviewed_at = NULL, reviewer = '', review_reason = '' WHERE id = ?", (cid,))
+            defense.log_label(conn, "check", cid, None, defense.reviewer_name(session), "undo")
+            defense.recheck(conn, defense.hashes_of(conn, "check", [cid]))    # verdicts that leaned on this label are recomputed
     return RedirectResponse("/admin/checks", status_code=303)
 
 

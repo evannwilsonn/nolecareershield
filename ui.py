@@ -717,6 +717,7 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
    sits at the score (ui.risk_position) */
 .risk{--g:#5f9a7b;--y:#d3b04f;--o:#d98e57;--r:#c1554b;
   display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11.5px;font-weight:600;color:var(--muted)}
+.risk .agg-tag,.rev-score .agg-tag{margin-left:8px;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--sunk);color:var(--muted);border:1px solid var(--line)}
 .risk .end{font-size:10.5px;color:var(--faint);font-weight:500;font-variant-numeric:tabular-nums}
 .risk .gauge{position:relative;flex:1;max-width:360px;height:6px;display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:0 8px}
 .risk .gauge i{border-radius:2px}.risk .gauge i:first-child{border-radius:999px 2px 2px 999px}.risk .gauge i:last-child{border-radius:2px 999px 999px 2px}
@@ -1178,11 +1179,12 @@ RISK_MIN, RISK_MAX = 4, 96      # a check is never a perfect 0 or 100, so the ga
 
 
 def shown_score(score: int, aggregator: bool = False) -> int:
-    """The number the reviewer sees: never 0 or 100, and an aggregator (scam score 0 by design) reads 60, orange."""
-    sc = int(score)
-    if aggregator and sc < 15:
-        return 60
-    return max(RISK_MIN, min(RISK_MAX, sc))
+    """The number the reviewer sees: never 0 or 100. Only scam evidence moves it; being an aggregator or lead-generation
+    listing is a separate label (AGG_TAG), never a risk number. `aggregator` is accepted for old callers and ignored."""
+    return max(RISK_MIN, min(RISK_MAX, int(score)))
+
+
+AGG_TAG = '<span class="agg-tag" title="Not a scam signal: this looks like a job aggregator or lead-generation listing">Aggregator</span>'
 
 
 def risk_position(score: int, status: str = "", aggregator: bool = False) -> tuple[int, float, float]:
@@ -1199,7 +1201,7 @@ def risk_meter(score: int, status: str, aggregator: bool = False) -> str:
     cells = "".join(f'<i class="z{i}"></i>' for i in range(4))
     return (f'<div class="risk z{zone}" style="--pos:{pos}%"><span class="end">0</span><span class="gauge" role="img" '
             f'aria-label="Scam risk {int(pos)} of 100">{cells}<b></b></span><span class="end">100</span>'
-            f'<span class="rl">{int(pos)}</span></div>')
+            f'<span class="rl">{int(pos)}</span>{AGG_TAG if aggregator else ""}</div>')
 
 
 # ---------- static script ----------

@@ -203,7 +203,7 @@ def verdict_class(j: dict) -> str:
     lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
     zone = ui.risk_position(int(j.get("score") or 0), j.get("scam_status", ""), aggregator=lead_gen)[0]
     status = j.get("scam_status") if j.get("scam_status") in ("clear", "flagged", "held") else "flagged"
-    return f"v-{status} z{zone}"
+    return f"v-{status} z{zone}" + (" v-agg" if lead_gen else "")
 
 
 def card(j: dict, p: dict, *, fitpct, saved: bool | None, pill: str) -> str:
