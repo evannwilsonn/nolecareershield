@@ -62,7 +62,7 @@ const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [], dismissed: {}, suggs: {},
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], connLog: [], easyDraft: null};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], connLog: [], easyDraft: null, chats: [], chatId: null};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -675,25 +675,90 @@ P.scam = () => {
   return pageHead("Is this message a scam?", "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.", "Scam check") + kindTabs("message") + takeFlash() + top + (top ? '<h3 class="sec">Check another message</h3>' : "") + form;
 };
 
-// ---- assistant ----
-const SUGG = ["What jobs fit my resume?", "Remote data internships using SQL", "Part-time jobs near campus", "Review my resume", "Is this a scam: Hi! I'm Dr. Carter from the Biology dept. I need a personal assistant for $400 weekly. Text me at 850-555-0199"];
+// ---- career assistant (mirrors assistant.py: saved chats, cards from live approved listings, qualifications block) ----
+const CS_STARTERS = [["search", "Find jobs matching my skills"], ["file", "Draft my resume"], ["chat", "Help me prepare for an interview"], ["shield", "Is this message a scam?"]];
+const CS_SHOW_FIRST = 4;
+ICONS.search = '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>';
+ICONS.clock = '<path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4.5V8h3.5"/><path d="M12 8v4.5l3 1.5"/>';
+ICONS.x = '<path d="M6 6l12 12M18 6 6 18"/>';
+const csGreeting = first => { const h = new Date().getHours(), part = h >= 5 && h < 12 ? "Good morning" : h >= 12 && h < 17 ? "Good afternoon" : "Good evening"; return first ? `${part}, ${first}` : part; };
+const csChats = () => (S.chats || []).filter(c => c.user === me().id).sort((a, b) => b.at - a.at || b.id - a.id);
+const csChat = id => (S.chats || []).find(c => c.id === id && c.user === me().id);
+function csFollow(out, hasJobs) {
+  if (out.scam) return ["What should I do if I already replied?", "Find jobs matching my skills", "Help me prepare for an interview"];
+  if (out.handoff === "resume") return ["Review my resume", "Find jobs matching my skills", "Help me prepare for an interview"];
+  if (out.interview) return ["Find jobs matching my skills", "Review my resume", "Is this message a scam?"];
+  if (hasJobs) return ["Show only remote jobs", "Show only part-time jobs", "Show internships", "Review my resume"];
+  return ["Find jobs matching my skills", "Remote jobs", "Part-time jobs near campus"];
+}
+function csCard(j, p, ready) {
+  const tags = (j.easy_apply ? '<span class="cs-tag ea">Easy apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="cs-tag nw">New</span>' : "");
+  const match = ready ? `<span class="pill accent">${N.fitScore(j, p).score}% match</span>` : "";
+  const loc = j.location || (j.work_type === "remote" ? "Remote" : "");
+  const pill = j.scam_status === "clear" ? '<span class="badge verified">✓ Scam check passed</span>' : '<span class="badge warning">⚠ Check carefully</span>';
+  return `<article class="cs-job">${tags ? `<div class="cs-tags">${tags}</div>` : ""}<a class="cs-title" href="#" data-go="job?id=${j.id}">${esc(j.title)}</a><div class="cs-co">${esc(j.company)}</div>${loc ? `<div class="cs-loc">${esc(loc)}</div>` : ""}<div class="cs-meta"><span class="chip">${esc(cap(j.work_type))}</span>${match}${pill}</div></article>`;
+}
+function csQuals(j, p) {
+  const items = N.fitScore(j, p).checklist.slice(0, 8); if (!items.length) return "";
+  const met = items.filter(i => i.status === "met").length;
+  const lead = met === items.length ? "You match all of the qualifications." : met * 2 > items.length ? "You match most qualifications." : met ? "You match some qualifications." : "You don't match these qualifications yet.";
+  const sym = {met: ["✓", "met", "You have"], missing: ["⊘", "miss", "Not shown yet"], unknown: ["?", "unk", "Unknown"]};
+  return `<section class="cs-quals"><h3>What they’re looking for <small>${esc(j.title)} at ${esc(j.company)}</small></h3><p>${lead}</p><ul>${items.map(i => `<li class="${sym[i.status][1]}"><span class="mk" aria-hidden="true">${sym[i.status][0]}</span><span class="sr">${sym[i.status][2]}: </span>${esc(i.text)}</li>`).join("")}</ul><p class="cs-note">Matching is based on your profile. <a href="#" data-go="setup?step=1">Update profile</a>.</p></section>`;
+}
+const csThumb = k => `<svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${k === "up" ? '<path d="M7 11v9H4v-9zM7 11l4-7c1.5 0 2.5 1 2.2 2.6L12.7 10H19a1.6 1.6 0 0 1 1.6 2l-1.5 6.2A2 2 0 0 1 17.2 20H7"/>' : '<path d="M7 13V4H4v9zM7 13l4 7c1.5 0 2.5-1 2.2-2.6L12.7 14H19a1.6 1.6 0 0 0 1.6-2l-1.5-6.2A2 2 0 0 0 17.2 4H7"/>'}</svg>`;
+function csReply(m, cid, p, ready, latest) {
+  const live = new Map(approvedJobs().map(j => [j.id, j])), jobs = (m.jobs || []).map(i => live.get(i)).filter(Boolean);
+  let body = "";
+  if (jobs.length) {
+    const cards = jobs.map(j => csCard(j, p, ready));
+    body += `<div class="cs-grid">${cards.slice(0, CS_SHOW_FIRST).join("")}</div>`;
+    if (cards.length > CS_SHOW_FIRST) body += `<details class="cs-more"><summary><span class="more">Show more (${cards.length - CS_SHOW_FIRST})</span><span class="less">Show less</span> <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="cs-grid">${cards.slice(CS_SHOW_FIRST).join("")}</div></details>`;
+  }
+  body += `<div class="cs-text">${esc(m.text)}</div>`;
+  if (m.handoff === "resume") body += `<p><a class="b" href="#" data-go="resume">${icon("file", 16)} Open Resume studio</a></p>`;
+  if (m.scam) body += '<p><a class="b sec sm" href="#" data-go="scam?kind=message">Open Scam check</a></p>';
+  if (jobs.length && ready) body += csQuals(jobs[0], p);
+  else if (jobs.length) body += '<p class="cs-note">Set up your profile and each card shows how well you match. <a href="#" data-go="setup?step=1">Set up profile</a>.</p>';
+  const fb = (k, v, label) => `<button class="cs-ic${m.feedback === v ? " on" : ""}" type="button" data-do="cs-fb" data-m="${m.id}" data-v="${k}" aria-label="${label}" aria-pressed="${m.feedback === v}">${csThumb(k)}</button>`;
+  body += `<div class="cs-acts">${fb("up", 1, "Good answer")}${fb("down", -1, "Not helpful")}<button class="cs-ic" type="button" data-do="cs-copy" data-m="${m.id}" aria-label="Copy this answer" title="Copy">${icon("file", 17)}</button></div>`;
+  if (latest && m.follow && m.follow.length) body += `<div class="cs-follow">${m.follow.map(f => `<button class="cs-chip" type="button" data-do="cs-ask" data-q="${esc(f)}">${esc(f)}</button>`).join("")}</div>`;
+  return `<div class="cs-bot" id="m${m.id}">${body}</div>`;
+}
+const csAskForm = big => `<form class="cs-ask${big ? " big" : ""}" id="askForm"><label class="hp" for="cs-q">Message</label><input id="cs-q" name="q" type="text" required maxlength="4000" placeholder="${big ? "Ask anything…" : "Message…"}" autocomplete="off"><button class="cs-send" type="submit" aria-label="Send">${icon("send", 16)}</button></form><p class="cs-disc">AI-generated content may contain mistakes.</p>`;
 P.assistant = () => {
-  if (!isStudent()) return needStudent("the job assistant");
-  const p = SP(me().id), first = (p.display_name || "").split(" ")[0];
-  if (!S.chat) S.chat = [{role: "bot", text: `Hi${first ? " " + first : ""}! I'm your job assistant. Ask for any kind of job, ask what fits your resume, or paste a message you got and I'll tell you if it looks like a scam.`}];
-  const log = S.chat.map(t => t.role === "me" ? `<div class="say me">${esc(t.text)}</div>`
-    : `<div class="say bot"><div class="who">${icon("spark", 14)} Assistant</div>${esc(t.text)}${t.jobs && t.jobs.length ? `<div class="cards">${t.jobs.map(r => jobCard(r.job, r)).join("")}</div>` : ""}${t.scam ? `<div class="row" style="margin-top:8px"><a class="b sm sec" href="#" data-go="scam?kind=message">Open Scam check</a></div>` : ""}</div>`).join("");
-  return pageHead("Career assistant", "Your scout for the NoleCareerShield board. It only suggests listings that passed the scam scan and a human review.", "Assistant") +
-    `<div class="chat" id="chat"><div class="log" id="log" aria-live="polite">${log}</div>${S.chat.length === 1 ? `<div class="sugg">${SUGG.map((s, i) => `<button type="button" data-do="ask" data-i="${i}">${esc(s.length < 48 ? s : s.slice(0, 45) + "…")}</button>`).join("")}</div>` : ""}
-<form id="askForm"><label for="q" class="hp">Your question</label><textarea id="q" name="q" required maxlength="4000" placeholder="e.g. paid research assistant jobs for a psych major" rows="1"></textarea><button class="b" type="submit" aria-label="Ask">${icon("send", 16)}</button></form></div>
-<p class="aimode" style="margin-top:8px">Built-in matching · answers only from approved listings. On the live site this runs on Claude when an API key is set.</p>`;
+  if (!isStudent()) return needStudent("the career assistant");
+  const p = SP(me().id), ready = studentReady(p), first = (p.display_name || "").split(" ")[0], chats = csChats(), cid = S.chatId, chat = cid ? csChat(cid) : null;
+  const items = chats.map(c => `<li${chat && c.id === chat.id ? ' class="on"' : ""}><a href="#" data-do="cs-open" data-id="${c.id}"><span class="t">${esc(c.title || "New chat")}</span><span class="d">${esc(ago(c.at))}</span></a><button class="cs-del" type="button" data-do="cs-del" data-id="${c.id}" aria-label="Delete chat ${esc(c.title)}">${icon("x", 14)}</button></li>`).join("");
+  const side = `<aside class="cs-side"><div class="cs-brand">${icon("spark", 20)} <span>Career assistant</span></div><a class="cs-new" href="#" data-do="cs-new">${icon("plus", 16)} New chat</a><div class="cs-hist">${icon("clock", 15)} Chat history</div>${chats.length ? `<ul class="cs-list">${items}</ul>` : '<p class="cs-empty">Your chats show up here.</p>'}</aside>`;
+  const setup = ready ? "" : banner("info", 'Set up your profile for personal matches. <a href="#" data-go="setup?step=1">Set up profile</a>', true);
+  let main;
+  if (!chat) {
+    const recent = chats[0] ? `<a class="cs-chip" href="#" data-do="cs-open" data-id="${chats[0].id}">${icon("clock", 16)} <b>Recent:</b> ${esc(chats[0].title)} <small>${esc(ago(chats[0].at))}</small></a>` : "";
+    main = `<div class="cs-home"><h1>${icon("spark", 30)} ${esc(csGreeting(first))}</h1><p class="cs-sub">What can I help you with today?</p>${csAskForm(true)}<div class="cs-chips">${recent}${CS_STARTERS.map(([ic, t]) => `<button class="cs-chip" type="button" data-do="cs-ask" data-q="${esc(t)}">${icon(ic, 16)} ${esc(t)}</button>`).join("")}</div><p class="aimode">Built-in matching · answers only from approved listings. On the live site this runs on Claude when an API key is set.</p></div>`;
+  } else {
+    const lastBot = [...chat.msgs].reverse().find(m => m.role === "assistant"), pending = chat.msgs.length && chat.msgs[chat.msgs.length - 1].role === "user";
+    const parts = chat.msgs.map(m => m.role === "user" ? `<div class="cs-me">${esc(m.text)}</div>` : csReply(m, chat.id, p, ready, m === lastBot && !pending));
+    if (pending) parts.push('<div class="cs-think" role="status"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Thinking…</div>');
+    main = `<div class="cs-scroll">${parts.join("")}<div id="latest"></div></div><div class="cs-bar">${csAskForm(false)}</div>`;
+  }
+  return setup + `<div class="cs">${side}<section class="cs-main">${main}</section></div>`;
 };
 function ask(q) {
-  q = (q || "").trim(); if (!q) return;
-  S.chat.push({role: "me", text: q});
-  const out = N.assistant(q, SP(me().id), approvedJobs());
-  S.chat.push({role: "bot", text: out.reply, jobs: out.jobs, scam: out.scam}); render(true);
-  const l = $("#log"); if (l) l.scrollTop = l.scrollHeight;
+  q = (q || "").trim().slice(0, 4000); if (!q || !me()) return;
+  if (!S.chats) S.chats = [];
+  let chat = S.chatId ? csChat(S.chatId) : null;
+  if (chat && chat.msgs.length && chat.msgs[chat.msgs.length - 1].role === "user") return;     // still waiting on an answer
+  if (!chat) { chat = {id: S.nextChat = (S.nextChat || 0) + 1, user: me().id, title: q.length <= 60 ? q : q.slice(0, 57).trimEnd() + "…", at: NOW(), msgs: []};
+    S.chats.push(chat); if (csChats().length > 60) S.chats = S.chats.filter(c => c.user !== me().id || csChats().slice(0, 60).includes(c)); S.chatId = chat.id; }
+  chat.msgs.push({id: S.nextMsg = (S.nextMsg || 0) + 1, role: "user", text: q}); chat.at = NOW(); render(true);
+  const uid = me().id;
+  S.timers.push(setTimeout(() => {                      // the short beat is the engine running in your browser, not made-up latency
+    if (!me() || me().id !== uid || !csChat(chat.id)) return;
+    const out = N.assistant(chat.msgs.filter(m => m.role === "user").pop().text, SP(uid), approvedJobs());
+    const ids = (out.jobs || []).map(r => r.job.id);
+    chat.msgs.push({id: S.nextMsg = (S.nextMsg || 0) + 1, role: "assistant", text: out.reply, jobs: ids, scam: !!out.scam, handoff: out.handoff || "", follow: csFollow(out, ids.length > 0), feedback: 0});
+    chat.at = NOW(); S.scrollTo = "latest"; render(true);
+  }, 500));
 }
 
 // ---- resume studio: optimizer (mirrors resume_tools.py: _landing, _report_page, _sugg_card, _tailor_html, accept) ----
@@ -1497,6 +1562,7 @@ function exportData() {
     applications: S.apps.filter(a => a.student === u.id).map(a => ({job_id: a.job, answers: a.answers, note: a.note, share_resume: a.share ? 1 : 0, created_at: new Date(a.at).toISOString()})),
     connections: S.conns.filter(c => c.a === u.id || c.b === u.id).map(c => ({user_a: c.a, user_b: c.b, requested_by: c.by, status: c.status, created_at: new Date(c.at).toISOString()})),
     saved_posts: S.saves.filter(x => x.user === u.id).map(x => ({post_id: x.post, created_at: new Date(x.at).toISOString()})),
+    assistant_chats: csChats().map(c => ({id: c.id, title: c.title, messages: c.msgs.map(m => ({role: m.role, text: m.text, feedback: m.feedback || 0}))})),
     follows: S.follows.filter(f => f.student === u.id).map(f => ({employer_id: f.employer, created_at: new Date(f.at).toISOString()}))};
   return JSON.stringify(d, (k, v) => v instanceof Set ? [...v] : v, 2);
 }
@@ -1722,7 +1788,7 @@ function go(spec) {
 const FOOTER = `<footer>Every listing is scanned for scam signals and reviewed by a human before it appears. A verified badge is not a guarantee. Always confirm an employer through their own website before sharing personal information.
 <span class="tm"><a href="#" data-go="about">About</a> · <a href="#" data-go="privacy">Privacy</a> · <a href="#" data-go="report">Report a listing</a> · <a href="#" data-go="scam">Scam check</a></span>
 <span class="tm">An independent student project. Not affiliated with, sponsored by, or endorsed by Florida State University; uses no university trademarks or logos.</span></footer>`;
-function signIn(email, role) { S.session = findUser(email, role); S.chat = null; }
+function signIn(email, role) { S.session = findUser(email, role); S.chat = null; S.chatId = null; }
 function afterLogin(next) {
   const u = me();
   if (u.role === "employer" && S.pendingDraft) { submitDraft(); return go("posted"); }
@@ -1757,7 +1823,7 @@ document.addEventListener("click", e => {
     "sso-finish": () => { // what FSU sign-in hands back: a confirmed @fsu.edu address. First time? The account is created, like the live site.
       const email = S.startEmail; let u = findUser(email, "student");
       if (!u) { u = {id: S.nextId++, email, role: "student", pw: null, verified: true}; S.users.push(u); }
-      u.verified = true; S.session = u; S.chat = null; const nx = okNext(S.route.q.next); S.startEmail = ""; afterLogin(nx); },
+      u.verified = true; S.session = u; S.chat = null; S.chatId = null; const nx = okNext(S.route.q.next); S.startEmail = ""; afterLogin(nx); },
     "as-student": () => { S.admin = false; signIn("jordan@fsu.edu", "student"); go("home"); },
     "as-employer": () => { S.admin = false; signIn("pat@garnetanalytics.example", "employer"); go("home"); },
     "as-reviewer": () => { S.admin = true; go("admin"); },
@@ -1769,7 +1835,12 @@ document.addEventListener("click", e => {
       S.listingIn = Object.assign({}, LISTING_SAMPLES[Number(d.dataset.i)][1]); go("scam?run=1"); },
     sample: () => { if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam?kind=message"); }
       const s = SAMPLES[Number(d.dataset.i)]; go(`scam?kind=message&run=1&text=${encodeURIComponent(s[1])}&sender=${encodeURIComponent(s[2])}`); },
-    ask: () => ask(SUGG[Number(d.dataset.i)]),
+    "cs-ask": () => ask(d.dataset.q),
+    "cs-new": () => { S.chatId = null; go("assistant"); },
+    "cs-open": () => { S.chatId = Number(d.dataset.id); S.scrollTo = "latest"; go("assistant"); },
+    "cs-del": () => { S.chats = (S.chats || []).filter(c => !(c.id === id && c.user === me().id)); if (S.chatId === id) S.chatId = null; render(true); },
+    "cs-fb": () => { const ch = csChat(S.chatId), m = ch && ch.msgs.find(x => x.id === Number(d.dataset.m)); if (m && m.role === "assistant") { const v = d.dataset.v === "up" ? 1 : -1; m.feedback = m.feedback === v ? 0 : v; render(true); } },
+    "cs-copy": () => { const ch = csChat(S.chatId), m = ch && ch.msgs.find(x => x.id === Number(d.dataset.m)); if (m) { try { navigator.clipboard.writeText(m.text).then(() => { d.classList.add("on"); d.title = "Copied"; }, () => {}); } catch (x) { /* clipboard unavailable */ } } },
     "apply-rewrite": () => { const r = S.lastRewrites[Number(d.dataset.i)], p = SP(me().id); if (r && p.resume_text.includes(r.text)) p.resume_text = p.resume_text.replace(r.text, r.rewrite); flash("verified", "Rewrite applied. Fill in any [placeholder] with your real numbers."); render(true); },
     "sample-resume": () => { const p = SP(me().id); p.resume_text = RESUME; p.resume_name = "Sample resume"; if (!(p.items || []).length) importResume(p); render(); },
     "save-cand": () => { const j = S.jobs.find(x => x.id === S.route.q.id && x.employer_id === me().id), p = SP(id); if (j && p && p.visible) addCandidate(j.id, id, me().id, "saved"); render(true); },
@@ -1855,7 +1926,7 @@ document.addEventListener("submit", e => {
     const role = f.dataset.role, u = findUser(g("email").toLowerCase(), role);
     if (!u || u.pw !== fd.get("password")) { flash("warning", "The email or password is incorrect."); return go(`login?role=${role}&next=${f.dataset.next}`); }
     if (!u.verified) { flash("warning", `Confirm your email first. We sent you a link when you signed up. <button type="button" class="linkbtn" data-do="resend" data-role="${role}" data-email="${esc(u.email)}">Send me a new confirmation email</button>`, true); return go(`login?role=${role}&next=${f.dataset.next}`); }
-    S.session = u; S.chat = null; return afterLogin(f.dataset.next);
+    S.session = u; S.chat = null; S.chatId = null; return afterLogin(f.dataset.next);
   }
   if (id === "signupForm") {
     const role = f.dataset.role, email = g("email").toLowerCase(), pw = String(fd.get("password")), back = t => { flash("warning", t); go(`signup?role=${role}&next=${f.dataset.next}`); };
@@ -1873,7 +1944,7 @@ document.addEventListener("submit", e => {
     const t = f.dataset.t, rec = S.tokens[t], u = rec && U(rec.uid);
     if (!rec || rec.used || !u) return go("verify?t=" + t);
     if (u.pw !== fd.get("password")) { flash("warning", "That is not the password this account was created with."); return go("verify?t=" + t); }
-    rec.used = true; u.verified = true; S.session = u; S.chat = null;
+    rec.used = true; u.verified = true; S.session = u; S.chat = null; S.chatId = null;
     if (u.role === "employer" && S.pendingDraft) submitDraft();
     flash("verified", "Email confirmed. You're logged in. " + (u.role === "student" ? "Next, set up your profile. It takes about two minutes and powers your job matches." : "Next, set up your company profile. A reviewer approves it before you can message students or post to the feed."));
     return go("setup?step=1");

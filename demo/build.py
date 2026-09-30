@@ -26,6 +26,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("ENV", "development")
 
+import css_assist  # noqa: E402
 import ui  # noqa: E402
 import css_feed  # noqa: E402,F401  (appends the feed styles to ui.CSS)
 
@@ -107,7 +108,7 @@ def build() -> tuple[Path, Path]:
         raise SystemExit("a media link in the landing blocks was not embedded")
     # The font is embedded, since the demo is one self-contained file.
     font = base64.b64encode((ROOT / "static" / "fonts" / "archivo.woff2").read_bytes()).decode()
-    css = themed_css(ui.CSS).replace("url(/static/fonts/archivo.woff2) format(\"woff2-variations\"),url(/static/fonts/archivo.woff2) format(\"woff2\")",
+    css = themed_css(ui.CSS + css_assist.CSS).replace("url(/static/fonts/archivo.woff2) format(\"woff2-variations\"),url(/static/fonts/archivo.woff2) format(\"woff2\")",
                                      f"url(data:font/woff2;base64,{font}) format(\"woff2\")")
     if "data:font/woff2" not in css:
         raise SystemExit("font-face not found in ui.CSS")

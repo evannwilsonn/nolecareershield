@@ -891,7 +891,7 @@ def about():
 <li><b>Messaging</b> between students and reviewed employers, with every message scanned for scam signs.</li>
 <li><b>Easy apply</b> on listings that choose it: a short form filled from your profile, sent only to that employer.</li>
 <li><b>A network</b> where students connect with each other and follow the companies they like, with no student-to-student inbox.</li>
-<li><b>A job assistant</b> that answers in plain words and only suggests listings that passed review.</li>
+<li><b>A career assistant</b> that answers in plain words and only suggests listings that passed review.</li>
 <li><b>A resume studio</b> that scores a resume, rewrites weak lines without inventing anything, and tailors it to a job.</li>
 <li><b>A scam checker</b> for any message a student receives, here or anywhere else.</li>
 <li><b>An FSU-only feed</b> where employer posts must be opportunities or advice for FSU students.</li></ul>
@@ -929,6 +929,7 @@ def privacy():
 <li>We count which listings you open and whether you press Apply, so employers can see totals (for example "40 students viewed, 12 clicked Apply"). Employers never see who viewed or clicked.</li>
 <li>If you message an employer about a listing, or they invite you or save you from their matches, you appear in that employer's candidate list for it, where they can add a stage and a private note.</li>
 <li><b>Easy apply.</b> When you apply on a listing that collects applications here, that employer (and only that employer) sees your name, major, graduation term, profile links, your answers and note, and your resume only if you tick it. Never your email. Applying also lets that employer open your profile and message you. You can withdraw an application any time, which deletes the answers.</li>
+<li><b>Career assistant chats.</b> Your questions and its answers are saved in your account so you can come back to them. Only you can see them. You can delete any chat from Chat history, they are removed after 180 days without use, and they are included in your data download and deleted with your account.</li>
 <li><b>Connections and follows.</b> A connection is a mutual link between two students that shows as a count and as mutual connections on profiles. It doesn't let anyone message you. You can switch off connection requests and "People you may know" in your profile settings. Following a company adds its listings to a filter for you; the company sees how many students follow it, never who.</li></ul>
 <h3>Messages</h3>
 <ul><li>Messages are only between students and employers our reviewers approved. Every message is scanned for scam signs when it is sent. Messages that match a pattern only scams use are held for a reviewer instead of being delivered; others may be delivered with a warning.</li>

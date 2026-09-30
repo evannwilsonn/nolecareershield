@@ -565,6 +565,8 @@ def export(request: Request):
                 "applications": store.rows(conn, "SELECT job_id, answers, note, share_resume, created_at FROM applications WHERE student_id = ?", (user["id"],)),
                 "connections": store.rows(conn, "SELECT user_a, user_b, requested_by, status, created_at FROM connections WHERE user_a = ? OR user_b = ?", (user["id"], user["id"])),
                 "follows": store.rows(conn, "SELECT employer_id, created_at FROM follows WHERE student_id = ?", (user["id"],)),
+                "assistant_chats": [dict(c, messages=store.rows(conn, "SELECT role, text, feedback, created_at FROM assistant_msgs WHERE chat_id = ? ORDER BY id", (c["id"],)))
+                                    for c in store.rows(conn, "SELECT id, title, created_at, updated_at FROM assistant_chats WHERE user_id = ? ORDER BY id", (user["id"],))],
                 "job_listings": store.rows(conn, "SELECT title, company, description, review_status, created_at FROM jobs WHERE employer_id = ?", (user["id"],))}
     return Response(json.dumps(data, indent=2, default=str), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="nolecareershield-my-data.json"', "Cache-Control": "no-store"})

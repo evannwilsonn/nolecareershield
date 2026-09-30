@@ -368,7 +368,12 @@ def test_assistant_builtin_finds_real_listings_only(net):
     r = s.post("/api/assistant", json={"history": [{"role": "user", "text": "Is this a scam: " + SCAMS[1]}]}, headers={"X-CSRF-Token": t})
     assert "scam" in r.json()["reply"].lower()
     # No-JS form works too, and employers/visitors can't use it.
-    assert "Data Analyst Intern" in s.post("/assistant", data={"csrf": t, "q": "data internships"}).text
+    r = s.post("/assistant", data={"csrf": t, "q": "data internships"})
+    assert r.status_code == 303 and "/assistant/c/" in r.headers["location"]
+    chat = r.headers["location"]
+    assert "Thinking" in s.get(chat).text
+    assert s.get(chat + "/reply").status_code == 303
+    assert "Data Analyst Intern" in s.get(chat).text
     assert net.client().post("/api/assistant", json={"history": []}).status_code == 401
     assert s.post("/api/assistant", json={"history": [{"role": "user", "text": "hi"}]}).status_code == 400   # no CSRF header
 
