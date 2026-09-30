@@ -75,7 +75,7 @@ def add_candidate(conn, job_id: int, student_id: int, employer_id: int, source: 
 # ---------- queries ----------
 
 def own_job(conn, user: dict, job_id: int) -> dict | None:
-    return store.row(conn, "SELECT * FROM jobs WHERE id = ? AND employer_id = ?", (job_id, user["id"]))
+    return store.row(conn, "SELECT * FROM jobs WHERE id = ? AND employer_id = ?", (job_id, store.org_id(user)))
 
 
 def ranked_matches(conn, job: dict, limit: int = MATCH_SHOW) -> list[tuple[dict, dict]]:
@@ -204,7 +204,7 @@ def overview(request: Request, done: str = ""):
     user = web.require_user(request, "employer")
     security.enforce_rate_limit(request, security.general_limiter, "hiring")
     with store.db() as conn:
-        jobs = store.rows(conn, "SELECT * FROM jobs WHERE employer_id = ? ORDER BY id DESC LIMIT 100", (user["id"],))
+        jobs = store.rows(conn, "SELECT * FROM jobs WHERE employer_id = ? ORDER BY id DESC LIMIT 100", (store.org_id(user),))
         stats = {j["id"]: job_stats(conn, j) for j in jobs}
     head = ui.page_head("Your listings", "Views, Apply clicks, ranked student matches and a candidate tracker for every listing you post.", num="Hiring")
     head += ui.banner(*DONE[done]) if done in DONE else ""
@@ -405,10 +405,10 @@ def applicants(request: Request):
     head = (f'<a class="back" href="/hiring">← Your listings</a>' + ui.page_head(
         "Applicants", "Everyone in your candidate trackers, across all your listings. Stages, ratings and notes are private to your organization.", num="Hiring"))
     with store.db() as conn:
-        if not store.employer_approved(conn, user["id"]):
+        if not store.employer_approved(conn, store.org_id(user)):
             return web.page(head + ui.banner("info", "The applicant table opens once a reviewer approves your organization."), "Applicants", active="/hiring")
-        jobs = store.rows(conn, "SELECT * FROM jobs WHERE employer_id = ? ORDER BY id DESC", (user["id"],))
-        rows = applicant_rows(conn, user["id"], archived=q["show"] == "archived")
+        jobs = store.rows(conn, "SELECT * FROM jobs WHERE employer_id = ? ORDER BY id DESC", (store.org_id(user),))
+        rows = applicant_rows(conn, store.org_id(user), archived=q["show"] == "archived")
     shown = filter_rows(rows, q)
     pages = max(1, -(-len(shown) // PAGE_SIZE))
     q["page"] = min(q["page"], pages)
@@ -490,16 +490,16 @@ def applicants_bulk(request: Request, sel: list[str] = Form([]), do: str = Form(
         return RedirectResponse(back, status_code=303)
     security.enforce_key_limit(security.profile_limiter, f"u{user['id']}", "hiring updates")
     with store.db() as conn:
-        if not store.employer_approved(conn, user["id"]):
+        if not store.employer_approved(conn, store.org_id(user)):
             return RedirectResponse("/hiring/applicants", status_code=303)
-        pairs = _own_pairs(conn, user["id"], sel)
+        pairs = _own_pairs(conn, store.org_id(user), sel)
         if not pairs or do not in ("stage", "archive", "restore") or (do == "stage" and stage not in STAGE_NAME):
             return RedirectResponse(_with(back, done="none"), status_code=303)
         sets = {"stage": ("stage = ?", [stage]), "archive": ("archived = 1", []), "restore": ("archived = 0", [])}[do]
         n = 0
         for jid, sid in pairs:
             n += conn.execute(f"UPDATE candidates SET {sets[0]}, updated_at = ? WHERE job_id = ? AND student_id = ? AND employer_id = ?",
-                              sets[1] + [time.time(), jid, sid, user["id"]]).rowcount
+                              sets[1] + [time.time(), jid, sid, store.org_id(user)]).rowcount
     done = {"stage": "moved", "archive": "archived", "restore": "restored"}[do]
     return RedirectResponse(_with(back, done=done, n=n, **({"to": stage} if do == "stage" else {})), status_code=303)
 
@@ -517,9 +517,9 @@ def applicants_row(request: Request, job: int = Form(0), student: int = Form(0),
     r = int(rating) if (rating or "").isdigit() and 0 <= int(rating) <= 5 else None
     if stage in STAGE_NAME and r is not None:
         with store.db() as conn:
-            if own_job(conn, user, job) and store.employer_approved(conn, user["id"]):
+            if own_job(conn, user, job) and store.employer_approved(conn, store.org_id(user)):
                 conn.execute("UPDATE candidates SET stage = ?, rating = ?, note = ?, updated_at = ? WHERE job_id = ? AND student_id = ? AND employer_id = ?",
-                             (stage, r, note, time.time(), job, student, user["id"]))
+                             (stage, r, note, time.time(), job, student, store.org_id(user)))
     return RedirectResponse(_with(back, done="saved") + frag, status_code=303)
 
 
@@ -532,7 +532,7 @@ def listing(job_id: int, request: Request, tab: str = "matches", done: str = "")
         j = own_job(conn, user, job_id)
         if not j:
             return web.page(ui.page_head("Listing not found") + '<a class="b sec" href="/hiring">Your listings</a>', "Not found", active="/hiring", status=404)
-        approved_emp = store.employer_approved(conn, user["id"])
+        approved_emp = store.employer_approved(conn, store.org_id(user))
         s = job_stats(conn, j)
         cands = store.rows(conn, "SELECT * FROM candidates WHERE job_id = ? AND archived = 0 ORDER BY updated_at DESC", (job_id,))
         if tab == "matches" and approved_emp:
@@ -617,8 +617,8 @@ def save_match(job_id: int, request: Request, student: int = Form(0), csrf: str 
     with store.db() as conn:
         j = own_job(conn, user, job_id)
         p = store.row(conn, "SELECT visible_to_employers FROM student_profiles WHERE user_id = ?", (student,))
-        if j and p and p["visible_to_employers"] and store.employer_approved(conn, user["id"]):
-            add_candidate(conn, job_id, student, user["id"], "saved")
+        if j and p and p["visible_to_employers"] and store.employer_approved(conn, store.org_id(user)):
+            add_candidate(conn, job_id, student, store.org_id(user), "saved")
     return RedirectResponse(f"/hiring/{job_id}?tab=matches", status_code=303)
 
 
@@ -633,7 +633,7 @@ def set_stage(job_id: int, request: Request, student: int = Form(0), stage: str 
         with store.db() as conn:
             if own_job(conn, user, job_id):
                 conn.execute("UPDATE candidates SET stage = ?, note = ?, updated_at = ? WHERE job_id = ? AND student_id = ? AND employer_id = ?",
-                             (stage, note, time.time(), job_id, student, user["id"]))
+                             (stage, note, time.time(), job_id, student, store.org_id(user)))
     return RedirectResponse(f"/hiring/{job_id}?tab=candidates#c{int(student)}", status_code=303)
 
 
@@ -652,7 +652,7 @@ def listing_status(job_id: int, request: Request, do: str = Form(""), back: str 
     with store.db() as conn:
         j = own_job(conn, user, job_id)
         if j and do in moves and store.listing_state(j) in moves[do][0]:
-            conn.execute("UPDATE jobs SET listing_status = ? WHERE id = ? AND employer_id = ?", (moves[do][1], job_id, user["id"]))
+            conn.execute("UPDATE jobs SET listing_status = ? WHERE id = ? AND employer_id = ?", (moves[do][1], job_id, store.org_id(user)))
             done = moves[do][2]
     return RedirectResponse(to + (f"?done={done}" if done else ""), status_code=303)
 
@@ -688,17 +688,21 @@ def listing_expiry(job_id: int, request: Request, days: str = Form(""), date: st
             if not lo <= d <= hi:
                 return RedirectResponse(to + "?done=badexpiry", status_code=303)
             if state == "pending":
-                conn.execute("UPDATE jobs SET expiry_days = ? WHERE id = ? AND employer_id = ?", (d, job_id, user["id"]))
+                conn.execute("UPDATE jobs SET expiry_days = ? WHERE id = ? AND employer_id = ?", (d, job_id, store.org_id(user)))
                 return RedirectResponse(to + "?done=extended", status_code=303)
             ts = now + d * 86400
         # A new date re-arms the reminder: expiry_reminded holds the date a reminder was sent for.
-        conn.execute("UPDATE jobs SET expires_at = ? WHERE id = ? AND employer_id = ?", (ts, job_id, user["id"]))
+        conn.execute("UPDATE jobs SET expires_at = ? WHERE id = ? AND employer_id = ?", (ts, job_id, store.org_id(user)))
     return RedirectResponse(to + "?done=extended", status_code=303)
 
 
-def invite_text(conn, employer_id: int, student: dict, job: dict) -> str:
+def invite_text(conn, employer_id: int, student: dict, job: dict, sender_id: int | None = None) -> str:
+    """sender_id: the team member writing, so the note carries their own name and title (default: the company contact)."""
     e = store.employer_profile(conn, employer_id) or {}
     first = (student.get("display_name") or "").split(" ")[0]
-    me = f"I'm {e['contact_name']}, {e['contact_title']} at {e['company']}. " if e.get("contact_name") and e.get("company") else ""
+    card = store.member_card(conn, sender_id) if sender_id else {}
+    who, title = (card["name"], card["title"]) if card.get("name") else (e.get("contact_name"), e.get("contact_title"))
+    me = f"I'm {who}, {title} at {e['company']}. " if who and title and e.get("company") else (
+        f"I'm {who} at {e['company']}. " if who and e.get("company") else "")
     return (f"Hi {first}! {me}Your profile looks like a strong fit for our {job['title']} role, and we'd love for you to apply. "
             "You'll find the listing and the Apply link on NoleCareerShield. Happy to answer any questions here.")

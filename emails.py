@@ -1,7 +1,7 @@
 """Emails: an in-site copy of every email the site sends to someone who has an account.
 
 mailer.send calls keep() for each message. A copy is kept only for a verified account with that address,
-and one-time sign-in links (confirm, reset) are replaced with a note, so the inbox never holds a working
+and one-time links (confirm, reset, team invites) are replaced with a note, so the inbox never holds a working
 credential. Only the account holder can read their copies; they go with the account and after a year.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ import web
 from ui import esc
 
 router = APIRouter()
-_SECRET_LINK = re.compile(r"https?://\S*(?:/verify|/reset|/login/link|token=)\S*", re.IGNORECASE)
+_SECRET_LINK = re.compile(r"https?://\S*(?:/verify|/reset|/login/link|/team/join|token=)\S*", re.IGNORECASE)
 REDACTED = "[This one-time link was sent only to your email inbox.]"
 
 

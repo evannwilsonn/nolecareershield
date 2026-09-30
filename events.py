@@ -403,7 +403,7 @@ def _detail(conn, ev: dict, user: dict, notice: str = "") -> str:
     eid = int(ev["id"])
     c = counts(conn, eid)
     ev["_going"] = c["going"]
-    owner = user["id"] == ev["employer_id"]
+    owner = store.org_id(user) == ev["employer_id"]
     state = my_rsvp(conn, eid, user["id"]) if user["role"] == "student" else ""
     a = local(ev["starts_at"])
     facts = [("calendar", "When", esc(when_text(ev))),
@@ -693,7 +693,7 @@ def new_form(request: Request):
     with store.db() as conn:
         why = _can_post(conn, user)
         body = ui.page_head("New event", "Info sessions, career fair tables, workshops and coffee chats for FSU students.", num="Events")
-        body += ui.banner("info", why) if why else _form(conn, user["id"], {"duration": "60", "format": "in_person", "kind": "info_session"})
+        body += ui.banner("info", why) if why else _form(conn, store.org_id(user), {"duration": "60", "format": "in_person", "kind": "info_session"})
     return web.page(body, "New event", active="/events/manage")
 
 
@@ -709,14 +709,14 @@ async def create(request: Request):
         if why:
             return web.page(ui.banner("info", why), "New event", active="/events/manage", status=403)
         n = conn.execute("SELECT COUNT(*) FROM events WHERE employer_id = ? AND status IN ('pending','approved') AND starts_at > ?",
-                         (user["id"], time.time())).fetchone()[0]
-        clean, err = _clean(conn, user["id"], f) if n < UPCOMING_CAP else (None, f"You can have up to {UPCOMING_CAP} upcoming events at once.")
+                         (store.org_id(user), time.time())).fetchone()[0]
+        clean, err = _clean(conn, store.org_id(user), f) if n < UPCOMING_CAP else (None, f"You can have up to {UPCOMING_CAP} upcoming events at once.")
         if not clean:
-            return web.page(ui.page_head("New event", num="Events") + _form(conn, user["id"], f, err), "New event", active="/events/manage", status=400)
+            return web.page(ui.page_head("New event", num="Events") + _form(conn, store.org_id(user), f, err), "New event", active="/events/manage", status=400)
         now = time.time()
         cols = list(clean)
         cur = conn.execute(f"INSERT INTO events (employer_id, {', '.join(cols)}, status, created_at, updated_at) VALUES (?, {', '.join('?' * len(cols))}, 'pending', ?, ?)",
-                           (user["id"], *clean.values(), now, now))
+                           (store.org_id(user), *clean.values(), now, now))
         eid = cur.lastrowid
     mailer.send(user["email"], "We received your event", f"We received your event \"{clean['title']}\". A reviewer checks every event before students see it. "
                 "We'll email you when it's live.")
@@ -729,7 +729,7 @@ def manage(request: Request):
     now = time.time()
     with store.db() as conn:
         why = _can_post(conn, user)
-        evs = _load(conn, "SELECT * FROM events WHERE employer_id = ? AND status != 'removed' ORDER BY starts_at DESC LIMIT 200", (user["id"],))
+        evs = _load(conn, "SELECT * FROM events WHERE employer_id = ? AND status != 'removed' ORDER BY starts_at DESC LIMIT 200", (store.org_id(user),))
         up = sorted([e for e in evs if e["starts_at"] + 60 * e["duration_min"] > now and e["status"] in ("pending", "approved")], key=lambda e: e["starts_at"])
         past = [e for e in evs if e not in up]
 
@@ -758,7 +758,7 @@ _NO_UPCOMING = ('<div class="card empty ev-empty"><b>No upcoming events</b>'
 def _visible(ev: dict | None, user: dict, conn) -> bool:
     if not ev:
         return False
-    if user["id"] == ev["employer_id"]:
+    if store.org_id(user) == ev["employer_id"]:
         return ev["status"] != "removed"
     if ev["status"] == "approved" and store.employer_approved(conn, ev["employer_id"]):
         return user["role"] == "student" or store.employer_approved(conn, user["id"])
@@ -785,7 +785,7 @@ def detail(eid: int, request: Request, saved: int = 0, msg: str = ""):
         notice = ui.banner(*notes[msg]) if msg in notes else ""
         if saved:
             notice = ui.banner("verified", "Submitted. A reviewer checks every event before students see it; we'll email you when it's live.")
-        if ev["status"] == "cancelled" and user["id"] != ev["employer_id"] and msg != "cancelled":
+        if ev["status"] == "cancelled" and store.org_id(user) != ev["employer_id"] and msg != "cancelled":
             notice += ui.banner("warning", "This event was cancelled by the employer.")
         if ev["status"] == "rejected" and ev["review_note"]:
             notice += ui.banner("warning", "A reviewer didn't approve this event: " + ev["review_note"])
@@ -860,7 +860,7 @@ def download_ics(eid: int, request: Request):
         ev = get(conn, eid)
         if not _visible(ev, user, conn):
             return Response("Not found", status_code=404, media_type="text/plain")
-        going = user["id"] == ev["employer_id"] or my_rsvp(conn, eid, user["id"]) == "going"
+        going = store.org_id(user) == ev["employer_id"] or my_rsvp(conn, eid, store.org_id(user)) == "going"
     return Response(ics(ev, going), media_type="text/calendar; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="nolecareershield-event-{int(eid)}.ics"', "Cache-Control": "no-store"})
 
@@ -869,7 +869,7 @@ def download_ics(eid: int, request: Request):
 
 def _owned(conn, eid: int, user: dict) -> dict | None:
     ev = get(conn, eid)
-    return ev if ev and ev["employer_id"] == user["id"] and ev["status"] not in ("removed",) else None
+    return ev if ev and ev["employer_id"] == store.org_id(user) and ev["status"] not in ("removed",) else None
 
 
 def _values(ev: dict) -> dict:
@@ -886,7 +886,7 @@ def edit_form(eid: int, request: Request):
         ev = _owned(conn, eid, user)
         if not ev or ev["status"] not in ("pending", "approved") or _can_post(conn, user):
             return RedirectResponse(f"/events/{eid}", status_code=303)
-        body = ui.page_head("Edit event", num="Events") + _form(conn, user["id"], _values(ev), eid=eid)
+        body = ui.page_head("Edit event", num="Events") + _form(conn, store.org_id(user), _values(ev), eid=eid)
     return web.page(body, "Edit event", active="/events/manage")
 
 
@@ -902,9 +902,9 @@ async def edit(eid: int, request: Request):
         ev = _owned(conn, eid, user)
         if not ev or ev["status"] not in ("pending", "approved") or _can_post(conn, user):
             return RedirectResponse(f"/events/{eid}", status_code=303)
-        clean, err = _clean(conn, user["id"], f)
+        clean, err = _clean(conn, store.org_id(user), f)
         if not clean:
-            return web.page(ui.page_head("Edit event", num="Events") + _form(conn, user["id"], f, err, eid), "Edit event", active="/events/manage", status=400)
+            return web.page(ui.page_head("Edit event", num="Events") + _form(conn, store.org_id(user), f, err, eid), "Edit event", active="/events/manage", status=400)
         rereview = ev["status"] == "approved" and any(clean[k] != ev[k] for k in ("title", "description", "meeting_url"))
         moved = ev["status"] == "approved" and any(clean[k] != ev[k] for k in ("starts_at", "duration_min", "format", "location"))
         sets = ", ".join(f"{k} = ?" for k in clean)

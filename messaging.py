@@ -47,6 +47,51 @@ NOTIFY_EVERY = 6 * 3600
 
 
 # ---------- rules ----------
+# Team accounts: a company's side of a conversation is its org (conversations.employer_id = the owner's user id), so
+# every member can read and reply. messages.sender_id stays the member who wrote it, and threads show their name.
+
+def side_id(user: dict) -> int:
+    """The id that sits in a conversation for this account: a student's own id, or an employer's org id."""
+    return store.org_id(user) if user["role"] == "employer" else user["id"]
+
+
+def target_id(conn, user: dict, to: int) -> int:
+    """A student writing to a team member's account reaches the member's company (its org)."""
+    if user["role"] == "student" and to and _role(conn, to) == "employer":
+        return store.org_of(conn, to)
+    return to
+
+
+def _is_mine(m: dict, c: dict, user: dict) -> bool:
+    """A message is on my side: my own as a student, anything the company sent as an employer."""
+    return m["sender_id"] == user["id"] if user["role"] == "student" else m["sender_id"] != c["student_id"]
+
+
+def sender_label(conn, sender_id: int, cache: dict | None = None) -> str:
+    """"Pat Lee · Garnet Analytics" for a message a company member sent; "" when the member has no name on file."""
+    if cache is not None and sender_id in cache:
+        return cache[sender_id]
+    card = store.member_card(conn, sender_id)
+    out = ""
+    if card["name"]:
+        co = (store.employer_profile(conn, sender_id) or {}).get("company") or ""
+        out = card["name"] + (" · " + co if co else "")
+    if cache is not None:
+        cache[sender_id] = out
+    return out
+
+
+def _mj(conn, m: dict, c: dict, user: dict, cache: dict) -> dict:
+    who = sender_label(conn, m["sender_id"], cache) if m["sender_id"] != c["student_id"] else ""
+    return message_json(m, _is_mine(m, c, user), who)
+
+
+def _mark_read(conn, c: dict, user: dict) -> None:
+    """Reading marks the other side's messages read (for a company, any member reading counts for the team)."""
+    op = "!=" if user["role"] == "student" else "="
+    conn.execute(f"UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id {op} ? AND read_at IS NULL AND status = 'delivered'",
+                 (time.time(), c["id"], c["student_id"]))
+
 
 def _role(conn, uid: int) -> str | None:
     r = conn.execute("SELECT role FROM users WHERE id = ? AND verified = 1", (uid,)).fetchone()
@@ -68,22 +113,23 @@ def can_start(conn, sender: dict, to_id: int) -> tuple[bool, str]:
     p = store.student_profile(conn, to_id)
     if not p or not profiles.student_ready(p) or not p["allow_messages"]:
         return False, "That student isn't accepting messages from employers."
-    talking = conn.execute("SELECT 1 FROM conversations WHERE student_id = ? AND employer_id = ?", (to_id, sender["id"])).fetchone()
-    if not (p["visible_to_employers"] or talking or store.applied_to(conn, to_id, sender["id"])):
+    org = side_id(sender)
+    talking = conn.execute("SELECT 1 FROM conversations WHERE student_id = ? AND employer_id = ?", (to_id, org)).fetchone()
+    if not (p["visible_to_employers"] or talking or store.applied_to(conn, to_id, org)):
         return False, "That student isn't accepting messages from employers."
     return True, ""
 
 
 def get_convo(conn, cid: int, user: dict) -> dict | None:
     c = store.row(conn, "SELECT * FROM conversations WHERE id = ?", (cid,))
-    if not c or user["id"] not in (c["student_id"], c["employer_id"]):
+    if not c or side_id(user) not in (c["student_id"], c["employer_id"]):
         return None
     return c
 
 
 def can_send(conn, c: dict, user: dict) -> tuple[bool, str]:
     if c["blocked_by"]:
-        return False, "This conversation is closed." if c["blocked_by"] != user["id"] else "You blocked this conversation. Unblock it to reply."
+        return False, "This conversation is closed." if c["blocked_by"] != side_id(user) else "You blocked this conversation. Unblock it to reply."
     if user["role"] == "employer" and not store.employer_approved(conn, user["id"]):
         return False, "Your organization isn't approved to send messages right now."
     other = c["employer_id"] if user["id"] == c["student_id"] else c["student_id"]
@@ -116,8 +162,19 @@ def clean_body(body: str) -> str:
     return body
 
 
+def _employer_recipient(conn, c: dict) -> int:
+    """Who hears about a student's message on a company's side: the member who last wrote in the thread and is still
+    on the team, otherwise the company owner."""
+    team = set(store.org_user_ids(conn, c["employer_id"]))
+    for (sid,) in conn.execute("SELECT sender_id FROM messages WHERE conversation_id = ? AND sender_id != ? ORDER BY id DESC LIMIT 50",
+                               (c["id"], c["student_id"])):
+        if sid in team:
+            return sid
+    return c["employer_id"]
+
+
 def _notify(background: BackgroundTasks, conn, c: dict, sender: dict) -> None:
-    to = c["employer_id"] if sender["id"] == c["student_id"] else c["student_id"]
+    to = _employer_recipient(conn, c) if sender["id"] == c["student_id"] else c["student_id"]
     last = conn.execute("SELECT sent_at FROM notify_log WHERE user_id = ? AND conversation_id = ?", (to, c["id"])).fetchone()
     if last and time.time() - last[0] < NOTIFY_EVERY:
         return
@@ -125,7 +182,7 @@ def _notify(background: BackgroundTasks, conn, c: dict, sender: dict) -> None:
     if not user:
         return
     conn.execute("INSERT OR REPLACE INTO notify_log (user_id, conversation_id, sent_at) VALUES (?,?,?)", (to, c["id"], time.time()))
-    name = web.display_name(conn, sender["id"], sender["role"])[0]
+    name = (sender_label(conn, sender["id"]) if sender["role"] == "employer" else "") or web.display_name(conn, sender["id"], sender["role"])[0]
     background.add_task(mailer.send, user[0], "You have a new message on NoleCareerShield",
                         f"{name} sent you a message on NoleCareerShield.\n\nRead it on the site: {security.BASE_URL}/messages/{c['id']}\n\n"
                         "We never put message text in emails. If an email claiming to be from us asks you to reply with personal "
@@ -146,11 +203,12 @@ def _job_title(conn, c: dict) -> str:
 def _thread_list(conn, user: dict, active: int = 0) -> str:
     side = "student" if user["role"] == "student" else "employer"
     other = "employer_id" if side == "student" else "student_id"
+    theirs = "sender_id != c.student_id" if side == "student" else "sender_id = c.student_id"
     convos = store.rows(conn, f"""SELECT c.*, (SELECT body FROM messages WHERE conversation_id = c.id AND (status = 'delivered' OR sender_id = ?)
                                    ORDER BY id DESC LIMIT 1) AS last_body,
-                                  (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_id != ? AND read_at IS NULL AND status = 'delivered') AS unread
+                                  (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND {theirs} AND read_at IS NULL AND status = 'delivered') AS unread
                                   FROM conversations c WHERE c.{side}_id = ? AND c.{side}_hidden = 0 ORDER BY c.last_at DESC LIMIT 100""",
-                        (user["id"], user["id"], user["id"]))
+                        (user["id"], side_id(user)))
     if not convos:
         hint = ("Message an employer from a job listing or company page." if side == "student"
                 else "Message students from the directory, or reply when a student writes to you.")
@@ -166,8 +224,8 @@ def _thread_list(conn, user: dict, active: int = 0) -> str:
     return "".join(out)
 
 
-def message_json(m: dict, me: int) -> dict:
-    mine = m["sender_id"] == me
+def message_json(m: dict, mine: bool, who: str = "") -> dict:
+    """mine: the message is on the reader's side. who: the company member who sent it ("Pat Lee · Garnet Analytics")."""
     flag = None
     if not mine and m["scan_band"] in ("review", "caution") and m["status"] == "delivered":
         flag = {"level": "bad" if m["scan_band"] == "review" else "warn",
@@ -175,7 +233,7 @@ def message_json(m: dict, me: int) -> dict:
     body = m["body"]
     if m["status"] == "removed":
         body = ""
-    return {"id": m["id"], "mine": mine, "body": body, "at": web.ago(m["created_at"]), "status": m["status"], "flag": flag}
+    return {"id": m["id"], "mine": mine, "body": body, "at": web.ago(m["created_at"]), "status": m["status"], "flag": flag, "who": who}
 
 
 def _bubble(mj: dict) -> str:
@@ -189,8 +247,9 @@ def _bubble(mj: dict) -> str:
         pre = (f'<div class="scanbox{" bad" if mj["flag"]["level"] == "bad" else ""}" data-mid="{mj["id"]}"><b>{head}</b><ul>{items}</ul>'
                f'<a href="/check?m={mj["id"]}">See the full check →</a></div>')
     held = '<span class="meta">Held for a safety review. A reviewer checks it before it\'s delivered.</span>' if mj["status"] == "held" else ""
+    who = f'<span class="sender">{esc(mj["who"])}</span>' if mj.get("who") else ""
     return (f'{pre}<div class="bubble {"me" if mj["mine"] else "them"}{" flag" if mj["flag"] else ""}" data-id="{mj["id"]}">'
-            f'{esc(mj["body"])}<span class="meta">{esc(mj["at"])}</span>{held}</div>')
+            f'{who}{esc(mj["body"])}<span class="meta">{esc(mj["at"])}</span>{held}</div>')
 
 
 def _inbox_page(conn, user: dict, c: dict | None = None, error: str = "", draft: str = "", status: int = 200) -> HTMLResponse:
@@ -209,10 +268,10 @@ def _inbox_page(conn, user: dict, c: dict | None = None, error: str = "", draft:
     href = f"/company/{other}" if kind == "emp" else f"/u/{other}"
     msgs = store.rows(conn, "SELECT * FROM messages WHERE conversation_id = ? AND (status != 'held' OR sender_id = ?) ORDER BY id LIMIT 500",
                       (c["id"], user["id"]))
-    conn.execute("UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL AND status = 'delivered'",
-                 (time.time(), c["id"], user["id"]))
+    _mark_read(conn, c, user)
     # Interview cards and their system lines sit in the thread in time order with the messages.
-    items = [(m["created_at"], _bubble(message_json(m, user["id"]))) for m in msgs] + scheduling.thread_items(conn, c, user)
+    names: dict = {}
+    items = [(m["created_at"], _bubble(_mj(conn, m, c, user, names))) for m in msgs] + scheduling.thread_items(conn, c, user)
     items.sort(key=lambda x: x[0])
     bubbles = "".join(h for _, h in items) or '<p class="faint small" style="text-align:center">No messages yet.</p>'
     ok, why = can_send(conn, c, user)
@@ -226,7 +285,7 @@ def _inbox_page(conn, user: dict, c: dict | None = None, error: str = "", draft:
                     f'<button class="b" type="submit" aria-label="Send">{ui.icon("send", 16)}</button></form>')
     else:
         composer = f'<div class="composer"><span class="muted small">{esc(why)}</span></div>'
-    blocked_by_me = c["blocked_by"] == user["id"]
+    blocked_by_me = c["blocked_by"] == side_id(user)
     actions = (scheduling.propose_button(conn, c, user) +
                f'<form method="post" action="/messages/{int(c["id"])}/{"unblock" if blocked_by_me else "block"}" class="navform">{csrf}'
                f'<button class="b sm sec" type="submit">{"Unblock" if blocked_by_me else "Block"}</button></form>'
@@ -255,11 +314,12 @@ def inbox(request: Request):
 def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0, body: str = "", tpl: int = 0):
     user = web.require_user(request)
     with store.db() as conn:
+        to = target_id(conn, user, to)
         ok, why = can_start(conn, user, to)
         if not ok:
             return web.page(ui.page_head("New message") + ui.banner("info", why) + '<a class="b sec" href="/messages">Messages</a>',
                             "New message", active="/messages", status=403)
-        student_id, employer_id = (user["id"], to) if user["role"] == "student" else (to, user["id"])
+        student_id, employer_id = (user["id"], to) if user["role"] == "student" else (to, side_id(user))
         existing = store.row(conn, "SELECT id FROM conversations WHERE student_id = ? AND employer_id = ? AND job_id = ?",
                              (student_id, employer_id, job if job > 0 else 0))
         if existing:
@@ -269,9 +329,9 @@ def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0, body:
                            (job, employer_id)) if job > 0 else None
         draft = ""
         if invite and jobrow and user["role"] == "employer":
-            draft = hiring.invite_text(conn, user["id"], store.student_profile(conn, to) or {}, jobrow)
+            draft = hiring.invite_text(conn, employer_id, store.student_profile(conn, to) or {}, jobrow, sender_id=user["id"])
         if not draft and tpl and user["role"] == "employer":      # "Insert template" without JS
-            t = msg_templates.get(conn, user["id"], tpl)
+            t = msg_templates.get(conn, employer_id, tpl)
             if t:
                 draft = msg_templates.filled(conn, t, employer_id, student_id, jobrow["title"] if jobrow else "")[:MAX_BODY]
         if not draft and body:                  # a draft handed over by the page that linked here (e.g. the resume studio's note)
@@ -302,10 +362,11 @@ def new_send(request: Request, background: BackgroundTasks, to: int = Form(0), j
     except ValueError as e:
         return web.page(ui.banner("warning", str(e)) + f'<a class="b sec" href="/messages/new?to={int(to)}">Back</a>', "New message", active="/messages", status=400)
     with store.db() as conn:
+        to = target_id(conn, user, to)
         ok, why = can_start(conn, user, to)
         if not ok:
             return web.page(ui.banner("info", why), "New message", active="/messages", status=403)
-        student_id, employer_id = (user["id"], to) if user["role"] == "student" else (to, user["id"])
+        student_id, employer_id = (user["id"], to) if user["role"] == "student" else (to, side_id(user))
         jobrow = store.row(conn, "SELECT id, title FROM jobs WHERE id = ? AND review_status = 'approved' AND employer_id = ?",
                            (job, employer_id)) if job > 0 else None
         job_id = jobrow["id"] if jobrow else 0
@@ -333,8 +394,8 @@ def open_convo(cid: int, request: Request, tpl: int = 0):
         if not c:
             return web.page('<p class="empty" style="margin:40px 0">That conversation isn\'t available.</p>', "Messages", active="/messages", status=404)
         draft = ""
-        if tpl and user["role"] == "employer" and user["id"] == c["employer_id"]:
-            t = msg_templates.get(conn, user["id"], tpl)
+        if tpl and user["role"] == "employer" and side_id(user) == c["employer_id"]:
+            t = msg_templates.get(conn, c["employer_id"], tpl)
             if t:                                   # "Insert template" without JS: the composer comes back filled in
                 draft = msg_templates.filled(conn, t, c["employer_id"], c["student_id"], _job_title(conn, c))[:MAX_BODY]
         return _inbox_page(conn, user, c, draft=draft)
@@ -360,7 +421,7 @@ def _send(request: Request, background: BackgroundTasks, cid: int, body: str, cs
         if res["status"] == "delivered":
             _notify(background, conn, c, user)
         m = store.row(conn, "SELECT * FROM messages WHERE id = ?", (res["id"],))
-        return message_json(m, user["id"]), "", 200
+        return _mj(conn, m, c, user, {}), "", 200
 
 
 @router.post("/messages/{cid}/send")
@@ -401,9 +462,9 @@ def poll_api(cid: int, request: Request, after: int = 0):
             return JSONResponse({"error": "Not found."}, status_code=404)
         msgs = store.rows(conn, "SELECT * FROM messages WHERE conversation_id = ? AND id > ? AND (status = 'delivered' OR sender_id = ?) ORDER BY id LIMIT 100",
                           (cid, after, user["id"]))
-        conn.execute("UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL AND status = 'delivered'",
-                     (time.time(), cid, user["id"]))
-    items = [message_json(m, user["id"]) for m in msgs]
+        _mark_read(conn, c, user)
+        names: dict = {}
+        items = [_mj(conn, m, c, user, names) for m in msgs]
     return JSONResponse({"messages": [{"id": i["id"], "mine": i["mine"], "html": _bubble(i)} for i in items],
                          "closed": bool(c["blocked_by"])}, headers={"Cache-Control": "no-store"})
 
@@ -423,7 +484,7 @@ def _convo_action(request: Request, cid: int, csrf: str, action):
 def block(cid: int, request: Request, csrf: str = Form("")):
     def act(conn, c, user):
         if not c["blocked_by"]:
-            conn.execute("UPDATE conversations SET blocked_by = ? WHERE id = ?", (user["id"], c["id"]))
+            conn.execute("UPDATE conversations SET blocked_by = ? WHERE id = ?", (side_id(user), c["id"]))
         return RedirectResponse(f"/messages/{c['id']}", status_code=303)
     return _convo_action(request, cid, csrf, act)
 
@@ -431,7 +492,7 @@ def block(cid: int, request: Request, csrf: str = Form("")):
 @router.post("/messages/{cid}/unblock")
 def unblock(cid: int, request: Request, csrf: str = Form("")):
     def act(conn, c, user):
-        conn.execute("UPDATE conversations SET blocked_by = NULL WHERE id = ? AND blocked_by = ?", (c["id"], user["id"]))
+        conn.execute("UPDATE conversations SET blocked_by = NULL WHERE id = ? AND blocked_by = ?", (c["id"], side_id(user)))
         return RedirectResponse(f"/messages/{c['id']}", status_code=303)
     return _convo_action(request, cid, csrf, act)
 
@@ -439,7 +500,7 @@ def unblock(cid: int, request: Request, csrf: str = Form("")):
 @router.post("/messages/{cid}/hide")
 def hide(cid: int, request: Request, csrf: str = Form("")):
     def act(conn, c, user):
-        col = "student_hidden" if user["id"] == c["student_id"] else "employer_hidden"
+        col = "student_hidden" if user["role"] == "student" else "employer_hidden"
         conn.execute(f"UPDATE conversations SET {col} = 1 WHERE id = ?", (c["id"],))
         return RedirectResponse("/messages", status_code=303)
     return _convo_action(request, cid, csrf, act)
@@ -451,7 +512,7 @@ def report(cid: int, request: Request, csrf: str = Form("")):
         conn.execute("INSERT OR IGNORE INTO reports (reporter_id, target_type, target_id, reason, created_at) VALUES (?,?,?,?,?)",
                      (user["id"], "conversation", c["id"], "reported from messages", time.time()))
         if not c["blocked_by"]:
-            conn.execute("UPDATE conversations SET blocked_by = ? WHERE id = ?", (user["id"], c["id"]))
+            conn.execute("UPDATE conversations SET blocked_by = ? WHERE id = ?", (side_id(user), c["id"]))
         body = (ui.page_head("Thanks for reporting", "A reviewer will look at this conversation. We also blocked it, so they can't message you here.") +
                 '<ol class="next"><li>Don\'t send money, gift cards, or bank or ID details.</li>'
                 '<li>If you already shared banking details or deposited a check they sent, call your bank now.</li>'

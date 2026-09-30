@@ -91,8 +91,8 @@ def picker(conn, user: dict, student_id: int, job_title: str, href, textarea_id:
     """The composer's "Insert template" control. `href(tid)` gives the no-JS link that reloads the composer prefilled."""
     if user["role"] != "employer":
         return ""
-    tpls = templates_for(conn, user["id"])
-    ctx = context(conn, user["id"], student_id, job_title)
+    tpls = templates_for(conn, store.org_id(user))
+    ctx = context(conn, store.org_id(user), student_id, job_title)
     items = "".join(f'<li><a href="{esc(href(t["id"]))}" data-tpl-fill="{esc(fill(t["body"], **ctx))}" data-tpl-for="{esc(textarea_id)}">'
                     f'<b>{esc(t["title"])}</b><span>{esc(fill(t["body"], **ctx).replace(chr(10), " ")[:90])}</span></a></li>' for t in tpls)
     if not items:
@@ -122,7 +122,7 @@ def validate(title: str, body: str) -> tuple[str, str, str]:
 
 def _page(conn, user: dict, error: str = "", draft: dict | None = None, edit_err: tuple[int, str] | None = None,
           done: str = "", status: int = 200) -> HTMLResponse:
-    tpls = templates_for(conn, user["id"])
+    tpls = templates_for(conn, store.org_id(user))
     csrf = ui.user_csrf_input()
     draft = draft or {}
     cards = []
@@ -175,15 +175,15 @@ def create(request: Request, title: str = Form(""), body: str = Form(""), csrf: 
     security.enforce_key_limit(security.message_limiter, f"u{user['id']}", "saving templates")
     title, body, err = validate(title, body)
     with store.db() as conn:
-        ensure_defaults(conn, user["id"])
-        n = conn.execute("SELECT COUNT(*) FROM message_templates WHERE employer_id = ?", (user["id"],)).fetchone()[0]
+        ensure_defaults(conn, store.org_id(user))
+        n = conn.execute("SELECT COUNT(*) FROM message_templates WHERE employer_id = ?", (store.org_id(user),)).fetchone()[0]
         if not err and n >= MAX_TEMPLATES:
             err = f"You can keep up to {MAX_TEMPLATES} templates. Delete one to add another."
         if err:
             return _page(conn, user, error=err, draft={"title": title, "body": body[:BODY_MAX]}, status=400)
         now = time.time()
         cur = conn.execute("INSERT INTO message_templates (employer_id, title, body, created_at, updated_at) VALUES (?,?,?,?,?)",
-                           (user["id"], title, body, now, now))
+                           (store.org_id(user), title, body, now, now))
     return RedirectResponse(f"/messages/templates?done=added#t{cur.lastrowid}", status_code=303)
 
 
@@ -195,12 +195,12 @@ def save(tid: int, request: Request, title: str = Form(""), body: str = Form("")
     security.enforce_key_limit(security.message_limiter, f"u{user['id']}", "saving templates")
     title, body, err = validate(title, body)
     with store.db() as conn:
-        if not get(conn, user["id"], tid):
+        if not get(conn, store.org_id(user), tid):
             return RedirectResponse("/messages/templates", status_code=303)
         if err:
             return _page(conn, user, edit_err=(tid, err), status=400)
         conn.execute("UPDATE message_templates SET title = ?, body = ?, updated_at = ? WHERE id = ? AND employer_id = ?",
-                     (title, body, time.time(), tid, user["id"]))
+                     (title, body, time.time(), tid, store.org_id(user)))
     return RedirectResponse(f"/messages/templates?done=saved#t{int(tid)}", status_code=303)
 
 
@@ -209,7 +209,7 @@ def delete(tid: int, request: Request, csrf: str = Form("")):
     user = _employer(request)
     if web.csrf_ok(request, csrf):
         with store.db() as conn:
-            conn.execute("DELETE FROM message_templates WHERE id = ? AND employer_id = ?", (tid, user["id"]))
+            conn.execute("DELETE FROM message_templates WHERE id = ? AND employer_id = ?", (tid, store.org_id(user)))
     return RedirectResponse("/messages/templates?done=deleted", status_code=303)
 
 

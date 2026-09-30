@@ -345,7 +345,7 @@ def follow(request: Request, employer: int = Form(0), next: str = Form(""), csrf
     security.enforce_key_limit(security.profile_limiter, f"f{user['id']}", "follows")
     with store.db() as conn:
         if store.employer_approved(conn, employer):
-            conn.execute("INSERT OR IGNORE INTO follows (student_id, employer_id, created_at) VALUES (?,?,?)", (user["id"], employer, time.time()))
+            conn.execute("INSERT OR IGNORE INTO follows (student_id, employer_id, created_at) VALUES (?,?,?)", (user["id"], store.org_of(conn, employer), time.time()))
     return _back(next or f"/company/{int(employer)}", "followed")
 
 

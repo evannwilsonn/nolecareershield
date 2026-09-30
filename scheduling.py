@@ -193,14 +193,25 @@ def parse_slots(form, now: float | None = None) -> tuple[list[tuple[float, int]]
 
 def _convo(conn, cid: int, user: dict) -> dict | None:
     c = store.row(conn, "SELECT * FROM conversations WHERE id = ?", (cid,))
-    if not c or user["id"] not in (c["student_id"], c["employer_id"]):
+    if not c or _side(user) not in (c["student_id"], c["employer_id"]):
         return None
     return c
 
 
+def _side(user: dict) -> int:
+    """A student's own id, or the org id for any member of a company's team (they all act for the company)."""
+    return store.org_id(user) if user["role"] == "employer" else user["id"]
+
+
+def _employer_to(conn, c: dict) -> int:
+    """Who on the company's side gets interview emails: the member who last wrote in the thread, else the owner."""
+    import messaging
+    return messaging._employer_recipient(conn, c)
+
+
 def can_propose(conn, c: dict, user: dict) -> tuple[bool, str]:
     import messaging
-    if user["role"] != "employer" or user["id"] != c["employer_id"]:
+    if user["role"] != "employer" or _side(user) != c["employer_id"]:
         return False, "Only the employer in this conversation can propose interview times."
     if not store.employer_approved(conn, user["id"]):
         return False, "Scheduling opens once a reviewer approves your organization."
@@ -275,7 +286,7 @@ def upcoming_interviews(conn, user_id: int, limit: int = 5) -> list[dict]:
 
 
 def upcoming_block(conn, user: dict) -> str:
-    items = upcoming_interviews(conn, user["id"])
+    items = upcoming_interviews(conn, _side(user))
     if not items:
         return ""
     lis = "".join(
@@ -297,7 +308,7 @@ def proposal_card(conn, c: dict, p: dict, user: dict) -> str:
     now = time.time()
     slots = _slots(conn, p["id"])
     chosen = _chosen(conn, p)
-    is_student, is_emp = user["id"] == c["student_id"], user["id"] == c["employer_id"]
+    is_student, is_emp = user["id"] == c["student_id"], user["role"] == "employer" and _side(user) == c["employer_id"]
     csrf = ui.user_csrf_input()
     base = f"/messages/{int(c['id'])}/interview/{int(p['id'])}"
     head, tone = _STATUS.get(p["status"], ("Interview", ""))
@@ -556,7 +567,7 @@ def pick(cid: int, pid: int, request: Request, background: BackgroundTasks, slot
         _event(conn, p, f"{sname} picked {when}. Interview confirmed.")
         fmt = FORMATS.get(p["format"], "Interview")
         url = f"{security.BASE_URL}/messages/{int(cid)}"
-        for uid, other in ((c["student_id"], ename), (c["employer_id"], sname)):
+        for uid, other in ((c["student_id"], ename), (_employer_to(conn, c), sname)):
             _mail(background, conn, uid, f"Interview confirmed: {when}",
                   f"Your interview is confirmed.\n\nWhen: {when} ({TZ_NAME})\nFormat: {fmt}\nWith: {other}\n" + (f"Role: {job}\n" if job else "") +
                   f"\nThe meeting details and a calendar file (.ics) are in the conversation: {url}")
@@ -588,7 +599,7 @@ def decline(cid: int, pid: int, request: Request, background: BackgroundTasks, n
         conn.execute("UPDATE interview_proposals SET status = 'declined', student_note = ?, updated_at = ? WHERE id = ?", (text, time.time(), pid))
         sname, ename, job = _names(conn, c)
         _event(conn, p, f"{sname} said none of these times work{' and left a note' if text else ''}.")
-        _mail(background, conn, c["employer_id"], f"{sname} needs different interview times",
+        _mail(background, conn, _employer_to(conn, c), f"{sname} needs different interview times",
               f"{sname} said none of the interview times you proposed{' for ' + job if job else ''} work." +
               (" They left a note in the conversation." if text else "") +
               f"\n\nPropose new times on NoleCareerShield: {security.BASE_URL}/messages/{int(cid)}")
@@ -605,7 +616,7 @@ def cancel(cid: int, pid: int, request: Request, background: BackgroundTasks, cs
         p = _proposal(conn, cid, pid) if c else None
         if not c or not p:
             return web.page('<p class="empty">That interview isn\'t available.</p>', "Messages", active="/messages", status=404)
-        if user["id"] != c["employer_id"]:
+        if user["role"] != "employer" or _side(user) != c["employer_id"]:
             return _deny("Only the employer can cancel an interview. If you can't make it, send them a message.", cid)
         if p["status"] not in ("open", "confirmed"):
             return RedirectResponse(f"/messages/{int(cid)}", status_code=303)

@@ -848,7 +848,7 @@ _EMPLOYER_NAV = [
     ("", [("home", "/", "Home"), ("feed", "/feed", "Feed"),
           ("chat", "/messages", "Messages"), ("mail", "/emails", "Emails"), ("people", "/talent", "Find students")]),
     ("Hiring", [("jobs", "/hiring", "Your listings"), ("plus", "/post", "Post a job"), ("calendar", "/events/manage", "Events")]),
-    ("You", [("user", "/profile", "Company profile")]),
+    ("You", [("user", "/profile", "Company profile"), ("people", "/team", "Team")]),
 ]
 
 

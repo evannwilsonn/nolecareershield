@@ -68,7 +68,8 @@ let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [], dismissed: {}, suggs: {},
        session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, mailN: 0, itemN: 0, applyClicks: new Set(), timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null, mems: [], csPins: {},
-       ivs: [], ivEvents: [], ivN: 0, ivDraft: null, tpls: [], tplSeeded: {}, tplDraft: null, tplErr: null, tplEditErr: null, companyViews: []};
+       ivs: [], ivEvents: [], ivN: 0, ivDraft: null, tpls: [], tplSeeded: {}, tplDraft: null, tplErr: null, tplEditErr: null, companyViews: [],
+       team: [], invites: [], invN: 0, teamErr: null, teamDraft: null};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -191,6 +192,14 @@ function reset() {
   S.posts[2].comments.push({author: j.id, body: "Yes, go. They collect resumes at the door and it's a low-pressure way to meet recruiters.", at: t - 12000e3});
   S.posts[0].helpful.add(j.id); S.posts[0].helpful.add(m.id);
   seedEvents(t);
+  // Team accounts (teams.py): Garnet Analytics has a second member, Dana Whitfield (Recruiter), who answered Jordan first,
+  // and one invite still waiting. Seeded last so every other sample id stays the same.
+  const dana = user("dana@garnetanalytics.example", "employer");
+  S.team.push({org: 4, user: 4, role: "owner", name: "Pat Lee", title: "Campus Recruiter", at: t - 420 * 86400e3},
+              {org: 4, user: dana.id, role: "recruiter", name: "Dana Whitfield", title: "Recruiter", at: t - 30 * 86400e3, by: 4});
+  S.invites.push({id: ++S.invN, org: 4, email: "sam.ortiz@garnetanalytics.example", role: "recruiter", at: t - 86400e3, exp: t + 6 * 86400e3, by: 4});
+  const dm = addMsg(c1, dana.id, "Thanks, Jordan! I'm looping in Pat, who runs our summer internship. He'll follow up here.", t - 5000e3); dm.read = true;
+  c1.messages.sort((a, b) => a.at - b.at); c1.last = Math.max(...c1.messages.map(x => x.at));
 }
 function scoreJob(j) {
   const r = N.scorePosting(j.title, j.description + ((j.questions || []).length ? "\n" + j.questions.map(q => q.q).join("\n") : ""), j.company, j.apply_url ? [j.apply_url] : null);
@@ -218,7 +227,9 @@ function post(author, kind, body, link, status, at) {
 // ---------------- lookups ----------------
 const U = id => S.users.find(u => u.id === id);
 const SP = id => S.students[id];
-const EP = id => S.employers[id];
+// Team accounts: a member acts for their company's org (store.org_of); EP gives the company profile for either.
+const orgOf = id => ((S.team || []).find(m => m.user === id) || {org: id}).org;
+const EP = id => S.employers[orgOf(id)];
 const approvedEmp = id => !!(EP(id) && EP(id).status === "approved");
 // One rule for what students can see (twin of store.listing_state / store.visible_listing): approved by a reviewer,
 // not paused or closed by the employer, and not past its expiry date.
@@ -249,7 +260,9 @@ function person(id, link) {
 }
 function ago(ts) { const d = Math.max(0, (NOW() - ts) / 1000); if (d < 60) return "just now"; if (d < 3600) return Math.floor(d / 60) + "m ago"; if (d < 86400) return Math.floor(d / 3600) + "h ago"; return Math.floor(d / 86400) + "d ago"; }
 function myConvos() { const u = me(); if (!u) return []; return S.convos.filter(c => (c.student === u.id || c.employer === u.id) && !c.hidden[u.id] && c.messages.some(m => m.status === "delivered" || m.from === u.id)).sort((a, b) => b.last - a.last); }
-function unread(uid) { return S.convos.filter(c => (c.student === uid || c.employer === uid) && !c.blocked_by && !c.hidden[uid]).reduce((n, c) => n + c.messages.filter(m => m.from !== uid && !m.read && m.status === "delivered").length, 0); }
+// For a company, the other side is the student: a teammate's message isn't unread for you (messaging._mark_read).
+const theirMsg = (c, m, uid) => c.employer === uid ? m.from === c.student : m.from !== uid;
+function unread(uid) { return S.convos.filter(c => (c.student === uid || c.employer === uid) && !c.blocked_by && !c.hidden[uid]).reduce((n, c) => n + c.messages.filter(m => theirMsg(c, m, uid) && !m.read && m.status === "delivered").length, 0); }
 const banner = (kind, text, raw) => `<div class="banner ${kind}" role="${kind === "warning" ? "alert" : "status"}">${raw ? text : esc(text)}</div>`;
 // Twins of ui.kpi, ui.hello_band, ui.fit_badge, ui.desk and ui.risk_meter (the site's Python), same markup.
 const MEDIA = u => u === "arch-074.webp" ? NCS_FRAMES[74] : u === "arch-060.webp" ? NCS_FRAMES[60] : (NCS_MEDIA[u] || "");
@@ -412,7 +425,7 @@ function scorePill(j) {
 const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Career assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "network", "Network"]]],
   ["Career tools", [["send", "applications", "Applications"], ["calendar", "events", "Events"], ["file", "resume", "Resume studio"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Profile"]]]];
 const EMPLOYER_NAV = [["", [["home", "home", "Home"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["mail", "emails", "Emails"], ["people", "talent", "Find students"]]],
-  ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"], ["calendar", "emanage", "Events"]]], ["You", [["user", "profile", "Company profile"]]]];
+  ["Hiring", [["jobs", "hiring", "Your listings"], ["plus", "post", "Post a job"], ["calendar", "emanage", "Events"]]], ["You", [["user", "profile", "Company profile"], ["people", "team", "Team"]]]];
 function sidebar(active) {
   const n = unread(me().id), reqs = isStudent() ? incomingReqs(me().id).length : 0, mails = myEmails().filter(m => !m.read).length, out = [];
   for (const [grp, items] of (isStudent() ? STUDENT_NAV : EMPLOYER_NAV)) {
@@ -429,7 +442,7 @@ function nav() {
   if (me()) $("#navActions").innerHTML = extra + `<span class="who">${esc(me().email)}</span><button class="ghostbtn" type="button" data-do="logout">Log out</button>` + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "");
   else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="employers">For employers</a>';
 }
-const APP_PAGES = {hiring: "hiring", hjob: "hiring", applicants: "hiring", hedit: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages", interview: "messages", templates: "messages", tailor: "resume", standout: "resume", optimized: "resume",
+const APP_PAGES = {hiring: "hiring", hjob: "hiring", applicants: "hiring", hedit: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages", interview: "messages", templates: "messages", team: "team", tailor: "resume", standout: "resume", optimized: "resume",
   resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", network: "network", applications: "applications", emails: "emails", easy: "jobs", u: "", company: "", about: "", privacy: "", report: ""};
 
 // ---------------- pages ----------------
@@ -1753,18 +1766,19 @@ function uploadCard(first, bare) {
 P.messages = () => {
   if (!me()) return needLogin("messages");
   const list = myConvos(), c = S.route.q.c ? S.convos.find(x => x.id === Number(S.route.q.c) && (x.student === me().id || x.employer === me().id)) : null;
-  if (c) c.messages.forEach(m => { if (m.from !== me().id && m.status === "delivered") m.read = true; });
+  if (c) c.messages.forEach(m => { if (theirMsg(c, m, me().id) && m.status === "delivered") m.read = true; });
   const threads = list.map(x => { const other = x.student === me().id ? x.employer : x.student, vis = x.messages.filter(m => m.status === "delivered" || m.from === me().id), last = vis[vis.length - 1];
-    const un = x.messages.some(m => m.from !== me().id && !m.read && m.status === "delivered"), job = x.job && S.jobs.find(j => j.id === x.job);
+    const un = x.messages.some(m => theirMsg(x, m, me().id) && !m.read && m.status === "delivered"), job = x.job && S.jobs.find(j => j.id === x.job);
     return `<a href="#" data-go="messages?c=${x.id}"${c && c.id === x.id ? ' class="on"' : ""}><div class="t1"><span>${esc(who(other)[0])}</span><span class="small faint" style="font-weight:400">${ago(x.last)}${un ? '<span class="dot"></span>' : ""}</span></div><div class="t2">${job ? esc(job.title) + " · " : ""}${esc(last ? last.body : "")}</div></a>`; }).join("") || '<p class="small muted" style="padding:16px">No conversations yet.</p>';
   let right;
   if (!c) right = `<div class="convo" style="justify-content:center;align-items:center;padding:40px;text-align:center"><div><h3 class="sec" style="margin-top:0">Pick a conversation</h3><p class="small muted">${isStudent() ? "Message an approved employer from any listing or company page." : "Message students from the directory."}</p></div></div>`;
   else {
     const other = c.student === me().id ? c.employer : c.student;
     const bubbles = c.messages.filter(m => m.status === "delivered" || m.from === me().id).map(m => [m.at, (() => {
-      const mine = m.from === me().id, flag = !mine && ["review", "caution"].includes(m.band);
+      const mine = c.employer === me().id ? m.from !== c.student : m.from === me().id, flag = !mine && ["review", "caution"].includes(m.band);
+      const sender = m.from !== c.student ? senderLabel(m.from) : "";
       const pre = flag ? `<div class="scanbox${m.band === "review" ? " bad" : ""}"><b>${m.band === "review" ? "⚠ Our scanner found scam signals in this message." : "Heads up: a couple of things in this message are worth checking."}</b><ul>${m.findings.slice(0, 4).map(t => `<li>${esc(t)}</li>`).join("")}</ul><a href="#" data-go="scam?m=${m.id}">See the full check →</a></div>` : "";
-      return `${pre}<div class="bubble ${mine ? "me" : "them"}${flag ? " flag" : ""}">${esc(m.body)}<span class="meta">${ago(m.at)}${!mine && !flag ? ` · <a href="#" data-go="scam?m=${m.id}" style="color:inherit">Is this a scam?</a>` : ""}</span>${m.status === "held" ? "<span class=\"meta\">Held for a safety review. A reviewer checks it before it's delivered.</span>" : ""}</div>`; })()])
+      return `${pre}<div class="bubble ${mine ? "me" : "them"}${flag ? " flag" : ""}">${sender ? `<span class="sender">${esc(sender)}</span>` : ""}${esc(m.body)}<span class="meta">${ago(m.at)}${!mine && !flag ? ` · <a href="#" data-go="scam?m=${m.id}" style="color:inherit">Is this a scam?</a>` : ""}</span>${m.status === "held" ? "<span class=\"meta\">Held for a safety review. A reviewer checks it before it's delivered.</span>" : ""}</div>`; })()])
       .concat(ivThreadItems(c)).sort((a, b) => a[0] - b[0]).map(x => x[1]).join("");
     const closed = c.blocked_by ? `<div class="composer"><p class="small muted">${c.blocked_by === me().id ? "You blocked this conversation." : "This conversation is closed."}</p>${c.blocked_by === me().id ? '<button class="b sm sec" type="button" data-do="unblock">Unblock</button>' : ""}</div>`
       : (isEmployer() ? `<div class="tpl-bar">${tplPicker(c.student, ivJob(c), "m-body")}</div>` : "") + `<form class="composer" id="sendForm"><label for="m-body" class="hp">Message</label><textarea id="m-body" name="body" maxlength="4000" required placeholder="Write a message" rows="1"></textarea><button class="b" type="submit" aria-label="Send">${icon("send", 16)}</button></form>`;
@@ -2190,11 +2204,11 @@ function domainMatch(email, site) {
 function trustSignals(uid) {
   const p = EP(uid) || {}, u = U(uid) || {email: ""};
   const decided = S.jobs.filter(j => j.employer_id === uid && ["approved", "rejected", "removed"].includes(j.review_status));
-  const sent = S.convos.flatMap(c => c.messages.filter(m => m.from === uid));
+  const team = teamIds(uid), sent = S.convos.flatMap(c => c.messages.filter(m => team.includes(m.from)));
   const threads = S.convos.filter(c => c.employer === uid && c.messages.length && c.messages[0].from === c.student);
   let replied = 0; const hours = [];
   for (const c of threads) {
-    const ms = c.messages.filter(m => m.status === "delivered"), first = ms.find(m => m.from !== uid), rep = first && ms.find(m => m.from === uid && m.at >= first.at);
+    const ms = c.messages.filter(m => m.status === "delivered"), first = ms.find(m => m.from === c.student), rep = first && ms.find(m => m.from !== c.student && m.at >= first.at);
     if (rep) { replied++; hours.push((rep.at - first.at) / 3600e3); }
   }
   const profile = {}; PROFILE_FIELDS.forEach(([k]) => { profile[k] = p[k]; });
@@ -2220,7 +2234,7 @@ function companyHtml(p, uid, notice) {
   const statusPill = {approved: '<span class="pill ok">✓ Approved employer</span>', pending: '<span class="pill warn">Waiting for review</span>', rejected: '<span class="pill bad">Not approved</span>', suspended: '<span class="pill bad">Suspended</span>', draft: '<span class="pill">Profile not finished</span>'}[p.status || "draft"] || "";
   const meta = [p.industry, p.size && p.size + " people", p.location, p.founded && "Founded " + p.founded].filter(Boolean).map(esc).join(" · ");
   const links = [["website", "Website"], ["linkedin", "LinkedIn"]].filter(([k]) => p[k]).map(([k, l]) => `<a href="${esc(p[k])}" target="_blank" rel="noopener noreferrer nofollow">${l} ↗</a>`).join("");
-  const actions = owner ? '<div class="row"><a class="b sm sec" href="#" data-go="setup?step=1">Edit profile</a><a class="b sm ghost" href="#" data-go="hiring">Your listings</a></div>'
+  const actions = owner ? '<div class="row"><a class="b sm sec" href="#" data-go="setup?step=1">Edit profile</a><a class="b sm ghost" href="#" data-go="team">Team</a><a class="b sm ghost" href="#" data-go="hiring">Your listings</a></div>'
     : isStudent() && p.status === "approved" ? `<div class="row"><a class="b sm" href="#" data-go="newmsg?to=${uid}">${icon("chat", 14)} Message</a>${followButton(uid, isFollowing(me().id, uid), "company?id=" + uid)}</div>` : "";
   const hero = `<section class="card phero"><div class="pbanner emp ph" aria-hidden="true" style="--ph:url(${MEDIA("arch-060.webp")})"></div><div class="pinfo"><span class="avatar xl emp">${initials(p.company)}</span>
 <div class="row between" style="align-items:flex-end;gap:14px"><div style="min-width:0"><h1>${esc(p.company || "Your organization")}</h1>${p.tagline ? `<p class="headline">${esc(p.tagline)}</p>` : ""}<p class="school">${meta}</p><p class="where"><span class="plinks">${links}</span></p>
@@ -2235,8 +2249,72 @@ function companyHtml(p, uid, notice) {
     + ((p.hires_for || []).length ? sec("Hires for", `<div class="chips">${p.hires_for.map(x => `<span class="pill">${esc(x)}</span>`).join("")}</div>`) : "")
     + ((p.perks || []).length ? sec("Perks for student hires", `<div class="chips">${p.perks.map(x => `<span class="chip">✓ ${esc(x)}</span>`).join("")}</div>`) : "")
     + evCompanySection(uid) + `<section class="card pcard"><div class="phead"><h2>Open listings</h2><span class="small faint">${jobs.length}</span></div>${jobs.map(j => `<a class="job" href="#" data-go="job?id=${j.id}"><div class="job-title">${esc(j.title)}</div><div class="job-meta"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div></a>`).join("") || '<p class="small muted">No open listings right now.</p>'}</section>`;
-  return (notice || "") + hero + `<div class="pgrid co"><aside class="pside">${trustCard(t, owner)}${glance}${contact}</aside><div class="pmain">${owner ? pageStatsCard(pageStats(uid)) : ""}${main}</div></div>`;
+  return (notice || "") + hero + `<div class="pgrid co"><aside class="pside">${trustCard(t, owner)}${glance}${contact}${teamCard(uid)}</aside><div class="pmain">${owner ? pageStatsCard(pageStats(uid)) : ""}${main}</div></div>`;
 }
+
+// ---------------- team accounts (twin of teams.py) ----------------
+const TEAM_ROLES = {owner: "Owner", admin: "Admin", recruiter: "Recruiter"};
+const TEAM_HELP = {owner: "Everything, including deleting the company.", admin: "Manages the team and the company profile, plus everything a recruiter does.",
+  recruiter: "Posts and manages listings, messages students, schedules interviews and manages candidates."};
+const FREE_MAIL_DEMO = new Set(["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "aol.com", "protonmail.com", "icloud.com", "live.com", "msn.com", "mail.com", "gmx.com", "yandex.com", "zoho.com"]);
+function teamMembers(org) {
+  const rows = S.team.filter(m => m.org === org).slice().sort((a, b) => (b.role === "owner") - (a.role === "owner") || a.at - b.at);
+  if (!rows.some(m => m.user === org)) { const p = S.employers[org] || {}; rows.unshift({org, user: org, role: "owner", name: p.contact_name || "", title: p.contact_title || "", at: 0}); }
+  return rows;
+}
+const teamIds = org => teamMembers(org).map(m => m.user);
+const teamRole = uid => (S.team.find(m => m.user === uid) || {role: "owner"}).role;
+const canManageTeam = () => isEmployer() && ["owner", "admin"].includes(teamRole(me().id));
+function memberCard(uid) {
+  const m = S.team.find(x => x.user === uid);
+  if (m && m.name) return {name: m.name, title: m.title || ""};
+  if (orgOf(uid) === uid) { const p = S.employers[uid] || {}; return {name: p.contact_name || "", title: (m && m.title) || p.contact_title || ""}; }
+  return {name: "", title: ""};
+}
+// "Pat Lee · Garnet Analytics" next to a message a company member sent (messaging.sender_label).
+function senderLabel(uid) { const c = memberCard(uid); if (!c.name) return ""; const co = (EP(uid) || {}).company; return c.name + (co ? " · " + co : ""); }
+function teamCard(org) {
+  const team = teamMembers(org).filter(m => m.name); if (team.length < 2) return "";
+  return `<section class="card tm-card"><div class="phead"><h2>Team</h2><span class="small faint">${team.length}</span></div><ul class="tm-people">${team.slice(0, 12).map(m => `<li><div class="person"><span class="avatar emp">${initials(m.name)}</span><div style="min-width:0"><div class="nm">${esc(m.name)}</div><div class="sub">${esc(m.title || TEAM_ROLES[m.role])}</div></div></div></li>`).join("")}</ul><p class="small faint">The people who post listings and answer messages for this company.</p></section>`;
+}
+function inviteProblem(org, email) {
+  const ed = (email.split("@")[1] || "").toLowerCase();
+  if (!ed || FREE_MAIL_DEMO.has(ed)) return "Invite people at their work address on your company's domain. Personal email addresses (Gmail, Outlook, Yahoo and similar) can't join a team.";
+  const p = S.employers[org] || {}, od = ((U(org) || {}).email || "").split("@")[1] || "";
+  if (domainMatch(email, p.website) === "match" || (od && !FREE_MAIL_DEMO.has(od) && ed === od)) return "";
+  const host = (p.website || "").replace(/^https?:\/\//, "").split("/")[0].replace(/^www\./, "");
+  const allowed = [...new Set([FREE_MAIL_DEMO.has(od) ? "" : od, host].filter(Boolean))].sort();
+  return `Team members need an email address on your company's domain (${allowed.length ? allowed.map(d => "@" + d).join(" or ") : "your company's domain"}). This keeps impostors off your team.`;
+}
+function inviteMail(org, email, role) {
+  const co = (S.employers[org] || {}).company || "a company", by = memberCard(me().id).name || "Someone";
+  mail(email, `${by} invited you to join ${co} on NoleCareerShield`, `${by} invited you to join ${co}'s hiring team on NoleCareerShield as ${role === "admin" ? "an" : "a"} ${TEAM_ROLES[role]}.\n\nAccept the invite with the one-time link in this email (it expires in 7 days). On the live site the link is sent only to your inbox; the in-site copy hides it.\n\nNo employer account yet? Sign up with this address (${email}), confirm it, then open the link again.\n\nIf you weren't expecting this, ignore it: nothing happens unless you accept.`, null);
+}
+const dayShort = ts => new Date(ts).toLocaleDateString("en-US", {month: "short", day: "numeric"});
+P.team = () => {
+  if (!me()) return needLogin("your team", "employer");
+  if (!isEmployer()) return pageHead("Team") + banner("info", "That page is for employers.");
+  const org = orgOf(me().id), p = S.employers[org] || {}, manage = canManageTeam(), err = S.teamErr, d = S.teamDraft || {}; S.teamErr = null; S.teamDraft = null;
+  const team = teamMembers(org), invites = S.invites.filter(i => i.org === org).sort((a, b) => b.at - a.at), myRow = team.find(m => m.user === me().id) || {name: "", title: ""};
+  const roleSel = (id, cur) => `<select id="${id}" name="role">${[["recruiter", "Recruiter"], ["admin", "Admin"]].map(([k, v]) => `<option value="${k}"${k === cur ? " selected" : ""}>${v}</option>`).join("")}</select>`;
+  const rows = team.map(m => { const you = m.user === me().id, u = U(m.user) || {email: ""};
+    const acts = manage && !you && m.role !== "owner" ? `<form class="tm-role" id="teamRole" data-id="${m.user}"><label class="sr" for="r${m.user}">Role for ${esc(m.name || u.email)}</label>${roleSel("r" + m.user, m.role)}<button class="b sm sec" type="submit">Change</button></form><button class="b sm ghost" type="button" data-do="team-remove" data-id="${m.user}">Remove</button>` : "";
+    return `<li class="tm-row"><span class="avatar emp" aria-hidden="true">${initials(m.name || u.email)}</span><div class="tm-who"><b>${esc(m.name || "No name yet")}${you ? ' <span class="faint small">(you)</span>' : ""}</b><span>${esc(m.title || "")}${m.title ? " · " : ""}${esc(u.email)}</span>${m.at ? `<span class="faint small">Joined ${esc(dayShort(m.at))}</span>` : ""}</div><div class="tm-badge"><span class="pill ${m.role === "owner" ? "gold" : m.role === "admin" ? "ok" : ""}">${TEAM_ROLES[m.role]}</span></div><div class="tm-acts">${acts}</div></li>`; }).join("");
+  const people = `<section class="card tm-list" aria-labelledby="tm-h"><div class="phead"><h2 id="tm-h">Members</h2><span class="small faint">${team.length}</span></div><ul class="tm-rows">${rows}</ul></section>`;
+  let inv = "", form;
+  if (manage) {
+    const irows = invites.map(i => { const gone = i.exp <= NOW(); return `<li class="tm-row"><span class="avatar" aria-hidden="true">${icon("mail", 16)}</span><div class="tm-who"><b>${esc(i.email)}</b><span>${TEAM_ROLES[i.role]} · sent ${esc(dayShort(i.at))}</span><span class="small ${gone ? "bad-t" : "faint"}">${gone ? "Expired" : "Expires " + esc(dayShort(i.exp))}</span></div><div class="tm-badge"><span class="pill warn">Pending</span></div><div class="tm-acts"><button class="b sm sec" type="button" data-do="inv-resend" data-id="${i.id}">Resend</button><button class="b sm ghost" type="button" data-do="inv-revoke" data-id="${i.id}">Revoke</button></div></li>`; }).join("");
+    inv = `<section class="card tm-list" aria-labelledby="tm-i"><div class="phead"><h2 id="tm-i">Pending invites</h2><span class="small faint">${invites.length}</span></div>${irows ? `<ul class="tm-rows">${irows}</ul>` : '<p class="small muted">No pending invites.</p>'}</section>`;
+    const dom = (me().email.split("@")[1] || "company.com");
+    form = `<form class="card tm-invite" id="teamInvite"><h2>Invite a teammate</h2><p class="small muted">They need an email address on your company's domain. We email them a one-time link; they sign up or log in as an employer with that address and accept.</p>
+<div class="form-field"><label for="ti-email">Work email</label><input id="ti-email" type="email" name="email" required maxlength="254" autocomplete="off" placeholder="name@${esc(dom)}" value="${esc(d.email || "")}"></div>
+<div class="form-field"><label for="ti-role">Role</label>${roleSel("ti-role", d.role || "recruiter")}<p class="hint">Recruiter: ${esc(TEAM_HELP.recruiter)} Admin: ${esc(TEAM_HELP.admin)}</p></div><button class="b" type="submit">${icon("send", 15)} Send invite</button></form>`;
+  } else form = `<section class="card tm-invite"><h2>Your role: ${TEAM_ROLES[teamRole(me().id)]}</h2><p class="small muted">${esc(TEAM_HELP[teamRole(me().id)])} An owner or admin manages the team and the company profile.</p></section>`;
+  const mine = `<form class="card tm-me" id="teamMe"><h2>Your details</h2><p class="small muted">Shown on listings you post and next to messages you send, e.g. "Pat Lee · Garnet Analytics".</p>
+<div class="form-field"><label for="tm-name">Your name</label><input id="tm-name" name="name" required maxlength="80" value="${esc(d.name != null ? d.name : myRow.name)}"></div><div class="form-field"><label for="tm-title">Your job title</label><input id="tm-title" name="title" maxlength="80" value="${esc(d.title != null ? d.title : myRow.title)}"></div><button class="b sec" type="submit">Save</button></form>`;
+  return pageHead("Team", esc(`Everyone who hires for ${p.company || "your company"} on NoleCareerShield. Listings, messages, candidates and templates are shared by the whole team.`), "You")
+    + takeFlash() + (err ? banner("warning", err) : "") + `<div class="tm-grid"><div class="tm-main">${people}${inv}</div><aside class="tm-side">${form}${mine}</aside></div>`;
+};
 
 P.profile = () => {
   if (!me()) return needLogin("your profile");
@@ -2815,6 +2893,8 @@ function exportData() {
     events: S.events.filter(e => e.employer === u.id).map(e => ({id: e.id, title: e.title, kind: e.kind, starts_at: new Date(e.starts).toISOString(), status: e.status})),
     event_rsvps: S.rsvps.filter(r => r.student === u.id).map(r => ({event_id: r.event, status: r.status, created_at: new Date(r.at).toISOString()})),
     emails: myEmails().slice().reverse().map(m => ({subject: m.subject, body: emailBody(m), sent_at: new Date(m.at).toISOString(), read_at: m.read ? "yes" : null}))};
+  if (u.role === "employer") { const mem = S.team.find(m => m.user === u.id); d.team_membership = mem ? {org_id: mem.org, role: mem.role, name: mem.name, title: mem.title, company: (EP(u.id) || {}).company || ""} : null;
+    if (orgOf(u.id) === u.id) { d.team = teamMembers(u.id).map(m => ({user_id: m.user, email: (U(m.user) || {}).email, role: m.role, name: m.name, title: m.title})); d.team_invites = S.invites.filter(i => i.org === u.id).map(i => ({email: i.email, role: i.role, expires_at: new Date(i.exp).toISOString()})); } }
   if (u.role === "employer") d.candidate_tracker = S.candidates.filter(c => c.employer === u.id).map(c => ({job_id: c.job, student_id: c.student, stage: c.stage, source: c.source, note: c.note, rating: c.rating || 0, archived: c.archived ? 1 : 0}));
   return JSON.stringify(d, (k, v) => v instanceof Set ? [...v] : v, 2);
 }
@@ -3510,6 +3590,10 @@ document.addEventListener("click", e => {
     "tpl-insert": () => { const box = document.getElementById(d.dataset.for); if (!box) return; const t = d.dataset.fill || "";
       if (box.value.trim() && typeof box.selectionStart === "number") { const a = box.selectionStart, b = box.selectionEnd; box.value = box.value.slice(0, a) + t + box.value.slice(b); box.selectionStart = box.selectionEnd = a + t.length; } else box.value = t;
       box.value = box.value.slice(0, 4000); const det = d.closest("details"); if (det) det.removeAttribute("open"); box.focus(); },
+    "team-remove": () => { const org = orgOf(me().id), m = S.team.find(x => x.user === id && x.org === org); if (!canManageTeam() || !m || m.role === "owner" || id === me().id) return;
+      S.team = S.team.filter(x => x !== m); S.jobs.forEach(j => { if (j.employer_id === org && j.posted_by === id) { j.posted_by = org; j.show_email = 0; } }); flash("verified", "Removed from the team."); render(true); },
+    "inv-resend": () => { const i = S.invites.find(x => x.id === id && x.org === orgOf(me().id)); if (!canManageTeam() || !i) return; i.at = NOW(); i.exp = NOW() + 7 * 86400e3; inviteMail(i.org, i.email, i.role); flash("verified", "Invite sent again with a new link."); render(true); },
+    "inv-revoke": () => { if (!canManageTeam()) return; S.invites = S.invites.filter(x => !(x.id === id && x.org === orgOf(me().id))); flash("verified", "Invite revoked."); render(true); },
     "tpl-del": () => { S.tpls = S.tpls.filter(t => !(t.id === id && t.emp === me().id)); flash("verified", "Template deleted."); render(true); },
     "report-convo": () => { const last = c.messages.filter(m => m.from !== me().id).pop(); S.reports.push({what: "Conversation reported", by: me().id, employer: isStudent() ? c.employer : null, text: last ? last.body : "(no messages)", at: NOW()}); flash("verified", "Reported. A reviewer will look at this conversation. You can also block the sender."); render(true); },
     helpful: () => { const p = S.posts.find(x => x.id === id); p.helpful.has(me().id) ? p.helpful.delete(me().id) : p.helpful.add(me().id); render(true); },
@@ -3691,6 +3775,7 @@ document.addEventListener("submit", e => {
     return go("profile"); }
   if (id === "deleteForm") {
     if (fd.get("password") !== me().pw) { flash("warning", "That password isn't right, so nothing was deleted."); return go("profile"); }
+    if (isEmployer() && orgOf(me().id) === me().id && teamIds(me().id).length > 1) { flash("warning", "You own this company's account and others are on its team. Transfer ownership to someone on the Team page first (you stay on as an admin and can then delete your account), or remove the other members."); return go("profile"); }
     const uid = me().id; S.users = S.users.filter(u => u.id !== uid); delete S.students[uid]; delete S.employers[uid];
     const gone = new Set(S.posts.filter(p => p.author === uid).map(p => p.id)); S.saves = S.saves.filter(x => x.user !== uid && !gone.has(x.post));
     S.posts = S.posts.filter(p => p.author !== uid); S.posts.forEach(p => { p.comments = p.comments.filter(c => c.author !== uid); });
@@ -3709,6 +3794,24 @@ document.addEventListener("submit", e => {
     ivEvent(p, `${sn} said none of these times work${note ? " and left a note" : ""}.`);
     ivMail(cv.employer, `${sn} needs different interview times`, `${sn} said none of the interview times you proposed${job ? " for " + job : ""} work.${note ? " They left a note in the conversation." : ""}\n\nPropose new times on NoleCareerShield, in Messages.`);
     return render(true); }
+  if (id === "teamInvite") {
+    const org = orgOf(me().id), email = g("email").toLowerCase(), role = ["admin", "recruiter"].includes(g("role")) ? g("role") : "recruiter";
+    let err = !canManageTeam() ? "Only an owner or admin can invite teammates." : !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email) ? "Enter a valid email address." : inviteProblem(org, email);
+    if (!err && teamMembers(org).some(m => ((U(m.user) || {}).email || "").toLowerCase() === email)) err = "That person is already on your team.";
+    if (!err && S.invites.filter(i => i.org === org && i.email !== email).length >= 25) err = "You can have up to 25 pending invites. Revoke some first.";
+    if (err) { S.teamErr = err; S.teamDraft = {email, role}; return render(true); }
+    S.invites = S.invites.filter(i => !(i.org === org && i.email === email));
+    S.invites.push({id: ++S.invN, org, email, role, at: NOW(), exp: NOW() + 7 * 86400e3, by: me().id}); inviteMail(org, email, role);
+    flash("verified", "Invite sent. It works for 7 days."); return render(true); }
+  if (id === "teamRole") { const org = orgOf(me().id), uid = Number(f.dataset.id), m = S.team.find(x => x.user === uid && x.org === org), role = g("role");
+    if (canManageTeam() && m && m.role !== "owner" && uid !== me().id && ["admin", "recruiter"].includes(role)) { m.role = role; flash("verified", "Role updated."); }
+    return render(true); }
+  if (id === "teamMe") { const name = g("name").replace(/\s+/g, " "), title = g("title").replace(/\s+/g, " "), bad = v => v.length > 80 || /[<>@{}]|https?:|www\./i.test(v);
+    if (!name) { S.teamErr = "Add your name."; S.teamDraft = {name, title}; return render(true); }
+    if (bad(name) || bad(title)) { S.teamErr = "Use plain text for your name and title (no links or email addresses)."; S.teamDraft = {name, title}; return render(true); }
+    const org = orgOf(me().id); let m = S.team.find(x => x.user === me().id);
+    if (!m) { m = {org, user: me().id, role: "owner", name: "", title: "", at: NOW()}; S.team.push(m); }
+    m.name = name; m.title = title; flash("verified", "Your details are saved."); return render(true); }
   if (id === "tplNew" || id === "tplEdit") {
     const [title, body, err0] = tplValidate(g("title"), String(fd.get("body") || "")); let err = err0;
     if (id === "tplNew" && !err && myTemplates(me().id).length >= TPL_MAX) err = `You can keep up to ${TPL_MAX} templates. Delete one to add another.`;

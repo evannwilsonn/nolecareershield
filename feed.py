@@ -378,7 +378,7 @@ def _circle(conn, user: dict, next_: str) -> str:
             "   JOIN users u ON u.id = t.uid WHERE u.role = 'student'),"
             " (SELECT COUNT(DISTINCT author_id) FROM posts p JOIN users u ON u.id = p.author_id WHERE u.role = 'student' AND p.status = 'published' AND p.created_at > ?)",
             (me, me, me, time.time() - 7 * 86400)).fetchone()
-        nums = (f'<div class="fd-stats"><div><b>{network.follower_count(conn, me)}</b><small>followers</small></div>'
+        nums = (f'<div class="fd-stats"><div><b>{network.follower_count(conn, store.org_id(user))}</b><small>followers</small></div>'
                 f'<div><b>{int(stats[0])}</b><small>posts live</small></div><div><b>{int(stats[1])}</b><small>students engaged</small></div></div>'
                 f'<p class="fd-quiet">{web.plural(int(stats[2]), "student")} posted on the feed this week.</p>')
         secs += _sec("Your reach", nums)

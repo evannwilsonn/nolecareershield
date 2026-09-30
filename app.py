@@ -89,6 +89,7 @@ import quals
 import network
 import employer_page
 import events
+import teams
 import sso
 import ai
 from ui import esc, EMBLEM, BASE_CSS, PAGE_SCRIPT, PAGE_SCRIPT_HASH, _viewer, shell
@@ -158,7 +159,9 @@ _EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_a
                   # Listing controls (hiring.py): open | paused | closed, and when an approved listing drops off the board.
                   "listing_status": "TEXT NOT NULL DEFAULT 'open'", "expires_at": "REAL",
                   "expiry_days": f"INTEGER NOT NULL DEFAULT {store.LISTING_DAYS_DEFAULT}", "expiry_reminded": "REAL",
-                  "learn_split": "TEXT"}
+                  "learn_split": "TEXT",
+                  # Team accounts: the member who posted it (employer_id stays the company's org id).
+                  "posted_by": "INTEGER"}
 REVIEW_REASONS = ["scam", "lead_gen", "other"]
 
 
@@ -251,7 +254,7 @@ def _scan(data: dict) -> tuple:
     return result, scam_status, findings
 
 
-def add_job(data: dict, employer_id: int | None = None) -> dict:
+def add_job(data: dict, employer_id: int | None = None, posted_by: int | None = None) -> dict:
     result, scam_status, findings = _scan(data)
     days = _expiry_days(data.get("expiry_days"))
     with closing(sqlite3.connect(DB_PATH)) as db:
@@ -260,8 +263,8 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
                               description, apply_url, contact, score, band,
                               scam_status, review_status, findings_json, created_at,
                               ruleset_version, employer_id, easy_apply, questions, requirements,
-                              poster_name, poster_title, show_email, expiry_days)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                              poster_name, poster_title, show_email, expiry_days, posted_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data["title"], data["company"], data.get("category","Other"),
             data["work_type"], data.get("location",""), data["description"],
@@ -272,6 +275,7 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             1 if data.get("easy_apply") else 0, json.dumps(data.get("questions") or []),
             json.dumps(data.get("requirements") or []),
             data.get("poster_name", ""), data.get("poster_title", ""), 1 if data.get("show_email") else 0, days,
+            posted_by or employer_id,
         ))
         db.commit()
         job_id = cur.lastrowid
@@ -421,12 +425,17 @@ async def security_headers(request: Request, call_next):
     if raw:
         with closing(sqlite3.connect(DB_PATH)) as db:
             user = accounts.session_user(db, raw)
+            if user and user["role"] == "employer":
+                # Team accounts: resolve once which company (org) this employer acts for, and their role on its team.
+                user["org_id"] = store.org_of(db, user["id"])
+                user["org_role"] = store.org_role(db, user["id"])
     request.state.user = user
     request.state.utoken = raw if user else None
     extra = {}
     if user and not request.url.path.startswith(("/static/", "/api/")):
         with store.db() as conn:
-            extra["unread"] = store.unread_count(conn, user["id"])
+            extra["unread"] = (store.unread_count(conn, user["id"], org=user["org_id"]) if user["role"] == "employer"
+                               else store.unread_count(conn, user["id"]))
             extra["emails"] = emails.unread(conn, user["id"])
             if user["role"] == "student":
                 extra["requests"] = network.incoming_count(conn, user["id"])
@@ -718,7 +727,13 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
 
 
 @app.get("/post", response_class=HTMLResponse)
-def post_form():
+def post_form(request: Request):
+    user = getattr(request.state, "user", None)
+    if user and user["role"] == "employer":
+        # "Your name" and "Your job title" start as the signed-in team member's own (the company contact for an owner).
+        with store.db() as conn:
+            card = store.member_card(conn, user["id"])
+        return _post_form_page({"poster_name": card["name"], "poster_title": card["title"]})
     return _post_form_page()
 
 
@@ -837,10 +852,11 @@ def post_submit(
 
     with store.db() as conn:
         ep = store.employer_profile(conn, user["id"]) or {}
+        card = store.member_card(conn, user["id"])
     if company_mismatch(ep.get("company", ""), clean["company"]):
         return _post_form_page(typed, f"You can only post jobs for your own organization ({ep['company']}). " + RECRUITER_MSG, status=400)
-    _poster_defaults(clean, ep)
-    add_job(clean, employer_id=user["id"])
+    _poster_defaults(clean, ep, card)
+    add_job(clean, employer_id=store.org_id(user), posted_by=user["id"])
     background.add_task(_mail_listing_received, user["email"], clean["title"])
     # Same confirmation regardless of scam score: the submitter is not told the internal verdict
     # (that is for the reviewer), only that it is in review.
@@ -864,8 +880,9 @@ def _listing_values(j: dict) -> dict:
 
 
 def _own_listing(user: dict, job_id: int) -> dict | None:
+    """A listing of the company this employer works for (any member of the team can manage it)."""
     j = get_job(job_id)
-    return j if j and j.get("employer_id") == user["id"] else None
+    return j if j and j.get("employer_id") == store.org_id(user) else None
 
 
 @app.get("/hiring/{job_id}/edit", response_class=HTMLResponse)
@@ -903,9 +920,10 @@ async def listing_edit_save(job_id: int, request: Request):
         return _post_form_page(typed, str(e), status=400, edit_id=job_id)
     with store.db() as conn:
         ep = store.employer_profile(conn, user["id"]) or {}
+        card = store.member_card(conn, j.get("posted_by") or user["id"])
     if company_mismatch(ep.get("company", ""), clean["company"]):
         return _post_form_page(typed, f"You can only post jobs for your own organization ({ep['company']}). " + RECRUITER_MSG, status=400, edit_id=job_id)
-    _poster_defaults(clean, ep)
+    _poster_defaults(clean, ep, card)
     old_q = store.jload(j.get("questions"), [])
     review = any(clean[k] != (j.get(k) or "") for k in _REVIEW_FIELDS) or clean["questions"] != old_q
     minor = {"category": clean["category"], "work_type": clean["work_type"], "location": clean["location"],
@@ -925,7 +943,7 @@ async def listing_edit_save(job_id: int, request: Request):
         else:
             full = minor
         db.execute(f"UPDATE jobs SET {', '.join(k + ' = ?' for k in full)} WHERE id = ? AND employer_id = ?",
-                   list(full.values()) + [job_id, user["id"]])
+                   list(full.values()) + [job_id, store.org_id(user)])
         db.commit()
     return RedirectResponse(f"/hiring/{job_id}?done={'review' if review else 'saved'}", status_code=303)
 
@@ -944,7 +962,7 @@ def listing_duplicate(job_id: int, request: Request, background: BackgroundTasks
         clean = _clean_listing(_listing_values(j))
     except ValidationError:
         return RedirectResponse(f"/hiring/{job_id}/edit", status_code=303)
-    new = add_job(clean, employer_id=user["id"])
+    new = add_job(clean, employer_id=store.org_id(user), posted_by=user["id"])
     background.add_task(_mail_listing_received, user["email"], clean["title"])
     return RedirectResponse(f"/hiring/{int(new['id'])}?done=copied", status_code=303)
 
@@ -984,7 +1002,7 @@ mailer.copy_hook = emails.keep
 
 for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, learning.router, assistant.router, resume_tools.router,
            feed.router, admin_extra.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router,
-           events.router):
+           events.router, teams.router):
     app.include_router(_r)
 
 
@@ -1215,12 +1233,14 @@ def _clear_draft_cookie(resp):
     return resp
 
 
-def _poster_defaults(clean: dict, ep: dict) -> None:
-    """A listing always names the person who posted it; fall back to the organization's contact."""
+def _poster_defaults(clean: dict, ep: dict, card: dict | None = None) -> None:
+    """A listing always names the person who posted it: the team member's own name and title (card), falling back
+    to the organization's contact."""
+    card = card or {}
     if not clean.get("poster_name"):
-        clean["poster_name"] = ep.get("contact_name", "")
+        clean["poster_name"] = card.get("name") or ep.get("contact_name", "")
     if not clean.get("poster_title"):
-        clean["poster_title"] = ep.get("contact_title", "")
+        clean["poster_title"] = (card.get("title") if card.get("name") else "") or ep.get("contact_title", "")
 
 
 def _resume_draft(request: Request, user: dict, background: BackgroundTasks) -> bool:
@@ -1235,10 +1255,12 @@ def _resume_draft(request: Request, user: dict, background: BackgroundTasks) -> 
         return False
     with store.db() as conn:
         ep = store.employer_profile(conn, user["id"]) or {}
+        card = store.member_card(conn, user["id"])
+        org = store.org_of(conn, user["id"])
     if company_mismatch(ep.get("company", ""), clean["company"]):
         return False
-    _poster_defaults(clean, ep)
-    add_job(clean, employer_id=user["id"])
+    _poster_defaults(clean, ep, card)
+    add_job(clean, employer_id=org, posted_by=user["id"])
     background.add_task(_mail_listing_received, user["email"], clean["title"])
     return True
 
@@ -1589,6 +1611,11 @@ def verify_submit(request: Request, background: BackgroundTasks, token: str = Fo
                "Next, tell students about your organization." if sent
                else "Next, set up your company profile. A reviewer approves it before you can message students or post to the feed.")
         cta = '<a class="apply-btn" href="/profile/setup">Set up company profile</a>'
+        with store.db() as conn:
+            if not sent and teams.pending_for(conn, user["email"]):
+                # Invited to a company's team: joining it comes first (their own company profile would be empty anyway).
+                msg = "You've been invited to join a company's hiring team. Accept the invite to start."
+                cta = '<a class="apply-btn" href="/team/join">See your team invite</a>'
     else:
         msg = "Next, set up your profile. It takes about two minutes and powers your job matches."
         cta = '<a class="apply-btn" href="/profile/setup">Set up my profile</a>'

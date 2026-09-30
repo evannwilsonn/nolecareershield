@@ -171,7 +171,7 @@ def _events(conn, uid: int, now: float) -> list[dict] | None:
 
 def data(conn, user: dict, now: float | None = None) -> dict:
     now = now or time.time()
-    uid = user["id"]
+    uid = store.org_id(user)
     p = store.employer_profile(conn, uid) or {}
     jobs = store.rows(conn, "SELECT * FROM jobs WHERE employer_id = ? AND review_status IN ('approved','pending') "
                             "ORDER BY review_status = 'approved' DESC, id DESC LIMIT 100", (uid,))

@@ -451,7 +451,7 @@ def poster_block(conn, viewer: dict, j: dict, emp_ok: bool) -> str:
         name = "The hiring team"
     email = ""
     if j.get("show_email"):
-        r = conn.execute("SELECT email FROM users WHERE id = ?", (j["employer_id"],)).fetchone()
+        r = conn.execute("SELECT email FROM users WHERE id = ?", (j.get("posted_by") or j["employer_id"],)).fetchone()
         if r:
             email = f'<a class="jp-mail" href="mailto:{esc(r[0])}">{ui.icon("mail", 14)} {esc(r[0])}</a>'
     first = "the hiring team" if name == "The hiring team" else esc(short_name(name))
@@ -509,7 +509,7 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
     if is_student and emp_ok:
         acts += network.follow_button(int(j["employer_id"]), following, next_=f"/job/{jid}", small=False)
     own = ""
-    if viewer["role"] == "employer" and j.get("employer_id") == viewer["id"]:
+    if viewer["role"] == "employer" and j.get("employer_id") == store.org_id(viewer):
         own = f'<div class="banner info">This is your listing. <a href="/hiring/{jid}">See ranked student matches, candidates and stats →</a></div>'
     f = fit.fit_score(j, profile) if (is_student and has_profile(profile)) else None
     match = match_panel(j, f) if is_student else ""

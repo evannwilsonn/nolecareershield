@@ -445,6 +445,32 @@ CREATE INDEX IF NOT EXISTS idx_mtpl_emp ON message_templates (employer_id, id);
 CREATE TABLE IF NOT EXISTS template_seeds (
     employer_id INTEGER PRIMARY KEY
 );
+-- Team accounts (teams.py). A company ("org") is identified by its owner's user id, the same id every company-scoped
+-- table already holds (jobs.employer_id, conversations.employer_id, ...). A user belongs to at most one org.
+-- The owner gets a row too once the team page is used; an employer with no row owns their own org.
+-- name/title are the member's own, shown on listings they post and next to messages they send.
+CREATE TABLE IF NOT EXISTS org_members (
+    org_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL UNIQUE,
+    role TEXT NOT NULL DEFAULT 'recruiter',     -- owner | admin | recruiter
+    name TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    invited_by INTEGER,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_org_members_org ON org_members (org_id);
+-- Pending invites. Only a hash of the one-time token is kept; invites expire after 7 days.
+CREATE TABLE IF NOT EXISTS org_invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'recruiter',
+    token_hash TEXT NOT NULL UNIQUE,
+    invited_by INTEGER,
+    expires_at REAL NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE (org_id, email)
+);
 """
 
 
@@ -503,6 +529,8 @@ def purge(conn) -> None:
                  (time.strftime("%Y-%m-%d", time.gmtime(now - 180 * 86400)),))
     # In-site email copies are kept for a year.
     conn.execute("DELETE FROM emails WHERE sent_at < ?", (now - 365 * 86400,))
+    # Team invites that were never accepted go a week after they expire.
+    conn.execute("DELETE FROM org_invites WHERE expires_at < ?", (now - 7 * 86400,))
     # Assistant chats go after 180 days without a new message.
     conn.execute("DELETE FROM assistant_chats WHERE updated_at < ?", (now - 180 * 86400,))
     conn.execute("DELETE FROM assistant_msgs WHERE chat_id NOT IN (SELECT id FROM assistant_chats)")
@@ -566,6 +594,10 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM template_seeds WHERE employer_id = ?", (user_id,))
     conn.execute("DELETE FROM event_rsvps WHERE student_id = ? OR event_id IN (SELECT id FROM events WHERE employer_id = ?)", (user_id, user_id))
     conn.execute("DELETE FROM events WHERE employer_id = ?", (user_id,))
+    # Team accounts: a member leaves their team (what they did for the company stays with the company); an owner's
+    # team and invites go with the company. The account page blocks deleting an owner who still has members.
+    conn.execute("DELETE FROM org_members WHERE user_id = ? OR org_id = ?", (user_id, user_id))
+    conn.execute("DELETE FROM org_invites WHERE org_id = ?", (user_id,))
     conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_tokens WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE jobs SET employer_id = NULL WHERE employer_id = ?", (user_id,))
@@ -660,12 +692,54 @@ def profile_items(conn, user_id: int) -> list[dict]:
 
 
 def employer_profile(conn, user_id: int) -> dict | None:
-    return row(conn, "SELECT * FROM employer_profiles WHERE user_id = ?", (user_id,))
+    """The company profile of the org this employer account belongs to (a team member gets their company's)."""
+    return row(conn, "SELECT * FROM employer_profiles WHERE user_id = ?", (org_of(conn, user_id),))
 
 
 def employer_approved(conn, user_id: int) -> bool:
-    r = conn.execute("SELECT status FROM employer_profiles WHERE user_id = ?", (user_id,)).fetchone()
+    """Approval is the org's: a team member is approved when their company is."""
+    r = conn.execute("SELECT status FROM employer_profiles WHERE user_id = ?", (org_of(conn, user_id),)).fetchone()
     return bool(r and r[0] == "approved")
+
+
+# ---------- team accounts: the org an employer account acts for ----------
+
+def org_of(conn, user_id: int) -> int:
+    """The org (company owner's user id) this account acts for. Owners and anyone not on a team: their own id."""
+    try:
+        r = conn.execute("SELECT org_id FROM org_members WHERE user_id = ?", (user_id,)).fetchone()
+    except sqlite3.OperationalError:           # a database from before team accounts
+        return user_id
+    return int(r[0]) if r else user_id
+
+
+def org_id(user: dict) -> int:
+    """The company-scoped id for a signed-in user dict (the middleware sets user["org_id"] once per request)."""
+    return int(user.get("org_id") or user["id"])
+
+
+def org_role(conn, user_id: int) -> str:
+    """owner | admin | recruiter. An employer who isn't on anyone's team owns their own org."""
+    try:
+        r = conn.execute("SELECT role FROM org_members WHERE user_id = ?", (user_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return "owner"
+    return r[0] if r else "owner"
+
+
+def org_user_ids(conn, org: int) -> list[int]:
+    """Every account acting for this org: the owner and the members."""
+    ids = [org] + [r[0] for r in conn.execute("SELECT user_id FROM org_members WHERE org_id = ? AND user_id != ?", (org, org))]
+    return ids
+
+
+def member_card(conn, user_id: int) -> dict:
+    """{name, title} a team member shows on listings and messages. Falls back to the company contact for the owner."""
+    m = row(conn, "SELECT name, title FROM org_members WHERE user_id = ?", (user_id,)) or {}
+    if not m.get("name") and org_of(conn, user_id) == user_id:
+        p = row(conn, "SELECT contact_name, contact_title FROM employer_profiles WHERE user_id = ?", (user_id,)) or {}
+        return {"name": p.get("contact_name") or "", "title": m.get("title") or p.get("contact_title") or ""}
+    return {"name": m.get("name") or "", "title": m.get("title") or ""}
 
 
 def applied_to(conn, student_id: int, employer_id: int) -> dict | None:
@@ -674,7 +748,15 @@ def applied_to(conn, student_id: int, employer_id: int) -> dict | None:
                      "ORDER BY created_at DESC LIMIT 1", (student_id, employer_id))
 
 
-def unread_count(conn, user_id: int) -> int:
+def unread_count(conn, user_id: int, org: int | None = None) -> int:
+    """Unread messages for a student (user_id), or for an employer's whole org (org; any member reading marks them read)."""
+    if org:
+        r = conn.execute("""
+            SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.employer_id = ? AND m.sender_id = c.student_id AND m.read_at IS NULL
+              AND m.status = 'delivered' AND c.blocked_by IS NULL AND c.employer_hidden = 0
+        """, (org,)).fetchone()
+        return int(r[0]) if r else 0
     r = conn.execute("""
         SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
         WHERE (c.student_id = ? OR c.employer_id = ?) AND m.sender_id != ? AND m.read_at IS NULL

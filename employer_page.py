@@ -62,12 +62,15 @@ def signals(conn, uid: int, now: float | None = None) -> dict:
     one = lambda sql, *a: conn.execute(sql, a).fetchone()[0]
     jobs = store.rows(conn, "SELECT review_status, review_label, scam_status FROM jobs WHERE employer_id = ?", (uid,))
     decided = [j for j in jobs if j["review_status"] in ("approved", "rejected", "removed")]
-    threads = store.rows(conn, "SELECT id FROM conversations WHERE employer_id = ? AND started_by = student_id", (uid,))
+    threads = store.rows(conn, "SELECT id, student_id FROM conversations WHERE employer_id = ? AND started_by = student_id", (uid,))
+    # Team accounts: every member's messages count for the company (a reply from anyone on the team is a reply).
+    team = store.org_user_ids(conn, uid)
+    qs = ",".join("?" * len(team))
     replied, hours = 0, []
     for t in threads:
         ms = store.rows(conn, "SELECT sender_id, created_at FROM messages WHERE conversation_id = ? AND status = 'delivered' ORDER BY id LIMIT 200", (t["id"],))
-        first = next((m for m in ms if m["sender_id"] != uid), None)
-        reply = next((m for m in ms if m["sender_id"] == uid and first and m["created_at"] >= first["created_at"]), None)
+        first = next((m for m in ms if m["sender_id"] == t["student_id"]), None)
+        reply = next((m for m in ms if m["sender_id"] != t["student_id"] and first and m["created_at"] >= first["created_at"]), None)
         if reply:
             replied += 1
             hours.append((reply["created_at"] - first["created_at"]) / 3600)
@@ -81,13 +84,13 @@ def signals(conn, uid: int, now: float | None = None) -> dict:
         "clear": sum(1 for j in decided if j["scam_status"] == "clear"),
         "scam_rejections": sum(1 for j in decided if j["review_label"] == "scam"),
         "leadgen_rejections": sum(1 for j in decided if j["review_label"] == "lead_gen"),
-        "sent": one("SELECT COUNT(*) FROM messages WHERE sender_id = ?", uid),
-        "held": one("SELECT COUNT(*) FROM messages WHERE sender_id = ? AND (status = 'held' OR scan_band = 'block')", uid),
-        "flagged": one("SELECT COUNT(*) FROM messages WHERE sender_id = ? AND scan_band = 'review' AND status = 'delivered'", uid),
-        "cautioned": one("SELECT COUNT(*) FROM messages WHERE sender_id = ? AND scan_band = 'caution' AND status = 'delivered'", uid),
+        "sent": one(f"SELECT COUNT(*) FROM messages WHERE sender_id IN ({qs})", *team),
+        "held": one(f"SELECT COUNT(*) FROM messages WHERE sender_id IN ({qs}) AND (status = 'held' OR scan_band = 'block')", *team),
+        "flagged": one(f"SELECT COUNT(*) FROM messages WHERE sender_id IN ({qs}) AND scan_band = 'review' AND status = 'delivered'", *team),
+        "cautioned": one(f"SELECT COUNT(*) FROM messages WHERE sender_id IN ({qs}) AND scan_band = 'caution' AND status = 'delivered'", *team),
         "reports": one("SELECT COUNT(*) FROM reports r JOIN conversations c ON r.target_type = 'conversation' AND c.id = r.target_id "
                        "WHERE c.employer_id = ? AND r.reporter_id = c.student_id AND r.resolved = 0", uid)
-                   + one("SELECT COUNT(*) FROM reports r JOIN posts p ON r.target_type = 'post' AND p.id = r.target_id WHERE p.author_id = ? AND r.resolved = 0", uid),
+                   + one(f"SELECT COUNT(*) FROM reports r JOIN posts p ON r.target_type = 'post' AND p.id = r.target_id WHERE p.author_id IN ({qs}) AND r.resolved = 0", *team),
         "blocks": one("SELECT COUNT(*) FROM conversations WHERE employer_id = ? AND blocked_by = student_id", uid),
         "threads": len(threads), "replied": replied, "reply_hours": sorted(hours), "profile": profile,
     }
@@ -209,7 +212,10 @@ def hiring_stats(conn, uid: int, s: dict) -> dict:
 
 
 def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str:
-    owner = viewer["id"] == uid
+    import teams
+    # "owner" here means anyone on the company's team: they see their own stats and tips. Editing needs owner/admin.
+    owner = viewer["role"] == "employer" and store.org_id(viewer) == uid
+    can_edit = owner and teams.can_manage(viewer)
     sig = signals(conn, uid)
     t = trust_from_signals(sig)
     hs = hiring_stats(conn, uid, sig)
@@ -223,7 +229,8 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
                                         p.get("founded") and f"Founded {p['founded']}") if x)
     links = "".join(f'<a href="{esc(p[k])}" target="_blank" rel="noopener noreferrer nofollow">{lbl} ↗</a>' for k, lbl in (("website", "Website"), ("linkedin", "LinkedIn")) if p.get(k))
     if owner:
-        actions = '<div class="row"><a class="b sm sec" href="/profile/setup/1">Edit profile</a><a class="b sm ghost" href="/hiring">Your listings</a></div>'
+        actions = ('<div class="row">' + ('<a class="b sm sec" href="/profile/setup/1">Edit profile</a><a class="b sm ghost" href="/team">Team</a>' if can_edit else "")
+                   + '<a class="b sm ghost" href="/hiring">Your listings</a></div>')
     elif viewer["role"] == "student" and p.get("status") == "approved":
         actions = (f'<div class="row"><a class="b sm" href="/messages/new?to={uid}">{ui.icon("chat", 14)} Message</a>'
                    f'{network.follow_button(uid, network.is_following(conn, viewer["id"], uid), f"/company/{uid}")}</div>')
@@ -246,7 +253,7 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
               f'<p class="small muted" style="margin-top:10px">On NoleCareerShield: {esc(since)}</p></section>')
     contact = (f'<section class="card"><div class="phead"><h2>Contact</h2></div>{web.person(p["contact_name"], p.get("contact_title") or "", "emp")}</section>'
                if p.get("contact_name") else "")
-    side = trust_card(t, owner) + glance + contact
+    side = trust_card(t, owner) + glance + contact + teams.team_card(conn, uid)
     about = f'<section class="card pcard"><div class="phead"><h2>About</h2></div><p class="desc">{esc(p["about"])}</p></section>' if p.get("about") else ""
     fsu = (f'<section class="card pcard"><div class="phead"><h2>Working with FSU students</h2></div><p class="desc">{esc(p["fsu_connection"])}</p></section>'
            if p.get("fsu_connection") else "")

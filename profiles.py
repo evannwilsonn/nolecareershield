@@ -33,6 +33,7 @@ import profile_page
 import resume_engine
 import security
 import store
+import teams
 import ui
 import web
 from matching import CATEGORIES, JOB_KINDS, POPULAR, WORK_TYPES
@@ -264,7 +265,9 @@ def setup_start(request: Request):
             p = ensure_student(conn, user["id"])
             step = min(max(1, p["setup_step"] + 1), 3)
         else:
-            p = ensure_employer(conn, user["id"])
+            if not teams.can_manage(user):
+                return RedirectResponse("/profile", status_code=303)
+            p = ensure_employer(conn, store.org_id(user))
             step = 1 if not p.get("company") else 2
     return RedirectResponse(f"/profile/setup/{step}", status_code=303)
 
@@ -279,7 +282,10 @@ def setup_step(step: int, request: Request):
             return _student_step(ensure_student(conn, user["id"]), step)
         if step not in (1, 2):
             return RedirectResponse("/profile/setup", status_code=303)
-        return _employer_step(ensure_employer(conn, user["id"]), step)
+        if not teams.can_manage(user):
+            return web.page(ui.page_head("Company profile") + ui.banner("info", teams.RECRUITER_PROFILE_NOTE) +
+                            '<a class="b sec" href="/profile">Company profile</a>', "Company profile", active="/profile", status=403)
+        return _employer_step(ensure_employer(conn, store.org_id(user)), step)
 
 
 async def _read_upload(upload: UploadFile | None) -> tuple[str, bytes]:
@@ -358,7 +364,10 @@ async def setup_save(step: int, request: Request):
                 return _student_step(merged, step, str(e), 400)
             return RedirectResponse("/profile/setup", status_code=303)
 
-        p = ensure_employer(conn, user["id"])
+        if not teams.can_manage(user):
+            return web.page(ui.banner("info", teams.RECRUITER_PROFILE_NOTE), "Company profile", active="/profile", status=403)
+        org = store.org_id(user)
+        p = ensure_employer(conn, org)
         try:
             if step == 1:
                 website = _url(g("website"), "Website")
@@ -370,7 +379,7 @@ async def setup_save(step: int, request: Request):
                 founded = _t(g("founded"), 4, "Founded")
                 if founded and not (re.fullmatch(r"(?:18|19|20)\d{2}", founded) and int(founded) <= time.gmtime().tm_year):
                     raise ProfileError("Founded should be a year, like 2015.")
-                save_employer(conn, user["id"], company=_t(g("company"), 120, "Organization name", True), website=website,
+                save_employer(conn, org, company=_t(g("company"), 120, "Organization name", True), website=website,
                               industry=g("industry") if g("industry") in INDUSTRIES else "",
                               size=g("size") if g("size") in SIZES else "", location=_t(g("location"), 120, "Location"), about=about,
                               tagline=_t(g("tagline"), 120, "Tagline"), founded=founded, linkedin=_url(g("linkedin"), "LinkedIn", "linkedin.com"))
@@ -384,7 +393,7 @@ async def setup_save(step: int, request: Request):
                               hires_for=_pick(form.getlist("hires_for"), CATEGORIES), perks=_pick(form.getlist("perks"), employer_page.PERKS))
                 if p.get("status") in ("draft", "rejected"):
                     fields["status"] = "pending"
-                save_employer(conn, user["id"], **fields)
+                save_employer(conn, org, **fields)
                 return RedirectResponse("/profile?welcome=1", status_code=303)
         except ProfileError as e:
             merged = {**p, **{k: g(k) for k in form.keys() if k != "csrf"}}
@@ -442,7 +451,7 @@ def my_profile(request: Request, welcome: int = 0, imported: int = 0):
             body = profile_page.profile_html(p, owner=True, notice=top, completion=student_completion(p))
             body += network.connections_section(conn, user["id"], user["id"])
         else:
-            p = ensure_employer(conn, user["id"])
+            p = ensure_employer(conn, store.org_id(user))
             if not p.get("company"):
                 return RedirectResponse("/profile/setup", status_code=303)
             top = ""
@@ -450,11 +459,11 @@ def my_profile(request: Request, welcome: int = 0, imported: int = 0):
                 top = ui.banner("info", "Thanks. A reviewer will check your organization, usually within a business day. You can post jobs meanwhile; each one is reviewed too.")
             if p["status"] == "rejected" and p.get("status_note"):
                 top += ui.banner("warning", "Not approved: " + p["status_note"] + " Update your profile and send it again.")
-            body = employer_page.company_html(conn, p, user["id"], user, notice=top)
+            body = employer_page.company_html(conn, p, store.org_id(user), user, notice=top)
     body += f"""<div class="pdata"><h3 class="sec">Your data</h3><div class="card"><div class="row between"><div><b>Download your data</b>
 <p class="small muted">Everything we store about your account, as a JSON file.</p></div><a class="b sm sec" href="/profile/export">Download</a></div></div>
 <details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;color:var(--bad)">Delete my account</summary>
-<p class="small muted" style="margin:8px 0 12px">Deletes your profile, resume versions, feed posts and comments, and blanks the messages you sent. This can't be undone.</p>
+<p class="small muted" style="margin:8px 0 12px">Deletes your profile, resume versions, feed posts and comments, and blanks the messages you sent. This can't be undone.{teams.delete_note(user)}</p>
 <form method="post" action="/profile/delete">{ui.user_csrf_input()}<div class="form-field"><label for="d-pw">Your password</label>
 <input id="d-pw" type="password" name="password" required maxlength="128" autocomplete="current-password"></div>
 <button class="b danger" type="submit">Delete my account</button></form></details></div>"""
@@ -472,9 +481,10 @@ def can_view_student(conn, viewer: dict, student_id: int) -> tuple[bool, bool, b
         return True, False, False
     if not store.employer_approved(conn, viewer["id"]):
         return False, False, False
+    org = store.org_id(viewer)
     talking = conn.execute("SELECT 1 FROM conversations WHERE student_id = ? AND employer_id = ? AND blocked_by IS NULL",
-                           (student_id, viewer["id"])).fetchone()
-    applied = store.applied_to(conn, student_id, viewer["id"])           # they chose to apply to this employer
+                           (student_id, org)).fetchone()
+    applied = store.applied_to(conn, student_id, org)           # they chose to apply to this employer
     if p["visible_to_employers"] or talking or applied:
         return True, True, bool(p["share_resume"] or (applied and applied["share_resume"]))
     return False, False, False
@@ -506,8 +516,11 @@ def company_page(uid: int, request: Request):
     user = web.require_user(request)
     security.enforce_rate_limit(request, security.general_limiter, "company_view")
     with store.db() as conn:
+        org = store.org_of(conn, uid)
+        if org != uid:
+            return RedirectResponse(f"/company/{org}", status_code=303)
         p = store.employer_profile(conn, uid)
-        if not p or (p["status"] != "approved" and user["id"] != uid):
+        if not p or (p["status"] != "approved" and not (user["role"] == "employer" and store.org_id(user) == uid)):
             return web.page('<p class="empty" style="margin:40px 0">That organization isn\'t available.</p>', "Company", active="", status=404)
         if p["status"] == "approved":
             employer_dash.record_company_view(conn, uid, user)
@@ -588,6 +601,7 @@ def export(request: Request):
                                                       "FROM candidates WHERE employer_id = ?", (user["id"],)),
                 "events": store.rows(conn, "SELECT id, title, kind, description, starts_at, duration_min, format, location, meeting_url, capacity, majors, class_years, status, created_at FROM events WHERE employer_id = ?", (user["id"],)),
                 "event_rsvps": store.rows(conn, "SELECT event_id, status, created_at, reminded_at FROM event_rsvps WHERE student_id = ?", (user["id"],))}
+        data.update(teams.export_data(conn, user))
     return Response(json.dumps(data, indent=2, default=str), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="nolecareershield-my-data.json"', "Cache-Control": "no-store"})
 
@@ -603,6 +617,10 @@ def delete_account(request: Request, password: str = Form(""), csrf: str = Form(
         if not full or not accounts.verify_password(password[:accounts.PW_MAX], full["pw_hash"]):
             return web.page(ui.banner("warning", "That password isn't right, so nothing was deleted.") + '<a class="b sec" href="/profile">Back to profile</a>',
                             "Delete account", active="/profile", status=401)
+        blocked = teams.delete_blocker(conn, user)
+        if blocked:
+            return web.page(ui.banner("warning", blocked) + '<a class="b sec" href="/team">Team</a> <a class="b ghost" href="/profile">Back to profile</a>',
+                            "Delete account", active="/profile", status=409)
         event_mail = events.before_account_delete(conn, user["id"])
         store.delete_account(conn, user["id"])
     events.send_all(event_mail)
@@ -627,7 +645,7 @@ def dashboard(user: dict) -> str:
             jobs = store.live_jobs(conn, security.LISTING_TTL_DAYS)
             posts = store.rows(conn, "SELECT id, kind, body FROM posts WHERE status = 'published' ORDER BY created_at DESC LIMIT 2")
         else:
-            p = ensure_employer(conn, user["id"])
+            p = ensure_employer(conn, store.org_id(user))
             mine = store.rows(conn, "SELECT review_status, COUNT(*) AS n FROM jobs WHERE employer_id = ? GROUP BY review_status", (user["id"],))
             viewed = conn.execute("SELECT COUNT(*) FROM (SELECT DISTINCT job_id, user_id FROM job_views WHERE job_id IN "
                                   "(SELECT id FROM jobs WHERE employer_id = ?))", (user["id"],)).fetchone()[0]
