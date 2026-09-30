@@ -1,0 +1,31 @@
+Evan M. Wilson
+Tallahassee, FL | evan.wilson@example.com | linkedin.com/in/evannwilsonn | github.com/evannwilsonn
+
+SKILLS
+Languages: Python, SQL, JavaScript, HTML/CSS
+Tools: Excel (pivot tables, VLOOKUP), Tableau, Power BI, Git
+Certifications: Microsoft Excel Expert (in progress)
+
+EDUCATION
+Florida State University, Tallahassee, FL
+B.S. in Business Administration, Expected May 2027
+Relevant Coursework: Business Analytics, Spreadsheets for Business, Quantitative Methods for Business Analytics
+Tallahassee State College | A.A. in Finance | Aug 2023 – May 2025 | GPA 3.4
+
+PROJECTS
+siideshowbeats.com: Full-Stack Beat Store | Sep 2026 – Present
+• Designed, built and launched a production e-commerce site with Python, JavaScript and Cloudflare Workers
+• Added rate limiting, bot checks and SEO, reaching the first page of Google for the brand name
+NoleCareerShield | Aug 2026 – Present
+• Built a job board for FSU students with a rule-based scam detector that flags 35 of 42 known scams
+
+EXPERIENCE
+Data-Video Generalist — Micro1 | Aug 2026 – Present | Remote
+• Captured synchronized video and IMU data for robotics model training to strict specs
+IT & Financial Data Analyst Intern, Today's Dental Network, Tampa, FL, June 2023 – August 2025
+• Migrated and audited financial records spanning 2018-2025 from a legacy PMS into Jarvis PMS
+• Reconciled 1,000+ transactions per month and resolved discrepancies before audits
+
+ACTIVITIES
+The Finance Society, Member, Aug 2025 – May 2026
+• Attended 10+ employer talks on investment banking, asset management and FP&A

@@ -44,12 +44,14 @@ def _card(r: dict) -> dict:
     j = r["job"]
     return {"id": j["id"], "title": j["title"], "company": j["company"], "category": j["category"],
             "work_type": j["work_type"], "location": j.get("location") or "", "verified": j["scam_status"] == "clear",
-            "score": r.get("score"), "reasons": r.get("reasons", []), "missing": r.get("missing", [])[:4]}
+            "score": (r.get("fit") or {}).get("score", r.get("score")), "fit_label": (r.get("fit") or {}).get("label", ""),
+            "reasons": r.get("reasons", []), "missing": r.get("missing", [])[:4]}
 
 
 def card_html(c: dict) -> str:
     badge = ('<span class="badge verified">✓ Verified</span>' if c["verified"] else '<span class="badge warning">⚠ Check carefully</span>')
-    match = f'<span class="pill accent">{int(c["score"])}% match</span>' if c.get("score") is not None else ""
+    match = (f'<span class="pill accent" title="{esc(c.get("fit_label") or "")}">Fit {int(c["score"])}</span>' if c.get("fit_label")
+             else f'<span class="pill accent">{int(c["score"])}% match</span>' if c.get("score") is not None else "")
     why = f'<div class="why">{esc(c["reasons"][0])}</div>' if c.get("reasons") else ""
     loc = f'<span class="chip">{esc(c["location"])}</span>' if c.get("location") else ""
     return (f'<a class="job" href="/job/{int(c["id"])}"><div class="job-top"><div><div class="job-title">{esc(c["title"])}</div>'
@@ -177,7 +179,7 @@ def _run_tool(name: str, args: dict, profile: dict | None, jobs: list[dict], see
         seen[r["job"]["id"]] = r
     return ai.tag("listing", json.dumps([{"id": r["job"]["id"], "title": r["job"]["title"], "company": r["job"]["company"],
                                          "category": r["job"]["category"], "work_type": r["job"]["work_type"],
-                                         "location": r["job"]["location"], "match_score": r["score"], "why": r["reasons"],
+                                         "location": r["job"]["location"], "match_score": (r.get("fit") or {}).get("score", r["score"]), "fit": (r.get("fit") or {}).get("label", ""), "why": r["reasons"],
                                          "skills_they_want_that_student_lacks": r["missing"][:4],
                                          "summary": r["job"]["description"][:400]} for r in ranked]))
 

@@ -73,6 +73,23 @@ CREATE TABLE IF NOT EXISTS student_profiles (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS profile_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    org TEXT NOT NULL DEFAULT '',
+    location TEXT NOT NULL DEFAULT '',
+    start TEXT NOT NULL DEFAULT '',
+    end TEXT NOT NULL DEFAULT '',
+    current INTEGER NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    extra TEXT NOT NULL DEFAULT '{}',
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_items_user ON profile_items (user_id, kind, position);
 CREATE TABLE IF NOT EXISTS employer_profiles (
     user_id INTEGER PRIMARY KEY,
     company TEXT NOT NULL DEFAULT '',
@@ -195,8 +212,18 @@ CREATE TABLE IF NOT EXISTS notify_log (
 """
 
 
+# Columns added after the first release; existing databases are migrated in place.
+_STUDENT_EXTRA = {"location": "TEXT NOT NULL DEFAULT ''", "looking_roles": "TEXT NOT NULL DEFAULT '[]'",
+                  "pref_locations": "TEXT NOT NULL DEFAULT '[]'"}
+ITEM_KINDS = ["experience", "education", "project", "certification", "organization", "course", "language"]
+
+
 def init(conn) -> None:
     conn.executescript(SCHEMA)
+    have = {r[1] for r in conn.execute("PRAGMA table_info(student_profiles)")}
+    for col, typ in _STUDENT_EXTRA.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE student_profiles ADD COLUMN {col} {typ}")
     conn.commit()
 
 
@@ -218,6 +245,7 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM student_profiles WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM employer_profiles WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM resume_versions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM profile_items WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE messages SET body = '', status = 'removed' WHERE sender_id = ?", (user_id,))
     conn.execute("UPDATE conversations SET blocked_by = ? WHERE student_id = ? OR employer_id = ?",
                  (user_id, user_id, user_id))
@@ -249,10 +277,19 @@ def live_jobs(conn, ttl_days: int) -> list[dict]:
 def student_profile(conn, user_id: int) -> dict | None:
     p = row(conn, "SELECT * FROM student_profiles WHERE user_id = ?", (user_id,))
     if p:
-        for k in ("skills", "interests", "work_types", "job_kinds"):
-            p[k] = jload(p[k], [])
+        for k in ("skills", "interests", "work_types", "job_kinds", "looking_roles", "pref_locations"):
+            p[k] = jload(p.get(k), [])
         p["links"] = jload(p["links"], {})
+        p["items"] = profile_items(conn, user_id)
     return p
+
+
+def profile_items(conn, user_id: int) -> list[dict]:
+    out = rows(conn, "SELECT * FROM profile_items WHERE user_id = ? ORDER BY position, id", (user_id,))
+    for it in out:
+        it["extra"] = jload(it["extra"], {})
+        it["current"] = bool(it["current"])
+    return out
 
 
 def employer_profile(conn, user_id: int) -> dict | None:

@@ -90,3 +90,48 @@ process.stdout.write(JSON.stringify(out));
         if resume_engine.improve_bullet(b)["rewrite"] != j:
             diffs.append(("bullet", b, resume_engine.improve_bullet(b)["rewrite"], j))
     assert not diffs, f"{len(diffs)} differences, first ones: {diffs[:5]}"
+
+
+def test_demo_fit_and_profile_import_match_python():
+    """The resume -> profile parser and the whole-profile fit score give the same answers in the browser."""
+    import fit, resume_parse
+
+    evan = (ROOT / "tests" / "fixtures" / "resume_evan.txt").read_text()
+    texts = RESUMES + [evan]
+    parsed = [resume_parse.to_profile(t) for t in texts]
+    profiles = [
+        {"major": "Business Administration", "grad_term": "Spring 2027", "skills": ["Excel", "SQL", "Python", "Tableau"], "resume_text": evan,
+         "items": parsed[-1]["items"], "work_types": ["remote", "hybrid"], "job_kinds": ["internship", "part-time"], "pref_locations": ["Tallahassee, FL"]},
+        {"major": "Statistics", "minor": "Computer Science", "grad_term": "Spring 2026", "skills": parsed[0]["skills"], "resume_text": RESUMES[0],
+         "items": parsed[0]["items"], "work_types": ["on-site"], "job_kinds": ["part-time"], "headline": "Stats student", "bio": "I like data."},
+        {"skills": ["Customer service", "Spanish"], "major": "Hospitality"},
+        {},
+    ]
+    jobs = json.loads((ROOT / "demo" / "seed_listings.json").read_text())
+    jobs += [{"title": r["title"], "description": r["description"], "work_type": "on-site", "location": "Tallahassee, FL"} for r in _corpus()[::6]]
+    js = r"""
+const fs = require("fs");
+globalThis.NCS_RULEPACK = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const NCS = require(process.argv[3]);
+const inp = JSON.parse(fs.readFileSync(0, "utf8"));
+process.stdout.write(JSON.stringify({parsed: inp.texts.map(t => NCS.toProfile(t)),
+  fits: inp.jobs.map(j => inp.profiles.map(p => NCS.fitScore(j, p, [2026, 9])))}));
+"""
+    script = ROOT / "demo" / "_parity_fit.js"
+    script.write_text(js)
+    try:
+        res = subprocess.run([NODE, str(script), str(ROOT / "scam_detector" / "rulepack" / "core.json"), str(ROOT / "demo" / "engine.js")],
+                             input=json.dumps({"texts": texts, "profiles": profiles, "jobs": jobs}), capture_output=True, text=True, timeout=180)
+    finally:
+        script.unlink(missing_ok=True)
+    assert res.returncode == 0, res.stderr[-2000:]
+    got = json.loads(res.stdout)
+    assert got["parsed"] == json.loads(json.dumps(parsed))
+    diffs = []
+    for j, row in zip(jobs, got["fits"]):
+        for p, g in zip(profiles, row):
+            want = json.loads(json.dumps(fit.fit_score(j, p, today=(2026, 9))))
+            if want != g:
+                k = next((k for k in want if want[k] != g.get(k)), None)
+                diffs.append((j["title"][:40], k, want.get(k), g.get(k)))
+    assert len(jobs) > 50 and not diffs, f"{len(diffs)} differences, first ones: {diffs[:3]}"

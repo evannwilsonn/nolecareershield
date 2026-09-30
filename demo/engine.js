@@ -475,6 +475,11 @@ do does using use used also just really kind type sort some part time full remot
       out.push({job: j, score: Math.max(0, Math.min(100, Math.round(score))), reasons: reasons.slice(0, 3), matched, missing: missing.slice(0, 6)});
     }
     out.sort((a, b) => b.score - a.score || (b.job.id - a.job.id));
+    const p = profile || {};
+    if ((p.skills || []).length || p.resume_text || (p.items || []).length) {
+      for (const r of out) { const f = fitScore(r.job, p); r.fit = {score: f.score, label: f.label}; }
+      if (!q) out.sort((a, b) => b.fit.score - a.fit.score || b.score - a.score || (b.job.id - a.job.id));
+    }
     return out.slice(0, limit);
   }
   function keywordGap(resume, jobText) {
@@ -702,8 +707,365 @@ opportunity apply applicants including knowledge excellent good great including 
     return {reply: `No listing matches “${q.slice(0, 80)}” exactly right now. These are the closest, based on your profile. Try fewer words, or a different job type.`, jobs: rankJobs(jobs, profile, q, 4, false)};
   }
 
+  // ---------- resume -> profile sections (port of resume_parse.py) ----------
+  const pyRound = x => { const r = Math.round(x); return (x - Math.floor(x) === 0.5 && r % 2) ? r - 1 : r; };
+  const pyTitle = s => (s || "").toLowerCase().replace(/(?<![a-z])[a-z]/g, c => c.toUpperCase());
+  const pyStr = x => x === null || x === undefined ? "None" : String(x);
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const uniq = a => [...new Set(a)];
+  function pyStrip(s, chars) { let a = 0, b = s.length; while (a < b && chars.includes(s[a])) a++; while (b > a && chars.includes(s[b - 1])) b--; return s.slice(a, b); }
+  const rpClean = s => pyStrip(s || "", " \t-–—|,·•").replace(/\s+/g, " ").trim();
+  const RP_MONTH = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|winter|expected)";
+  const RP_DATE = `(?:${RP_MONTH}\\.?\\s+)?(?:19|20)\\d{2}|present|current|now`;
+  const DATE_RANGE = new RegExp(`(?<start>${RP_DATE})(?:\\s*(?:-|–|—|to)\\s*(?<end>${RP_DATE}))?`, "gi");
+  const SCHOOL = /\b(?:university|college|institute|school|academy)\b/i;
+  const DEGREE_SRC = "\\b(?:b\\.?s\\.?|b\\.?a\\.?|bachelor(?:'s)?(?: of (?:science|arts))?|m\\.?s\\.?|m\\.?a\\.?|master(?:'s)?(?: of (?:science|arts))?|mba|ph\\.?d|" +
+    "associate(?:'s)?(?: of (?:arts|science))?|a\\.?a\\.?|a\\.?s\\.?|high school diploma)\\b";
+  const DEGREE = new RegExp(DEGREE_SRC, "i"), DEGREE_AT_START = new RegExp("^(?:" + DEGREE_SRC + ")", "i");
+  const GPA_SRC = "\\bgpa\\b[:\\s]*(\\d\\.\\d{1,2})|(\\d\\.\\d{1,2})\\s*(?:/\\s*4\\.0+\\s*)?gpa\\b";
+  const RP_GPA = new RegExp(GPA_SRC, "i"), RP_GPA_ALL = new RegExp(GPA_SRC, "gi");
+  const RP_SPLIT = /\s+(?:\||–|—|-|·|•|@|at)\s+|,\s+/i;
+  const LIST_SPLIT = /[,;|•](?![^()]*\))/;
+  const ROLE = /\b(?:intern|analyst|assistant|manager|associate|server|waiter|developer|engineer|generalist|specialist|coordinator|representative|tutor|chair|president|member|volunteer|attendant|advisor|cashier|lead|director|officer|treasurer|secretary|captain|founder|consultant|researcher|clerk|parker|host|barista|teller|designer|writer|editor)\b/i;
+  const LABELLED = /^(skills|technical skills|tools|languages|certifications?|licenses?|coursework|relevant coursework|interests)\s*:\s*(.+)$/i;
+  const SECTION_KIND = {experience: "experience", leadership: "organization", projects: "project", education: "education", awards: "certification", coursework: "course"};
+  const NOW_RX = /^(?:present|current|now)$/i;
+
+  function rpDates(line) {
+    let m = null;
+    for (const x of line.matchAll(DATE_RANGE)) m = x;
+    if (!m) return ["", "", false, line];
+    const start = rpClean(m.groups.start); let end = rpClean(m.groups.end || "");
+    if (!end && NOW_RX.test(start)) return ["", "", false, line];
+    const current = NOW_RX.test(end);
+    if (current) end = "";
+    let rest = (line.slice(0, m.index) + " " + line.slice(m.index + m[0].length)).trim();
+    rest = rest.replace(/(?:^|\s)(?:expected|exp\.?)\s*$/i, "");
+    return [/^\d/.test(start) ? start : pyTitle(start), end && !/^\d/.test(end) ? pyTitle(end) : end, current, rest];
+  }
+  const splitHeader = t => t.split(RP_SPLIT).map(rpClean).filter(Boolean);
+  const rpItem = (kind, kw) => Object.assign({kind, title: "", org: "", location: "", start: "", end: "", current: false, description: "", url: "", extra: {}}, kw || {});
+  function rpBlocks(lines) {
+    const blocks = []; let head = [], body = [];
+    for (const ln of lines) {
+      if (!ln.trim()) continue;
+      if (BULLET.test(ln)) { body.push(ln.replace(BULLET, "").trim()); continue; }
+      if (body.length || head.length >= 2) { blocks.push([head, body]); head = []; body = []; }
+      head.push(ln.trim());
+    }
+    if (head.length || body.length) blocks.push([head, body]);
+    return blocks;
+  }
+  function rpEntry(kind, head, body) {
+    let start = "", end = "", current = false; const texts = [];
+    for (const h of head) { const [s, e, c, rest] = rpDates(h); if (s && !start) { start = s; end = e; current = c; } texts.push(rest); }
+    const parts = texts.flatMap(splitHeader);
+    if (!parts.length && !body.length) return null;
+    let ttl = parts[0] || "", org = parts[1] || "", location = "";
+    for (const p of parts.slice(2)) if (/\b[A-Z][a-z]+,?\s+(?:[A-Z]{2}|Florida)\b/.test(p) || /^(?:remote|hybrid|on-?site)$/i.test(p)) { location = p; break; }
+    if (location === "" && parts.length > 3 && /^[A-Z]{2}$/.test(parts[parts.length - 1])) location = `${parts[parts.length - 2]}, ${parts[parts.length - 1]}`;
+    if (org && ROLE.test(org) && !ROLE.test(ttl)) [ttl, org] = [org, ttl];
+    return rpItem(kind, {title: ttl.slice(0, 120), org: org.slice(0, 120), location: location.slice(0, 80), start, end, current,
+                         description: body.map(b => "• " + b).join("\n").slice(0, 1500)});
+  }
+  function rpEducation(lines) {
+    const out = []; let cur = null;
+    for (const ln of lines) {
+      let s = ln.trim(); if (!s) continue;
+      s = s.replace(BULLET, "").trim();
+      const m = LABELLED.exec(s);
+      if (m && m[1].toLowerCase().includes("course")) {
+        if (cur !== null) cur.extra.coursework = m[2].split(/[,;]/).map(rpClean).filter(Boolean).slice(0, 20);
+        continue;
+      }
+      const [start, end, current, rest] = rpDates(s);
+      const g = RP_GPA.exec(s), parts = splitHeader(rest);
+      if (parts.length && SCHOOL.test(parts[0]) && !DEGREE_AT_START.test(parts[0])) {
+        cur = rpItem("education"); cur.org = parts[0].slice(0, 120);
+        const others = parts.slice(1).filter(p => !RP_GPA.test(p));
+        const deg = others.find(p => DEGREE.test(p)) || "";
+        if (deg) cur.title = deg.slice(0, 120);
+        const loc = others.filter(p => p !== deg && !DEGREE.test(p) && !/minor|expected|coursework/i.test(p));
+        if (loc.length && /^[A-Z][A-Za-z .]+$/.test(loc[0]) && loc[0].length < 40) cur.location = loc.slice(0, 2).join(", ").slice(0, 80);
+        out.push(cur);
+      } else if (cur === null) { cur = rpItem("education"); out.push(cur); }
+      if (DEGREE.test(rest) && !cur.title) {
+        const dp = splitHeader(rest).find(p => DEGREE.test(p));
+        cur.title = rpClean((dp !== undefined ? dp : rest).replace(RP_GPA_ALL, "")).slice(0, 120);
+      }
+      if (cur.title) {
+        const mm = /\b(?:in|of)\s+([A-Z][A-Za-z&\/ ]{2,60}?)(?=,|\.|;|$| (?:minor|Minor|MINOR)| with| (?:expected|Expected)| (?:gpa|GPA))/.exec(cur.title)
+          || /^(?:b\.?s\.?|b\.?a\.?|m\.?s\.?|m\.?a\.?|a\.?a\.?|a\.?s\.?|mba)\s+([A-Z][A-Za-z&\/ ]{2,60}?)(?=,|\.|;|$)/i.exec(cur.title);
+        if (mm && !cur.extra.major && !/^(?:science|arts)$/i.test(mm[1].trim())) cur.extra.major = rpClean(mm[1]);
+      }
+      const mn = /\b(?:minor|Minor|MINOR)(?:\s+in)?\s+([A-Z][A-Za-z&\/ ]{2,40}?)(?=[.,;]|$)/.exec(s);
+      if (mn) cur.extra.minor = rpClean(mn[1]);
+      if (g) cur.extra.gpa = g[1] || g[2];
+      if (start && !(cur.start || cur.end)) {
+        if (end || current) { cur.start = start; cur.end = end; cur.current = current; }
+        else cur.end = start;
+      }
+    }
+    return out.filter(e => e.org || e.title);
+  }
+  function toProfile(text) {
+    const p = parse(text), lines = p.lines;
+    const heads = Object.entries(p.sections).map(([k, i]) => [i, k]).sort((a, b) => a[0] - b[0]);
+    const items = [], skills = [], languages = [], certs = [];
+    const vals = s => s.split(LIST_SPLIT).map(rpClean).filter(Boolean);
+    heads.forEach(([startLine, key], n) => {
+      const body = lines.slice(startLine + 1, n + 1 < heads.length ? heads[n + 1][0] : lines.length);
+      const headingText = lines[startLine].trim().toLowerCase();
+      if (key === "education") { items.push(...rpEducation(body)); return; }
+      if (key === "skills" || key === "summary" || (key === "awards" && !headingText.includes("cert") && !headingText.includes("licen"))) {
+        for (const ln of body) {
+          const s = ln.trim().replace(BULLET, "").trim(), m = LABELLED.exec(s);
+          if (m) {
+            const label = m[1].toLowerCase(), v = vals(m[2]);
+            if (label.startsWith("language")) languages.push(...v);
+            else if (label.startsWith("cert") || label.startsWith("licen")) certs.push(...v);
+            else if (label.includes("course")) items.push(...v.map(x => rpItem("course", {title: x.slice(0, 120)})));
+            else skills.push(...v);
+          } else if (key === "skills" && s) skills.push(...vals(s));
+        }
+        return;
+      }
+      if (key === "awards") {
+        for (const ln of body) {
+          const s = ln.trim().replace(BULLET, "").trim(); if (!s) continue;
+          const [st, en, , rest] = rpDates(s), parts = splitHeader(rest);
+          if (parts.length) items.push(rpItem("certification", {title: parts[0].slice(0, 120), org: (parts[1] || "").slice(0, 120), start: st || en}));
+        }
+        return;
+      }
+      if (key === "coursework") { for (const ln of body) items.push(...vals(ln.replace(BULLET, "")).map(x => rpItem("course", {title: x.slice(0, 120)}))); return; }
+      let kind = SECTION_KIND[key]; if (!kind) return;
+      if (kind === "project" && headingText.startsWith("research")) kind = "experience";
+      for (const [head, bullets] of rpBlocks(body)) { const e = rpEntry(kind, head, bullets); if (e && (e.title || e.description)) items.push(e); }
+    });
+    items.push(...certs.map(c => rpItem("certification", {title: c.slice(0, 120)})));
+    items.push(...languages.filter(l => !/python|java|sql|html|css|javascript|c\+\+|\br\b/i.test(l)).map(l => rpItem("language", {title: l.slice(0, 60)})));
+    const canon = [];
+    for (const s of skills.concat(extractSkills(text))) { const c = s.length <= 40 ? s : ""; if (c && !canon.some(x => x.toLowerCase() === c.toLowerCase())) canon.push(c); }
+    return {skills: canon.slice(0, 40), items: items.slice(0, 40)};
+  }
+
+  // ---------- whole-profile fit score (port of fit.py) ----------
+  const FIT_WEIGHTS = {skills: 35, experience: 25, education: 15, certifications: 10, keywords: 10, preferences: 10};
+  const FIT_NAMES = {skills: "Skills", experience: "Experience & projects", education: "Education", certifications: "Certifications", keywords: "Keywords", preferences: "Preferences"};
+  const PREFERRED = /\b(?:preferred|nice to have|a plus|bonus|ideally|desired|is helpful|are helpful|not required|familiarity with)\b/i;
+  const SENT_RX = /[^.\n;!?]+[.\n;!?]?/g;
+  const MAJORS = {
+    "accounting": ["accounting"], "finance": ["finance"], "economics": ["economics"], "business": ["business administration", "business"],
+    "marketing": ["marketing"], "management": ["management"], "statistics": ["statistics"], "mathematics": ["mathematics", "math"],
+    "computer science": ["computer science", "cs"], "information technology": ["information technology", "information systems", "mis"],
+    "data science": ["data science", "analytics"], "engineering": ["engineering"], "biology": ["biology", "biological"],
+    "chemistry": ["chemistry"], "psychology": ["psychology"], "communications": ["communications", "communication", "media"],
+    "journalism": ["journalism"], "public health": ["public health"], "nursing": ["nursing"], "education": ["education"],
+    "english": ["english"], "political science": ["political science"], "criminology": ["criminology", "criminal justice"],
+    "hospitality": ["hospitality"], "supply chain": ["supply chain"], "real estate": ["real estate"], "graphic design": ["graphic design", "design"],
+    "sociology": ["sociology"], "physics": ["physics"], "neuroscience": ["neuroscience"], "nutrition": ["nutrition"],
+    "exercise science": ["exercise science", "kinesiology"], "social work": ["social work"],
+  };
+  const MAJOR_CONTEXT = /\b(?:major(?:s|ing)?|degree|studying|pursuing|coursework|background|students?|enrolled in)\b/i;
+  const NOT_MAJOR = {business: "business(?!\\s+(?:analytics|intelligence|development|hours|days|casual|needs|partners?|owners?))",
+                     analytics: "analytics", communication: "communication(?!\\s+skills)", design: "design"};
+  const MAJOR_RX = {}; for (const ws of Object.values(MAJORS)) for (const w of ws) MAJOR_RX[w] = new RegExp("\\b" + (NOT_MAJOR[w] || reEsc(w)) + "\\b");
+  const TERM_STOP = new Set([...GENERIC, ...`build building built help helping clean cleaning present presenting weekly daily monthly hours hour week
+paid pay team teams short friday readout support supporting assist assisting including include includes must should will
+would also please apply summer fall spring semester during per plus related field fields minimum required requirements preferred
+role roles position candidate strong comfort comfortable ability experience experienced familiarity knowledge work working job jobs
+student students intern interns internship years year ideal responsibilities responsible opportunity join grow growing learn
+learning great good using used flag find make ensure provide biweekly juniors seniors sophomores freshmen freshman junior senior
+majoring major majors minor degree hold holds certified certification certifications preferably`.split(/\s+/), ...Object.values(MAJORS).flat()]);
+  const STANDING = /\b(freshm[ae]n|sophomores?|juniors?|seniors?|graduate students?|recent grad(?:uate)?s?|new grads?)\b/gi;
+  const GRAD_YEAR = /\b(?:graduating|graduation|class of|grad date)\D{0,24}((?:19|20)\d{2})\b/gi;
+  const GPA_REQ = /\b(?:gpa|grade point average)\D{0,30}?(\d\.\d{1,2})|(\d\.\d{1,2})\s*(?:\+|or (?:higher|above|better))?\s*(?:cumulative\s+|minimum\s+)?gpa\b/i;
+  const CERTS = {
+    "CPR/First aid": "\\bcpr\\b|\\bfirst aid\\b|\\bbls\\b", "ServSafe / food handler": "\\bservsafe\\b|\\bfood handler",
+    "CompTIA": "\\bcomptia\\b|\\ba\\+ certif|\\bsecurity\\+|\\bnetwork\\+", "Microsoft Office Specialist": "\\bmicrosoft office specialist\\b|\\bmos certif|\\bexcel (?:expert|certif)",
+    "Google Analytics certification": "\\bgoogle analytics (?:certif|individual)|\\bga4 certif", "CNA": "\\bcna\\b|\\bcertified nursing assistant\\b",
+    "EMT": "\\bemt\\b", "Lifeguard": "\\blifeguard", "Driver's license": "\\bdriver'?s licen[cs]e\\b|\\bvalid (?:driver'?s )?licen[cs]e\\b",
+    "AWS certification": "\\baws certif|\\baws certified\\b", "SHRM": "\\bshrm\\b", "Notary": "\\bnotary\\b",
+    "Bloomberg (BMC)": "\\bbloomberg market concepts\\b|\\bbmc\\b", "Tableau certification": "\\btableau (?:desktop )?(?:specialist|certif)",
+    "HIPAA training": "\\bhipaa (?:training|certif)", "Salesforce certification": "\\bsalesforce (?:certif|administrator|trailhead)",
+  };
+  const CERTS_RX = {}; for (const [k, v] of Object.entries(CERTS)) CERTS_RX[k] = new RegExp(v, "i");
+  const TITLE_STOP = new Set("intern internship part time part-time full full-time assistant associate student entry level junior senior the and of for".split(" "));
+  const FIT_LABELS = [[80, "Strong fit"], [65, "Good fit"], [45, "Partial fit"], [0, "Stretch"]];
+  const KIND_TEXT = {"internship": [" intern", "internship", "co-op"], "part-time": ["part-time", "part time"], "full-time": ["full-time", "full time"], "on-campus": ["on campus", "on-campus"]};
+  const wordRx = t => new RegExp("(?<![a-z0-9])" + reEsc(t) + "(?![a-z0-9])");
+
+  function fitTerms(text, n) {
+    const counts = new Map();
+    for (const w of ((text || "").toLowerCase().match(/[a-z][a-z\-]{3,}/g) || [])) if (!TERM_STOP.has(w) && !w.endsWith("ly")) counts.set(w, (counts.get(w) || 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]).slice(0, n || 10);
+  }
+  function jobRequirements(ttl, text) {
+    const full = `${ttl}\n${text}`, sents = [...full.matchAll(SENT_RX)].map(m => m[0]);
+    let required = [], preferred = [];
+    for (const sent of sents) for (const s of extractSkills(sent)) (PREFERRED.test(sent) ? preferred : required).push(s);
+    required = uniq(required); preferred = uniq(preferred).filter(s => !required.includes(s));
+    const majors = [];
+    for (const sent of sents) if (MAJOR_CONTEXT.test(sent)) {
+      const low = " " + sent.toLowerCase() + " ";
+      for (const [canon, words] of Object.entries(MAJORS)) if (words.some(w => MAJOR_RX[w].test(low)) && !majors.includes(canon)) majors.push(canon);
+    }
+    const g = GPA_REQ.exec(full), gpa = g ? parseFloat(g[1] || g[2]) : null;
+    let standing = uniq([...full.matchAll(STANDING)].map(m => m[1].toLowerCase().replace(/s+$/, "").replaceAll("freshmen", "freshman").replaceAll("freshme", "freshman"))).sort();
+    standing = uniq(standing.map(s => /^(?:graduate|recent|new)/.test(s) ? "graduate" : s)).sort();
+    const gy = uniq([...full.matchAll(GRAD_YEAR)].map(m => parseInt(m[1], 10))).sort((a, b) => a - b);
+    const certs = Object.keys(CERTS).filter(k => CERTS_RX[k].test(full));
+    required = required.filter(s => !certs.includes(s)); preferred = preferred.filter(s => !certs.includes(s));
+    const low = " " + full.toLowerCase() + " ";
+    const kind = JOB_KINDS.find(k => KIND_TEXT[k].some(w => low.includes(w))) || "";
+    const sk = new Set(required.concat(preferred).map(s => s.toLowerCase()));
+    return {required, preferred, majors, gpa, standing, grad_years: gy, certs, kind, keywords: fitTerms(full).filter(k => !sk.has(k))};
+  }
+  function fitGradYear(p) {
+    const m = /((?:19|20)\d{2})/.exec(p.grad_term || ""); if (m) return parseInt(m[1], 10);
+    for (const it of p.items || []) if (it.kind === "education" && !it.current && it.end) { const y = /((?:19|20)\d{2})/.exec(it.end); if (y) return parseInt(y[1], 10); }
+    return null;
+  }
+  function fitStanding(gy, today) {
+    if (!gy) return "";
+    const left = gy - today[0] - (today[1] >= 7 ? 0.5 : 0);
+    return left < 0 ? "graduate" : left <= 1 ? "senior" : left <= 2 ? "junior" : left <= 3 ? "sophomore" : "freshman";
+  }
+  function fitSources(p) {
+    const out = [];
+    if ((p.skills || []).length) out.push(["Your skills list", "skills", p.skills.join(", ")]);
+    for (const it of p.items || []) {
+      const k = it.kind, ex = it.extra || {};
+      const text = [it.title, it.org, it.description, (ex.coursework || []).join(" "), ex.major || "", ex.skills || ""].map(pyStr).join(" ");
+      const name = it.title || it.org || k;
+      const labels = {experience: name + (it.org && it.title ? ` at ${it.org}` : ""), project: `${name} (project)`, education: it.org || name,
+                      certification: `${name} (certification)`, organization: it.org || name, course: `${name} (course)`, language: name};
+      out.push([Object.prototype.hasOwnProperty.call(labels, k) ? labels[k] : name, k, text]);
+    }
+    if (p.resume_text) out.push(["Your resume", "resume", p.resume_text]);
+    const about = [p.headline, p.bio].filter(Boolean).join(" ");
+    if (about) out.push(["Your headline and about", "about", about]);
+    return out;
+  }
+  function fitGpa(p) {
+    for (const it of p.items || []) { const g = (it.extra || {}).gpa; if (g) { const f = Number(g); if (String(g).trim() && !isNaN(f)) return f; } }
+    const m = RP_GPA.exec(p.resume_text || "");
+    return m ? parseFloat(m[1] || m[2]) : null;
+  }
+  function jobCategories(job) {
+    const out = job.category ? [job.category] : [], low = " " + ((job.title || "") + " " + (job.description || "")).toLowerCase() + " ";
+    for (const [cat, words] of Object.entries(CATEGORY_WORDS)) if (!out.includes(cat) && words.filter(w => low.includes(w)).length >= 2) out.push(cat);
+    return out;
+  }
+  function fitScore(job, profile, today) {
+    profile = profile || {};
+    if (!today) { const d = new Date(); today = [d.getUTCFullYear(), d.getUTCMonth() + 1]; }
+    const req = jobRequirements(job.title || "", job.description || ""), srcs = fitSources(profile), items = profile.items || [];
+    const where = new Map();
+    for (const [label, , text] of srcs) for (const s of extractSkills(text)) { if (!where.has(s)) where.set(s, []); where.get(s).push(label); }
+    for (const s of profile.skills || []) { const cur = where.get(s) || []; if (!cur.includes("Your skills list")) { where.set(s, cur); cur.unshift("Your skills list"); } }
+    const allText = srcs.map(x => x[2]).join(" ").toLowerCase();
+    const parts = {}, checklist = [];
+
+    const wanted = req.required.map(s => [s, 1.0, true]).concat(req.preferred.map(s => [s, 0.5, false]));
+    const matched = [], missing = [];
+    if (wanted.length) {
+      const got = sum(wanted.filter(w => where.has(w[0])).map(w => w[1])), total = sum(wanted.map(w => w[1]));
+      for (const [s, , isReq] of wanted) {
+        if (where.has(s)) matched.push({skill: s, required: isReq, where: uniq(where.get(s)).slice(0, 3)});
+        else missing.push({skill: s, required: isReq});
+        checklist.push({text: s + (isReq ? "" : " (preferred)"), status: where.has(s) ? "met" : "missing", evidence: uniq(where.get(s) || []).slice(0, 2).join(", ")});
+      }
+      parts.skills = {score: pyRound(100 * got / total), detail: `${matched.length} of ${wanted.length} skills the job lists` +
+        (req.required.length && req.preferred.length ? ` (${matched.filter(m => m.required).length} of ${req.required.length} required)` : "")};
+    }
+
+    const terms = req.required.concat(req.preferred).map(s => s.toLowerCase()).concat(req.keywords.slice(0, 8));
+    let entries = srcs.filter(x => ["experience", "project", "organization"].includes(x[1])).map(x => [x[0], x[2].toLowerCase()]);
+    if (!entries.length && profile.resume_text) entries = parse(profile.resume_text).bullets.map(b => ["Your resume", b.text.toLowerCase()]);
+    const relevant = [];
+    if (entries.length && terms.length) {
+      const covered = new Set();
+      for (const [label, text] of entries) {
+        const has = new Set(extractSkills(text).map(x => x.toLowerCase()));
+        const hits = terms.filter(t => has.has(t) || wordRx(t).test(text));
+        if (hits.length) { relevant.push({where: label, hits: hits.slice(0, 4)}); hits.forEach(h => covered.add(h)); }
+      }
+      const coverage = Math.min(1, covered.size / Math.max(3, pyRound(terms.length * 0.6)));
+      const twords = ((job.title || "").toLowerCase().match(/[a-z]+/g) || []).filter(w => !TITLE_STOP.has(w) && w.length > 2);
+      const role = twords.length ? entries.some(([, text]) => twords.some(w => text.slice(0, 120).includes(w))) : false;
+      parts.experience = {score: pyRound(100 * (0.75 * coverage + 0.25 * (role ? 1 : 0))),
+        detail: (relevant.length ? `${relevant.length} of your entries relate to this job` : "None of your entries mention what this job asks for yet") + (role ? "; you've held a similar role" : "")};
+    } else if (terms.length) parts.experience = {score: 0, detail: "Add your experience and projects so they can count"};
+
+    const eduScores = [], eduNotes = [];
+    const myMajors = [profile.major || "", profile.minor || ""]
+      .concat(items.filter(it => it.kind === "education").map(it => { const ex = it.extra || {}; return (ex.major || "") + " " + (ex.minor || "") + " " + (it.title || "") + " " + (ex.coursework || []).join(" "); }))
+      .concat(items.filter(it => it.kind === "course").map(it => it.title || "")).join(" ").toLowerCase();
+    if (req.majors.length) {
+      const hit = req.majors.filter(m => MAJORS[m].some(w => MAJOR_RX[w].test(myMajors)));
+      if (hit.length) { eduScores.push(1.0); eduNotes.push("Your major or coursework covers " + hit.slice(0, 2).join(" and ")); }
+      else if (/related field|similar field|or related|quantitative field/i.test(job.description || "") && categoriesForMajor(profile.major || "").some(c => jobCategories(job).includes(c))) {
+        eduScores.push(0.6); eduNotes.push("Your major is related to the fields they list");
+      } else { eduScores.push(myMajors.trim() ? 0.15 : 0.4); eduNotes.push("They list " + req.majors.slice(0, 3).join(", ") + " majors"); }
+      checklist.push({text: "Major: " + req.majors.slice(0, 4).join(" or "), status: hit.length ? "met" : (!myMajors.trim() ? "unknown" : "missing"), evidence: profile.major || ""});
+    } else if (profile.major) {
+      const fits = categoriesForMajor(profile.major).some(c => jobCategories(job).includes(c));
+      eduScores.push(fits ? 0.9 : 0.65); eduNotes.push(fits ? "Your major lines up with this kind of work" : "No specific major required");
+    }
+    if (req.gpa) {
+      const have = fitGpa(profile); let status;
+      if (have === null) { eduScores.push(0.6); status = "unknown"; eduNotes.push(`Asks for a ${req.gpa.toFixed(1)}+ GPA; add yours if you meet it`); }
+      else { const ok = have >= req.gpa - 1e-9; eduScores.push(ok ? 1.0 : 0.1); status = ok ? "met" : "missing"; eduNotes.push(`GPA ${have.toFixed(2)} vs ${req.gpa.toFixed(1)} required`); }
+      checklist.push({text: `GPA ${req.gpa.toFixed(1)} or higher`, status, evidence: have === null ? "" : have.toFixed(2)});
+    }
+    const gy = fitGradYear(profile), standing = fitStanding(gy, today);
+    if (req.standing.length || req.grad_years.length) {
+      let ok = null;
+      if (req.grad_years.length && gy) ok = req.grad_years.includes(gy);
+      else if (req.standing.length && standing) ok = req.standing.includes(standing);
+      const want = req.standing.map(s => s.endsWith("e") ? pyTitle(s) + " students" : pyTitle(s) + "s").concat(req.grad_years.map(String)).join(", ");
+      eduScores.push(ok === null ? 0.6 : (ok ? 1.0 : 0.2));
+      checklist.push({text: "Class standing: " + want, status: ok === null ? "unknown" : (ok ? "met" : "missing"), evidence: (standing ? pyTitle(standing) : "") + (gy ? `, graduating ${gy}` : "")});
+      eduNotes.push(`They want ${want}` + (standing ? `; you're a ${standing}` : ""));
+    }
+    if (eduScores.length) parts.education = {score: pyRound(100 * sum(eduScores) / eduScores.length), detail: eduNotes.slice(0, 2).join("; ")};
+
+    if (req.certs.length) {
+      const have = req.certs.filter(c => CERTS_RX[c].test(allText));
+      parts.certifications = {score: pyRound(100 * have.length / req.certs.length), detail: `${have.length} of ${req.certs.length}: ` + req.certs.slice(0, 3).join(", ")};
+      for (const c of req.certs) checklist.push({text: c, status: have.includes(c) ? "met" : "missing", evidence: ""});
+    }
+
+    let kwHit = [];
+    if (req.keywords.length) {
+      kwHit = req.keywords.filter(k => wordRx(k).test(allText));
+      parts.keywords = {score: pyRound(100 * kwHit.length / req.keywords.length), detail: `${kwHit.length} of ${req.keywords.length} key terms from the posting`};
+    }
+
+    const prefs = [], pnotes = [], wt = job.work_type || "";
+    if ((profile.work_types || []).length) { const ok = profile.work_types.includes(wt); prefs.push(ok ? 1.0 : 0.3); pnotes.push(wt.charAt(0).toUpperCase() + wt.slice(1) + (ok ? " matches what you want" : " isn't your first choice")); }
+    if (req.kind && (profile.job_kinds || []).length) { const ok = profile.job_kinds.includes(req.kind); prefs.push(ok ? 1.0 : 0.3); pnotes.push(req.kind.charAt(0).toUpperCase() + req.kind.slice(1) + (ok ? " is a type you want" : " isn't a type you picked")); }
+    const locs = (profile.pref_locations || []).filter(Boolean).map(l => l.toLowerCase());
+    if (locs.length && wt !== "remote" && job.location) {
+      const jl = job.location.toLowerCase();
+      const ok = locs.some(l => jl.includes(l.split(",")[0].trim()) || l.includes(jl.split(",")[0].trim()));
+      prefs.push(ok ? 1.0 : 0.4); pnotes.push((ok ? "In " : "Outside ") + "your preferred locations");
+    }
+    if (prefs.length) parts.preferences = {score: pyRound(100 * sum(prefs) / prefs.length), detail: pnotes.slice(0, 2).join("; ")};
+
+    const keys = Object.keys(FIT_WEIGHTS).filter(k => parts[k]);
+    const totalW = sum(keys.map(k => FIT_WEIGHTS[k]));
+    const score = totalW ? pyRound(sum(keys.map(k => FIT_WEIGHTS[k] * parts[k].score)) / totalW) : 0;
+    const completeness = [(profile.skills || []).length, profile.resume_text, items.some(i => i.kind === "experience" || i.kind === "project"), profile.major].filter(Boolean).length;
+    return {score, label: FIT_LABELS.find(([cut]) => score >= cut)[1], confidence: ["low", "low", "medium", "medium", "high"][completeness],
+            parts: keys.map(k => Object.assign({key: k, name: FIT_NAMES[k], weight: FIT_WEIGHTS[k]}, parts[k])), matched, missing, relevant: relevant.slice(0, 5),
+            keywords_hit: kwHit, keywords_missing: req.keywords.filter(k => !kwHit.includes(k)).slice(0, 8), checklist: checklist.slice(0, 16), requirements: req};
+  }
+
   const NCS = {normalize, runTextRules, scorePosting, check, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
-    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
+    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;
   if (typeof module !== "undefined" && module.exports) module.exports = NCS;

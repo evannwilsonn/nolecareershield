@@ -98,7 +98,7 @@ def student(n, email="jordan@fsu.edu", name="Jordan R.", visible=True, resume=RE
         data["visible"] = "1"
     files = {"resume": ("resume.txt", resume.encode(), "text/plain")} if resume else None
     r = c.post("/profile/setup/3", data=data, files=files)
-    assert r.status_code == 303 and r.headers["location"] == "/profile?welcome=1", r.text[:500]
+    assert r.status_code == 303 and r.headers["location"].startswith("/profile?welcome=1"), r.text[:500]
     return c, uid
 
 
@@ -185,7 +185,8 @@ def test_profile_visibility_rules(net):
     # Approved employer: hidden student -> not available; visible student -> basics, no resume unless shared.
     assert emp.get(f"/u/{uid1}").status_code == 404
     t = emp.get(f"/u/{uid2}").text
-    assert "Blair B." in t and "Leon County Health" not in t and "linkedin.com/in/jordanrivera" in t
+    # Approved employers see the profile sections (like Handshake) but not the resume itself unless it's shared.
+    assert "Blair B." in t and "Leon County Health" in t and "<h2>Resume</h2>" not in t and "linkedin.com/in/jordanrivera" in t
     # Unapproved employers see nobody and can't open the directory.
     assert pend.get(f"/u/{uid2}").status_code == 404
     assert "opens once a reviewer approves" in pend.get("/talent").text
@@ -220,7 +221,7 @@ def test_messaging_between_student_and_approved_employer(net):
     job = add_job(net, eid)
     # The listing offers "Message the employer" and "Tailor my resume" to students.
     page = s.get(f"/job/{job}").text
-    assert f"/messages/new?to={eid}&amp;job={job}" in page and "Tailor my resume" in page and "% match" in page
+    assert f"/messages/new?to={eid}&amp;job={job}" in page and "Your fit for this job" in page and "Tailor your resume to this job" in page
     t = ucsrf(s)
     r = s.post("/messages/new", data={"csrf": t, "to": eid, "job": job, "body": "Hi! Is the data internship still open for summer?"})
     assert r.status_code == 303

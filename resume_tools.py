@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 import ai
 import matching
+import profile_page
 import profiles
 import resume_engine
 import security
@@ -202,7 +203,7 @@ def _studio(conn, user, tab: str = "review", extra: str = "", notice: str = "", 
     elif tab == "tailor":
         with_jobs = store.live_jobs(conn, security.LISTING_TTL_DAYS)
         ranked = matching.rank_jobs(with_jobs, p, limit=40) if with_jobs else []
-        opts = "".join(f'<option value="{int(r["job"]["id"])}"{" selected" if int(r["job"]["id"]) == job else ""}>{esc(r["job"]["title"])} · {esc(r["job"]["company"])} ({r["score"]}% match)</option>' for r in ranked)
+        opts = "".join(f'<option value="{int(r["job"]["id"])}"{" selected" if int(r["job"]["id"]) == job else ""}>{esc(r["job"]["title"])} · {esc(r["job"]["company"])} (fit {r.get("fit", {}).get("score", r["score"])})</option>' for r in ranked)
         body += f"""{extra}<form method="post" action="/resume/tailor" class="card">{ui.user_csrf_input()}
 <div class="form-field"><label for="t-job">A job on the board</label><select id="t-job" name="job_id"><option value="">Choose a listing...</option>{opts}</select></div>
 <div class="or"><span>Or paste a job description</span></div>
@@ -262,6 +263,8 @@ async def upload(request: Request):
         if not p.get("skills"):
             fields["skills"] = matching.extract_skills(text)[:20]
         profiles.save_student(conn, user["id"], **fields)
+        if not store.profile_items(conn, user["id"]):
+            profile_page.import_resume(conn, user["id"], text)
     return RedirectResponse("/resume?tab=review", status_code=303)
 
 

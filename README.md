@@ -30,12 +30,13 @@ Signed-in students and employers get an app layout (sidebar, bento home) with:
 | Feature | Where | What it does |
 |---|---|---|
 | Profile setup | `/profile/setup` | 3 steps for students (about, skills and goals, resume and privacy), 2 for employers. New accounts land here after confirming their email. |
-| Profiles | `/profile`, `/u/{id}`, `/company/{id}` | Students choose whether approved employers can find them and whether their resume is shared. Employers are reviewed by a person before they can message students or post. |
+| Profiles | `/profile`, `/u/{id}`, `/company/{id}` | A LinkedIn-style header and sections (About, Experience, Education, Projects, Skills, Certifications, Organizations, Courses, Languages) with a Handshake-style "Looking for" column. "Fill from resume" (`resume_parse.py`) turns an uploaded resume into editable entries. Other students see only the basics; approved employers also see the sections. Employers are reviewed by a person before they can message students or post. |
 | Find students | `/talent` | Approved employers search students who opted in. |
 | Messaging | `/messages` | Student ↔ approved employer only. Every message is scanned when sent: scam-only patterns are held for a reviewer, suspicious ones are delivered with a warning and a link to the full check. Links aren't clickable; block and report on every thread; emails never contain message text. |
 | Scam check | `/check` | Paste any message (or open one from your inbox) and get one of four verdicts with the evidence and next steps. Rules decide the verdict; the optional AI opinion can only add caution. |
 | Job assistant | `/assistant` | Plain-language job search and "what fits my resume?", in the style of Indeed's Job Scout. It only ever shows approved listings: the AI cites listing IDs and the server drops any that aren't live. Pasted messages go to the scam check. |
-| Resume studio | `/resume` | Score (six categories), line-by-line rewrites that never add facts, an editor, tailoring to any listing or pasted job, saved versions, .docx download. |
+| Job fit | every listing | A 0-100 score from the whole profile (`fit.py`): skills 35, experience and projects 25, education 15, certifications 10, keywords 10, preferences 10. Parts a job doesn't ask about are left out. Each score shows where in the profile the evidence was found and a met / missing / unknown checklist of the job's requirements. It's worked out when the page opens and never stored or shown to employers. |
+| Resume studio | `/resume` | Upload PDF, Word (.docx) or text. Score (six categories), line-by-line rewrites that never add facts, an editor, tailoring to any listing or pasted job (also built into every listing page), saved versions, .docx download. |
 | FSU feed | `/feed` | Only confirmed FSU students and approved employers can read or post. Employer posts must pass an FSU-relevance check (ads rejected on the spot) and a reviewer. Student posts with scam signals are held. Three reports hide a post. |
 | Reviewer queues | `/admin/*` | Listings, employers, feed posts, held messages, reports, and messages students sent in from the checker. |
 
@@ -58,7 +59,8 @@ setup, messaging, the scam check, the job assistant, the resume studio, the FSU 
 queue, running on sample data in the browser. It uses the real stylesheet (`ui.py`), the real rules
 (`scam_detector/rulepack/core.json`) and `demo/engine.js`, a port of the Python engines. 
 `tests/test_demo_engine.py` runs that port against the Python on every labeled corpus and fails on any
-difference in a score, verdict, finding, resume score or rewrite. Rebuild after changing the site:
+difference in a score, verdict, finding, resume score, rewrite, parsed resume or job fit score. The demo reads PDFs with
+pdf.js (loaded from cdnjs only when someone uploads one) and Word files with the browser's own zip inflater. Rebuild after changing the site:
 `python demo/build.py`.
 
 ## Privacy by design
