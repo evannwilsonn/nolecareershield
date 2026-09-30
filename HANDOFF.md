@@ -11,7 +11,7 @@ stand, what was decided and why, and what's next.
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
 - **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
   commit; `tests/test_installer.py` fails if it's out of date.
-- **Tests:** `python -m pytest -q` (136 passing at handoff).
+- **Tests:** `python -m pytest -q` (138 passing at handoff).
 
 ## Rules Evan set (keep them)
 
@@ -34,6 +34,19 @@ stand, what was decided and why, and what's next.
   evidence. Visitors can name a school they want it at (only the name is stored; reviewer tab "School requests").
 - **Reviewers:** `/admin` queues for listings, employers (with trust score), feed, held messages, reports, sent-in checks
   and school requests.
+
+## Look and motion (Sept 30 redesign)
+
+- **Type:** Archivo (variable, self-hosted in `static/fonts/`, OFL). Condensed uppercase for big statements
+  (`.display`), normal width for body. Replaced the Charter serif everywhere.
+- **Effects, all in `static/fx.js` + CSS in `ui.py`:** a dot grid in the hero that leans away from the cursor, a light
+  that follows the cursor around card borders, one marquee of scam patterns, and "The teardown": a scam message that
+  comes apart as you scroll, with each red flag labelled. The teardown uses CSS scroll-driven animation (Chrome, Edge,
+  Safari 26); other browsers, phones and reduced-motion users see it already taken apart. No outside scripts or fonts,
+  so the page policy stays strict (`font-src 'self'` was added).
+- **Shared blocks:** `ui.marquee_block()`, `ui.teardown_block()`, `ui.how_students()`, `ui.how_employers()` feed both
+  the site and the demo, so they can't drift.
+- Came from six reference videos Evan sent (React Bits and Originkit effects, scroll-driven food/car sites).
 
 ## Decisions and why
 

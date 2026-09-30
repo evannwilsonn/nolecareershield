@@ -356,7 +356,7 @@ def _job_card(j: dict) -> str:
 # ---------- public routes ----------
 
 _script_src = f"'self' '{PAGE_SCRIPT_HASH}'" + (" https://challenges.cloudflare.com" if security.turnstile_enabled() else "")
-CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; "
+CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; "
        f"script-src {_script_src}; "
        + ("frame-src https://challenges.cloudflare.com; " if security.turnstile_enabled() else "")
        + "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
@@ -426,6 +426,23 @@ def static_app_js():
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
+_FX_JS = (Path(__file__).resolve().parent / "static" / "fx.js").read_bytes()
+ui.FX_JS_VERSION = hashlib.sha256(_FX_JS).hexdigest()[:10]
+_FONT = (Path(__file__).resolve().parent / "static" / "fonts" / "archivo.woff2").read_bytes()
+
+
+@app.get("/static/fx.js")
+def static_fx_js():
+    return Response(_FX_JS, media_type="text/javascript; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/static/fonts/archivo.woff2")
+def static_font():
+    # Archivo, SIL Open Font License 1.1 (static/fonts/OFL.txt). Self-hosted: no third-party font requests.
+    return Response(_FONT, media_type="font/woff2", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 _ERROR_TEXT = {
     404: ("Page not found", "That page doesn't exist. It may have been removed, or the link may have a typo."),
     405: ("That link can't be opened directly", "This address only works when it is used from a button on the site."),
@@ -488,37 +505,30 @@ def landing(request: Request):
             if not p or not p.get("setup_step"):
                 return RedirectResponse("/profile/setup", status_code=303)
         return HTMLResponse(shell(profiles.dashboard(user), title="Home — NoleCareerShield", active="/", js=True))
-    n = public_count()
-    count_line = f"{n} approved listing{'s' if n != 1 else ''} live right now" if n else "Approved listings will appear here"
-    hero = f"""<section class="hero"><div class="hero-in"><div>
-<div class="eyebrow">For FSU students · Scam-checked</div>
-<h1>Student jobs, <em>checked for scams</em> before you see them.</h1>
-<p>Every listing is scanned and approved by a person. Build a profile, message verified employers, get matched by the job assistant and sharpen your resume, all in one place.</p>
-<div class="cta"><a class="primary" href="/login">Join or log in with your @fsu.edu email</a><a class="secondary" href="/check">Try the scam check</a></div>
-<div class="count">{count_line}</div></div>
+    hero = f"""<section class="hero"><canvas class="fxgrid" data-fx="grid" aria-hidden="true"></canvas><div class="hero-in">
+<div class="hero-top"><div class="eyebrow">For FSU students</div>
+<h1 class="display"><span class="ln"><span>Student jobs.</span></span><span class="ln"><span><em>Checked</em> for scams<span class="dot">.</span></span></span></h1></div>
+<div class="hero-copy"><p>Every listing is scanned, then approved by a person, before an FSU student ever sees it.</p>
+<div class="cta"><a class="primary" href="/login">Join with your FSU email</a><a class="secondary" href="/check">Try the scam check</a></div></div>
 <div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
-<b style="font-family:var(--serif);font-weight:500;font-size:19px">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</b>
+<p class="quote">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</p>
 <div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
 <div class="mini"><b>{ui.icon("spark", 15)} Job assistant <span class="pill accent" style="margin-left:4px">FSU students</span></b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
-</div></div></section>
-<section class="how"><div class="how-inner">
-<div class="how-item"><b><span class="n">01</span>Only vetted listings</b><p>Every posting is scam-scanned, then a person approves it. Employers are reviewed before they can message you.</p></div>
-<div class="how-item"><b><span class="n">02</span>Tools that work for you</b><p>A job assistant that knows your skills, a resume reviewer and tailorer, and a checker for any suspicious message.</p></div>
-<div class="how-item"><b><span class="n">03</span>An FSU-only feed</b><p>Only verified students and approved employers post, and employer posts must be opportunities or advice for FSU students.</p></div>
-</div></section>"""
+</div></div></section>{ui.marquee_block()}{ui.teardown_block('<a href="/check?kind=message">Check a message you got →</a>')}
+{ui.how_students()}"""
     jobs = query_public()
     if jobs:
         with store.db() as conn:
             employers = conn.execute("SELECT COUNT(*) FROM employer_profiles WHERE status = 'approved'").fetchone()[0]
         emp = f" from {employers} approved employer{'s' if employers != 1 else ''}" if employers else ""
         cards = "".join(_teaser_card(j) for j in jobs[:3])
-        body = (f'<h3 class="sec">Latest listings <small>for FSU students</small></h3>'
-                f'<p class="muted" style="margin:-4px 0 14px">{len(jobs)} verified listing{"s" if len(jobs) != 1 else ""}{emp}, every one scam-checked and '
-                f'approved by a person. Log in with your @fsu.edu email to see the details and apply.</p>{cards}'
+        body = (f'<h2 class="display section-title rv">Latest listings.</h2>'
+                f'<p class="muted" style="margin:0 0 18px">{len(jobs)} verified listing{"s" if len(jobs) != 1 else ""}{emp}, every one scam-checked and '
+                f'approved by a person. Log in with your @fsu.edu email to see the details and apply.</p><div class="teasers">{cards}</div>'
                 '<p style="margin:16px 0 40px"><a href="/login?next=/jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Log in to see all jobs →</a></p>')
     else:
         body = '<div class="empty" style="margin:32px 0 48px">No approved listings yet. <a href="/employers" style="color:var(--accent-ink);font-weight:600">Hiring? Post the first one.</a></div>'
-    return shell(body, hero=hero)
+    return shell(f'<section class="home-list">{body}</section>', hero=hero, wide=True)
 
 
 @app.get("/jobs", response_class=HTMLResponse)
@@ -768,25 +778,20 @@ def employers_landing(request: Request):
         n_students = conn.execute("SELECT COUNT(*) FROM student_profiles s JOIN users u ON u.id = s.user_id "
                                   "WHERE u.verified = 1 AND s.setup_step >= 1").fetchone()[0]
     reach = f"{n_students} FSU student{'s' if n_students != 1 else ''} on the board. " if n_students >= 25 else ""
-    hero = f"""<section class="hero emp"><div class="hero-in"><div>
-<div class="eyebrow">For employers</div>
-<h1>Hire FSU students <em>on a board they trust.</em></h1>
-<p>{reach}Every student is a confirmed @fsu.edu account. Every employer and every listing is reviewed by a person, so students answer your messages instead of wondering if you're a scam.</p>
-<div class="cta"><a class="primary" href="/signup/employer">Create an employer account</a><a class="secondary" href="/login/employer">Employer log in</a></div>
-<div class="count"><a href="/post" style="color:inherit">Or write your first listing now and sign up when you send it →</a></div></div>
+    hero = f"""<section class="hero emp"><canvas class="fxgrid" data-fx="grid" aria-hidden="true"></canvas><div class="hero-in">
+<div class="hero-top"><div class="eyebrow">For employers</div>
+<h1 class="display long"><span class="ln"><span>Hire FSU students.</span></span><span class="ln"><span>On a board they <em>trust</em><span class="dot">.</span></span></span></h1></div>
+<div class="hero-copy"><p>{reach}Every student is a confirmed @fsu.edu account, and every employer and listing is reviewed by a person.</p>
+<div class="cta"><a class="primary" href="/signup/employer">Create an employer account</a><a class="secondary" href="/login/employer">Employer log in</a></div></div>
 <div class="hero-card" aria-label="What employers get"><span class="stamp">Employers</span>
 <div class="mini"><b>{ui.icon("people", 15)} Ranked matches for every listing</b><p>Each student who opted in, scored against your listing on their whole profile, with the evidence: skills, projects, coursework, GPA.</p></div>
 <div class="mini"><b>{ui.icon("chat", 15)} Invite to apply in one click</b><p>A ready-to-send message about the role. Students see you're an approved employer.</p></div>
 <div class="mini"><b>{ui.icon("jobs", 15)} Candidates and listing stats</b><p>Track students from new to hired, and see how many viewed and clicked Apply.</p></div>
-</div></div></section>"""
-    body = """<section class="how"><div class="how-inner">
-<div class="how-item"><b><span class="n">01</span>Create your account</b><p>Use an email on your company's domain. It helps us verify you faster and raises your trust score.</p></div>
-<div class="how-item"><b><span class="n">02</span>Get approved</b><p>A person checks your website, email and how you work with FSU students, usually within a business day.</p></div>
-<div class="how-item"><b><span class="n">03</span>Post and match</b><p>Each listing is scam-scanned and reviewed, then shown to FSU students with your trust score. Your ranked matches are ready as soon as it's live.</p></div>
-</div></section>
-<div class="card" style="margin:24px 0 40px"><h3 class="sec" style="margin-top:0">What students see about you</h3><p>Your company page shows your details, open listings and a trust score from 0 to 100 built from what we can check: reviewer approval, your email domain and website, how your listings were reviewed, how you answer students, and how complete your profile is. <a href="/privacy">How we handle data</a>.</p>
-<div class="row" style="margin-top:14px"><a class="b" href="/signup/employer">Create an employer account</a><a class="b sec" href="/login/employer">Log in</a></div></div>"""
-    return shell(body, hero=hero, title="For employers — NoleCareerShield")
+</div></div></section>
+{ui.how_employers()}"""
+    body = """<div class="card rv" style="margin:28px 0 40px"><h3 class="sec" style="margin-top:0">What students see about you</h3><p>Your company page shows your details, open listings and a trust score from 0 to 100 built from what we can check: reviewer approval, your email domain and website, how your listings were reviewed, how you answer students, and how complete your profile is. <a href="/privacy">How we handle data</a>.</p>
+<p style="margin-top:12px"><a href="/post" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Or write your first listing now and sign up when you send it →</a></p></div>"""
+    return shell(f'<section class="home-list">{body}</section>', hero=hero, title="For employers — NoleCareerShield", wide=True)
 
 
 @app.get("/about", response_class=HTMLResponse)

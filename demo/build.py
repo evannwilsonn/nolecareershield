@@ -13,6 +13,7 @@ and demo/index.html (a complete page for any static host).
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -66,9 +67,11 @@ SHELL = """<title>{title}</title>
 <div class="nav-actions" id="navActions"></div></div></header>
 <div id="app"></div>
 <script>var NCS_RULEPACK = {rules};
-var NCS_SEED = {seed};</script>
+var NCS_SEED = {seed};
+var NCS_BLOCKS = {blocks};</script>
 <script>{engine}</script>
 <script>{app}</script>
+<script>{fx}</script>
 """
 
 
@@ -79,9 +82,20 @@ def build() -> tuple[Path, Path]:
         for k in ("score", "scam_status", "findings"):
             j.pop(k, None)
     safe = lambda obj: json.dumps(obj, separators=(",", ":")).replace("</", "<\\/")
+    # The landing-page blocks are the site's own markup; links point at the demo's router instead.
+    blocks = {"marquee": ui.marquee_block(),
+              "teardown": ui.teardown_block('<a href="#" data-go="scam?kind=message">Check a message you got →</a>'),
+              "howStudents": ui.how_students(), "howEmployers": ui.how_employers()}
+    # The font is embedded, since the demo is one self-contained file.
+    font = base64.b64encode((ROOT / "static" / "fonts" / "archivo.woff2").read_bytes()).decode()
+    css = themed_css(ui.CSS).replace("url(/static/fonts/archivo.woff2) format(\"woff2-variations\"),url(/static/fonts/archivo.woff2) format(\"woff2\")",
+                                     f"url(data:font/woff2;base64,{font}) format(\"woff2\")")
+    if "data:font/woff2" not in css:
+        raise SystemExit("font-face not found in ui.CSS")
     body = SHELL
-    for key, val in {"title": TITLE, "css": themed_css(ui.CSS) + DEMO_CSS, "emblem": ui.EMBLEM, "rules": safe(rules), "seed": safe(seed),
-                     "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text()}.items():
+    for key, val in {"title": TITLE, "css": css + DEMO_CSS, "emblem": ui.EMBLEM, "rules": safe(rules), "seed": safe(seed),
+                     "blocks": safe(blocks), "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text(),
+                     "fx": (ROOT / "static" / "fx.js").read_text()}.items():
         body = body.replace("{" + key + "}", val)
     art = HERE / "NoleCareerShield_Demo.html"
     art.write_text(body)

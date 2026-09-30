@@ -726,8 +726,11 @@ def test_only_the_hashed_script_can_run_and_only_on_account_pages(client):
     csp = client.get("/").headers["content-security-policy"]
     assert f"script-src 'self' '{client.appmod.PAGE_SCRIPT_HASH}'" in csp and "unsafe-inline'" in csp.split("style-src")[1].split(";")[0]
     assert "script-src 'unsafe" not in csp
+    import re
+    # Public pages run no inline script; the only script is the same-origin decoration file (static/fx.js).
     for path in ("/", "/jobs", "/post", "/about", "/privacy"):
-        assert "<script" not in client.get(path).text, path
+        tags = re.findall(r"<script[^>]*>", client.get(path).text)
+        assert all(re.fullmatch(r'<script src="/static/fx\.js\?v=[0-9a-f]+" defer>', t) for t in tags) and len(tags) <= 1, path
     for path in ("/login/student", "/signup/employer", "/forgot/student"):
         html = client.get(path).text
         assert html.count("<script>") == 1 and f"<script>{client.appmod.PAGE_SCRIPT}</script>" in html, path
@@ -757,7 +760,7 @@ def test_login_button_and_email_first_start(client):
     assert "Student log in" in st and 'href="/employers"' in st and 'class="tabs"' not in st
     assert "Create your employer account" in em and 'href="/login">Log in with your @fsu.edu email' in em and 'class="tabs"' not in em
     head = client.get("/").text
-    assert 'href="/employers">For employers</a>' in head and "Join or log in with your @fsu.edu email" in head
+    assert 'href="/employers">For employers</a>' in head and "Join with your FSU email" in head
     tok = csrf_from(page)
     r = client.post("/login", data={"csrf": tok, "email": "Jane@FSU.edu"})         # no SSO configured: straight to the student password page
     assert r.status_code == 200 and 'action="/login/student"' in r.text and 'value="jane@fsu.edu"' in r.text
@@ -842,3 +845,23 @@ def test_reviewer_pill_names_aggregators_instead_of_score_zero(client):
     assert ">Aggregator · flagged<" in pill({"score": 0, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
     assert ">Scam risk 100 · held<" in pill({"score": 100, "scam_status": "held", "findings_json": "[]"})
     assert ">Scam risk 40 · flagged · aggregator<" in pill({"score": 40, "scam_status": "flagged", "findings_json": _json.dumps([{"rule_id": "lead_gen"}])})
+
+
+
+def test_font_and_effects_are_self_hosted(client):
+    csp = client.get("/").headers["content-security-policy"]
+    assert "font-src 'self'" in csp and "fonts.googleapis" not in csp
+    r = client.get("/static/fonts/archivo.woff2")
+    assert r.status_code == 200 and r.headers["content-type"] == "font/woff2" and r.content[:4] == b"wOF2"
+    r = client.get("/static/fx.js")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript") and "immutable" in r.headers["cache-control"]
+
+
+def test_landing_pages_carry_the_new_blocks(client):
+    home = client.get("/").text
+    assert 'data-fx="grid"' in home and 'class="marquee"' in home and 'class="teardown"' in home and 'class="how-bento"' in home
+    # The teardown flags come from real detector rules, and the check link goes to the message tab.
+    assert "The fake-check scam" in home and 'href="/check?kind=message"' in home
+    assert "—" not in re.sub(r"<title>.*?</title>", "", home)          # no em-dashes in visible copy
+    emp = client.get("/employers").text
+    assert 'class="how-bento three"' in emp and 'data-fx="grid"' in emp
