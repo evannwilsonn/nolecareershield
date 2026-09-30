@@ -215,7 +215,7 @@ def _inbox_page(conn, user: dict, c: dict | None = None, error: str = "", draft:
     body = (f'<a class="back" href="/messages" style="margin-top:14px">← All messages</a>'
             f'<div class="inbox open" style="margin-top:6px"><div class="threads">{threads}</div>{right}</div>'
             '<p class="small faint" style="margin-top:10px">Links in messages aren\'t clickable. Never send money, gift cards or bank details to get a job. '
-            '<a href="/check">Check a message</a></p>')
+            '<a href="/check?kind=message">Check a message</a></p>')
     return web.page(body, f"Messages with {name}", active="/messages", js=True, status=status)
 
 

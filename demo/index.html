@@ -1777,7 +1777,7 @@ function sidebar(active) {
     if (grp) out.push(`<div class="grp">${esc(grp)}</div>`);
     for (const [ic, go, label] of items) out.push(`<a href="#" data-go="${go}"${go === active ? ' class="on" aria-current="page"' : ""}>${icon(ic)}<span>${esc(label)}</span>${go === "messages" && n ? `<span class="count" aria-label="${n} unread">${n}</span>` : ""}</a>`);
   }
-  return `<aside class="side"><nav aria-label="Main">${out.join("")}</nav><div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. <a href="#" data-go="scam">Check a message</a>.</div></aside>`;
+  return `<aside class="side"><nav aria-label="Main">${out.join("")}</nav><div class="tip"><b>Stay safe:</b> real employers never ask you to pay, deposit a check, or buy gift cards. <a href="#" data-go="scam?kind=message">Check a message</a>.</div></aside>`;
 }
 function nav() {
   $("#inboxBtn").textContent = "Demo inbox" + (S.inbox.length ? ` (${S.inbox.length})` : "");
@@ -1829,7 +1829,7 @@ function studentHome() {
   return `<div class="page-head"><div class="num">${esc(date)}</div><h1>${hello}, ${esc((p.display_name || "").split(" ")[0])}.</h1><p>Here's what's new for you. Every listing and message is scanned for scams before you see it.</p></div>
 <div class="bento"><div class="tile w4 tall"><h3>${icon("spark")}Recommended for you</h3>${recHtml}<div class="foot row"><a class="b sm" href="#" data-go="assistant">Ask the job assistant</a><a class="b sm sec" href="#" data-go="jobs">All jobs</a></div></div>
 <div class="tile w2 goldt"><h3>${icon("chat")}Messages</h3><div class="big">${n}</div><p>unread message${n !== 1 ? "s" : ""}</p><div class="foot"><a class="b sm sec" href="#" data-go="messages">Open messages</a></div></div>
-<div class="tile w2"><h3>${icon("shield")}Scam check</h3><p>Got a DM or email about a job? Paste it and get a verdict with the evidence.</p><div class="foot"><a class="b sm sec" href="#" data-go="scam">Check a message</a></div></div>
+<div class="tile w2"><h3>${icon("shield")}Scam check</h3><p>Got a DM or email about a job? Paste it and get a verdict with the evidence.</p><div class="foot"><a class="b sm sec" href="#" data-go="scam?kind=message">Check a message</a></div></div>
 ${resumeTile}
 <div class="tile w3"><h3>${icon("user")}Profile</h3><div class="meter"><i style="width:${pct}%"></i></div><p>${pct}% complete${missing.length ? ". Add " + esc(missing[0]) : ""}</p><div class="foot"><a class="b sm sec" href="#" data-go="profile">View profile</a></div></div>
 <div class="tile w6"><h3>${icon("feed")}From the FSU feed</h3>${posts.map(x => `<p style="border-left:2px solid var(--line);padding-left:10px;margin-top:6px">${esc(x.body.slice(0, 120))}${x.body.length > 120 ? "…" : ""}</p>`).join("")}<div class="foot"><a class="b sm sec" href="#" data-go="feed">Open the feed</a></div></div></div>`;
@@ -1968,14 +1968,14 @@ function listingForm(v) {
 <div class="form-field"><label for="l-contact">Contact email (optional)</label><p class="hint">The address the listing says to write to.</p><input id="l-contact" name="contact" maxlength="200" value="${val("contact")}" placeholder="hr@company.com"></div></div>
 <div class="row"><button class="b" type="submit">${icon("shield", 16)} Check this listing</button><span class="small faint">Or try a sample:</span>${LISTING_SAMPLES.map((s, i) => `<button class="b sm sec" type="button" data-do="lsample" data-i="${i}">${esc(s[0])}</button>`).join("")}</div></form>`;
 }
-const kindTabs = kind => `<div class="seg" role="tablist" style="margin-bottom:16px"><a href="#" data-go="scam"${kind === "message" ? ' class="on" aria-current="page"' : ""}>A message</a><a href="#" data-go="scam?kind=listing"${kind === "listing" ? ' class="on" aria-current="page"' : ""}>A job listing</a></div>`;
+const kindTabs = kind => `<div class="seg" role="tablist" style="margin-bottom:16px"><a href="#" data-go="scam"${kind === "listing" ? ' class="on" aria-current="page"' : ""}>A job listing</a><a href="#" data-go="scam?kind=message"${kind === "message" ? ' class="on" aria-current="page"' : ""}>A message</a></div>`;
 const SAMPLES = [
   ["Fake professor", "Hi! I'm Dr. Carter from the Biology department. I need a personal assistant for $400 weekly, only a few hours. Text me at 850-555-0199 from your personal email, not your fsu.edu account.", "dr.carter.fsu@gmail.com"],
   ["Check scam", "Congratulations! You've been approved for a remote data entry role. We will mail you a check to purchase your equipment from our vendor. Deposit it and send the rest via Zelle.", ""],
   ["Real recruiter", "Hi Jordan, thanks for applying to the Marketing Data Analyst role at Garnet Analytics. Are you free for a 30-minute video interview next Tuesday or Wednesday afternoon? - Pat Lee, Campus Recruiter", "pat.lee@garnetanalytics.example"],
 ];
 P.scam = () => {
-  if (S.route.q.kind === "listing") {
+  if (S.route.q.kind !== "message" && !S.route.q.m) {          // a job listing is the default tab
     const v = S.listingIn, r = S.route.q.run && v ? checkListing(v) : null;
     const top = r ? (fullView() ? verdictHtml(r) : publicVerdictHtml(r) + schoolForm()) : "";
     return pageHead("Is this job listing a scam?", "Found a job on Handshake, LinkedIn, Indeed, Instagram or a flyer? Paste it and get the same scam check every listing on NoleCareerShield goes through.", "Scam check")
@@ -2002,7 +2002,7 @@ P.assistant = () => {
   const p = SP(me().id), first = (p.display_name || "").split(" ")[0];
   if (!S.chat) S.chat = [{role: "bot", text: `Hi${first ? " " + first : ""}! I'm your job assistant. Ask for any kind of job, ask what fits your resume, or paste a message you got and I'll tell you if it looks like a scam.`}];
   const log = S.chat.map(t => t.role === "me" ? `<div class="say me">${esc(t.text)}</div>`
-    : `<div class="say bot"><div class="who">${icon("spark", 14)} Assistant</div>${esc(t.text)}${t.jobs && t.jobs.length ? `<div class="cards">${t.jobs.map(r => jobCard(r.job, r)).join("")}</div>` : ""}${t.scam ? `<div class="row" style="margin-top:8px"><a class="b sm sec" href="#" data-go="scam">Open Scam check</a></div>` : ""}</div>`).join("");
+    : `<div class="say bot"><div class="who">${icon("spark", 14)} Assistant</div>${esc(t.text)}${t.jobs && t.jobs.length ? `<div class="cards">${t.jobs.map(r => jobCard(r.job, r)).join("")}</div>` : ""}${t.scam ? `<div class="row" style="margin-top:8px"><a class="b sm sec" href="#" data-go="scam?kind=message">Open Scam check</a></div>` : ""}</div>`).join("");
   return pageHead("Job assistant", "Your scout for the NoleCareerShield board. It only suggests listings that passed the scam scan and a human review.", "Assistant") +
     `<div class="chat" id="chat"><div class="log" id="log" aria-live="polite">${log}</div>${S.chat.length === 1 ? `<div class="sugg">${SUGG.map((s, i) => `<button type="button" data-do="ask" data-i="${i}">${esc(s.length < 48 ? s : s.slice(0, 45) + "…")}</button>`).join("")}</div>` : ""}
 <form id="askForm"><label for="q" class="hp">Your question</label><textarea id="q" name="q" required maxlength="4000" placeholder="e.g. paid research assistant jobs for a psych major" rows="1"></textarea><button class="b" type="submit" aria-label="Ask">${icon("send", 16)}</button></form></div>
@@ -2095,7 +2095,7 @@ P.messages = () => {
 <div class="thread" id="thread">${bubbles}</div>${closed}</div>`;
   }
   return (c ? '<a class="back" href="#" data-go="messages">← All messages</a>' : pageHead("Messages", "Students and approved employers only. Every message is scanned for scam signs when it's sent.", "Messages")) + takeFlash() +
-    `<div class="inbox${c ? " open" : ""}"><div class="threads">${threads}</div>${right}</div><p class="small faint" style="margin-top:10px">Links in messages aren't clickable. Never send money, gift cards or bank details to get a job. <a href="#" data-go="scam">Check a message</a></p>`;
+    `<div class="inbox${c ? " open" : ""}"><div class="threads">${threads}</div>${right}</div><p class="small faint" style="margin-top:10px">Links in messages aren't clickable. Never send money, gift cards or bank details to get a job. <a href="#" data-go="scam?kind=message">Check a message</a></p>`;
 };
 P.newmsg = () => {
   if (!me()) return needLogin("messages");
@@ -2899,10 +2899,10 @@ document.addEventListener("click", e => {
     "admin-out": () => { S.admin = false; go("home"); },
     reset: () => { S.timers.forEach(clearTimeout); reset(); render(); },
     show: () => { const i = d.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; d.textContent = i.type === "password" ? "Show" : "Hide"; },
-    lsample: () => { if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam?kind=listing"); }
-      S.listingIn = Object.assign({}, LISTING_SAMPLES[Number(d.dataset.i)][1]); go("scam?kind=listing&run=1"); },
-    sample: () => { if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam"); }
-      const s = SAMPLES[Number(d.dataset.i)]; go(`scam?run=1&text=${encodeURIComponent(s[1])}&sender=${encodeURIComponent(s[2])}`); },
+    lsample: () => { if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam"); }
+      S.listingIn = Object.assign({}, LISTING_SAMPLES[Number(d.dataset.i)][1]); go("scam?run=1"); },
+    sample: () => { if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam?kind=message"); }
+      const s = SAMPLES[Number(d.dataset.i)]; go(`scam?kind=message&run=1&text=${encodeURIComponent(s[1])}&sender=${encodeURIComponent(s[2])}`); },
     ask: () => ask(SUGG[Number(d.dataset.i)]),
     "apply-rewrite": () => { const r = S.lastRewrites[Number(d.dataset.i)], p = SP(me().id); if (r && p.resume_text.includes(r.text)) p.resume_text = p.resume_text.replace(r.text, r.rewrite); flash("verified", "Rewrite applied. Fill in any [placeholder] with your real numbers."); render(true); },
     "sample-resume": () => { const p = SP(me().id); p.resume_text = RESUME; p.resume_name = "Sample resume"; if (!(p.items || []).length) importResume(p); render(); },
@@ -2950,16 +2950,16 @@ document.addEventListener("submit", e => {
   if (id === "talentForm") return go("talent" + (g("q") ? "?q=" + encodeURIComponent(g("q")) : ""));
   if (id === "adminLogin") { S.admin = true; return go("admin"); }
   if (id === "scamForm") { if (!g("text")) return;
-    if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam"); }
-    return go(`scam?run=1&text=${encodeURIComponent(g("text").slice(0, 8000))}&sender=${encodeURIComponent(g("sender"))}`); }
+    if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam?kind=message"); }
+    return go(`scam?kind=message&run=1&text=${encodeURIComponent(g("text").slice(0, 8000))}&sender=${encodeURIComponent(g("sender"))}`); }
   if (id === "listingForm") {
     const v = {}; for (const k of ["title", "company", "description", "url", "contact"]) v[k] = g(k);
     S.listingIn = v;
-    if (!v.title || v.description.length < 40) { flash("warning", "Add the job title and paste the listing (at least a couple of sentences)."); return go("scam?kind=listing"); }
-    if (v.url && !/^(?:https?:\/\/)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[\/?#:][^\s<>"']*)?$/.test(v.url)) { flash("warning", "The apply link doesn't look like a web address. Leave it empty if there isn't one."); return go("scam?kind=listing"); }
+    if (!v.title || v.description.length < 40) { flash("warning", "Add the job title and paste the listing (at least a couple of sentences)."); return go("scam"); }
+    if (v.url && !/^(?:https?:\/\/)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[\/?#:][^\s<>"']*)?$/.test(v.url)) { flash("warning", "The apply link doesn't look like a web address. Leave it empty if there isn't one."); return go("scam"); }
     if (v.url && !/^https?:\/\//i.test(v.url)) v.url = "https://" + v.url;
-    if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam?kind=listing"); }
-    return go("scam?kind=listing&run=1");
+    if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam"); }
+    return go("scam?run=1");
   }
   if (id === "schoolForm") { const name = g("school").replace(/\s+/g, " ").slice(0, 80);
     if (name.length < 3 || !/[A-Za-z]{2}/.test(name) || /[<>{}@]|https?:|www\./.test(name)) { flash("warning", "Type your school's name, like University of Florida."); return render(true); }

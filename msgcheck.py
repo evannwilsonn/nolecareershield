@@ -357,8 +357,8 @@ def _form(text: str = "", sender: str = "", ai_on: bool = False) -> str:
 
 def _kind_tabs(kind: str) -> str:
     return ('<div class="seg" role="tablist" style="margin-bottom:16px">'
-            f'<a href="/check"{" class=on aria-current=page" if kind == "message" else ""}>A message</a>'
-            f'<a href="/check?kind=listing"{" class=on aria-current=page" if kind == "listing" else ""}>A job listing</a></div>')
+            f'<a href="/check"{" class=on aria-current=page" if kind == "listing" else ""}>A job listing</a>'
+            f'<a href="/check?kind=message"{" class=on aria-current=page" if kind == "message" else ""}>A message</a></div>')
 
 
 def _page(inner: str, status: int = 200, kind: str = "message") -> HTMLResponse:
@@ -388,10 +388,10 @@ def _listing_form(v: dict | None = None) -> str:
 
 
 @router.get("/check", response_class=HTMLResponse)
-def check_form(request: Request, m: int = 0, kind: str = "message"):
+def check_form(request: Request, m: int = 0, kind: str = "listing"):
     security.enforce_rate_limit(request, security.general_limiter, "check_page")
-    if kind == "listing":
-        return _page(_listing_form(), kind="listing")
+    if kind != "message" and not m:
+        return _page(_listing_form(), kind="listing")          # a job listing is the default tab
     user = web.current_user(request)
     if m and user:
         # Check a message you received on NoleCareerShield.
