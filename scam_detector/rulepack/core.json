@@ -1,5 +1,5 @@
 {
- "version": "2026.09.29",
+ "version": "2026.09.29.2",
  "rules": [
   {
    "id": "advance_fee",
@@ -139,11 +139,12 @@
    "severity": "critical",
    "weight": 24,
    "title": "Payment through irreversible channels",
-   "why": "Gift cards, crypto, and peer-to-peer apps can't be reversed or traced. No payroll uses them.",
+   "why": "Gift cards, crypto and wire services can't be reversed or traced, and no payroll pays in them. Being asked to SEND money through Zelle, Cash App or Venmo is the same trap. (Small gigs paying you through PayPal or Venmo is common and is not flagged on its own.)",
    "phrases": [],
    "patterns": [
-    "\\b(?:pay|paid|payment|payments|salary|send|sent|deposit|transfer|buy|purchase|codes?|top\\s?up|recharge|wire|withdraw\\w*)\\b[^.\\n]{0,40}\\b(?:bitcoin|btc|usdt|usdc|crypto(?:currency)?|gift\\s+cards?|apple\\s+cards?|itunes|zelle|cash\\s?app|venmo|western\\s+union|moneygram)\\b",
-    "\\b(?:bitcoin|btc|usdt|usdc|crypto(?:currency)?|gift\\s+cards?|apple\\s+cards?|itunes|zelle|cash\\s?app|venmo|western\\s+union|moneygram)\\b[^.\\n]{0,25}\\b(?:paid|payment|payments|salary|deposit|transfer|codes?)\\b"
+    "\\b(?:send|sent|deposit|transfer|buy|purchase|codes?|top\\s?up|recharge|wire|withdraw\\w*|reimburse\\w*|pay\\s+(?:for|us|them|the|a|your|back))\\b[^.\\n]{0,40}\\b(?:bitcoin|btc|usdt|usdc|crypto(?:currency)?|gift\\s+cards?|apple\\s+cards?|itunes|zelle|cash\\s?app|venmo|western\\s+union|moneygram)\\b",
+    "\\b(?:paid|payment|payments|salary|wages?|pay)\\b[^.\\n]{0,40}\\b(?:bitcoin|btc|usdt|usdc|crypto(?:currency)?|gift\\s+cards?|apple\\s+cards?|itunes|western\\s+union|moneygram)\\b",
+    "\\b(?:bitcoin|btc|usdt|usdc|crypto(?:currency)?|gift\\s+cards?|apple\\s+cards?|itunes|western\\s+union|moneygram)\\b[^.\\n]{0,25}\\b(?:paid|payment|payments|salary|deposit|transfer|codes?)\\b"
    ],
    "guards": [
     "negation"
@@ -151,7 +152,17 @@
    "min_matches": 1,
    "bonus": 3,
    "added": "2026-09-29",
-   "source": "original"
+   "source": "original",
+   "history": [
+    {
+     "date": "2026-09-30",
+     "change": "stopped flagging P2P apps used to PAY the worker (false positives on a real mystery-shop audit and a real promoter gig in the Sept 2026 field test); still flags sending money through them and pay in gift cards/crypto/wire",
+     "previous_patterns": [
+      "\\b(?:pay|paid|payment|payments|salary|send|sent|deposit|transfer|buy|purchase|codes?|top\\s?up|recharge|wire|withdraw\\w*)\\b[^.\\n]{0,40}\\b(?:bitcoin|btc|usdt|usdc|crypto(?:currency)?|gift\\s+cards?|apple\\s+cards?|itunes|zelle|cash\\s?app|venmo|western\\s+union|moneygram)\\b",
+      "\\b(?:bitcoin|btc|usdt|usdc|crypto(?:currency)?|gift\\s+cards?|apple\\s+cards?|itunes|zelle|cash\\s?app|venmo|western\\s+union|moneygram)\\b[^.\\n]{0,25}\\b(?:paid|payment|payments|salary|deposit|transfer|codes?)\\b"
+     ]
+    }
+   ]
   },
   {
    "id": "task_scam",
@@ -349,14 +360,21 @@
     "earn while you learn"
    ],
    "patterns": [
-    "\\bno\\s+(?:work\\s+)?experience(?:\\s+or\\s+skills?)?\\s+(?:is\\s+|are\\s+)?(?:necessary|required|needed)\\b",
+    "\\bno\\s+(?:prerequisite\\s+)?(?:training\\s+or\\s+)?(?:work\\s+)?experience(?:\\s+or\\s+(?:skills?|training))?\\s+(?:is\\s+|are\\s+)?(?:necessary|required|needed)\\b",
     "\\bearn\\s+\\$\\s?\\d[\\d,]*(?:\\s*(?:-|to)\\s*\\$?\\s?\\d[\\d,]*)?\\s*(?:daily|a day|per day|every day)\\b"
    ],
    "guards": [],
    "min_matches": 1,
    "bonus": 3,
    "added": "2026-09-29",
-   "source": "original"
+   "source": "original",
+   "history": [
+    {
+     "date": "2026-09-30",
+     "change": "also match 'no prerequisite training or experience needed' (missed in the Sept 2026 field test)",
+     "previous_pattern": "\\bno\\s+(?:work\\s+)?experience(?:\\s+or\\s+skills?)?\\s+(?:is\\s+|are\\s+)?(?:necessary|required|needed)\\b"
+    }
+   ]
   },
   {
    "id": "pay_to_work",
@@ -455,6 +473,323 @@
    "bonus": 3,
    "added": "2026-09-29",
    "source": "original"
+  },
+  {
+   "id": "preselected_offer",
+   "status": "active",
+   "severity": "warning",
+   "weight": 20,
+   "title": "A job offer you never applied for",
+   "why": "The message says you've already been 'chosen' or 'selected' or that an offer was 'approved for you', or that they found your CV or email somewhere. Real employers don't hand out offers to people who never applied.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:dear|greetings,?|hello,?)\\s+(?:chosen|selected)\\s+(?:applicant|candidate|student)s?\\b",
+    "\\b(?:job\\s+)?offer\\s+has\\s+been\\s+approved\\s+for\\s+you\\b",
+    "\\byou\\s+have\\s+been\\s+(?:chosen|selected)\\s+(?:through|by|from|for\\s+(?:a|this)\\s+job|to\\s+work)\\b",
+    "\\b(?:considered|found)\\s+you\\s+(?:as\\s+)?(?:a\\s+)?suitable\\b",
+    "\\bcame\\s+across\\s+your\\s+(?:cv|resume|profile)\\b",
+    "\\bfound\\s+your\\s+(?:email|e-mail|contact|number)\\s+(?:on|in|through)\\b",
+    "\\byou\\s+are\\s+invited\\s+to\\s+participate\\s+in\\s+a\\s+part[- ]time\\s+job\\b",
+    "\\byour\\s+resume\\s+is\\s+very\\s+suitable\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "weekly_stipend",
+   "status": "active",
+   "severity": "warning",
+   "weight": 18,
+   "title": "A flat weekly amount for part-time work",
+   "why": "Scam offers quote a round weekly sum ('$350 weekly', '$550 per week') for a few hours of vague remote work. Real part-time jobs quote an hourly rate.",
+   "phrases": [],
+   "patterns": [
+    "\\$\\s?\\d{3}(?:[.,]\\d{2})?\\s*(?:\\(?usd\\)?\\s*)?(?:weekly|per\\s+week|a\\s+week|each\\s+week|every\\s+week|/\\s?(?:week|wk))\\b",
+    "\\bweekly\\s+(?:pay|salary|remuneration|allowance|wages?|compensation|stipend)\\s*(?:of|:|is)?\\s*(?:up\\s+to\\s+)?\\$\\s?\\d{3}\\b",
+    "\\b(?:earn|make|get\\s+paid)\\s+(?:up\\s+to\\s+)?\\$\\s?\\d{3}(?:\\.\\d\\d)?\\s*(?:\\(?usd\\)?\\s*)?weekly\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "personal_channel",
+   "status": "active",
+   "severity": "warning",
+   "weight": 18,
+   "title": "Moves hiring to a personal phone, email or social account",
+   "why": "You're told to text a number, reply from your personal or 'alternative' email instead of your school address, or message someone on Instagram. That keeps the conversation away from your school's spam filters and anyone who could warn you.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:alternative|alternate|personal|private|non[- ]?school|non[- ]?edu)\\s+e-?mail(?:\\s+address)?\\b",
+    "\\bnot\\s+(?:your|the)\\s+(?:\\.?edu|school|university|student|campus)\\s+e-?mail\\b",
+    "\\btext\\s+(?:your|me\\s+your|us\\s+your|them\\s+your)\\s+(?:full\\s+)?name\\b",
+    "\\b(?:send|drop)\\s+(?:a\\s+)?text(?:\\s+message)?\\s+to\\b",
+    "\\bvia\\s+text\\s+(?:message|at)\\b",
+    "\\btext\\s+message\\s+(?:only|for\\s+a\\s+quick)\\b",
+    "\\binstagram\\b[^.\\n]{0,40}\\bmessage\\s+only\\b",
+    "\\bdrop\\s+your\\s+(?:phone|cell|mobile)\\s+number\\b",
+    "\\b(?:send|provide|reply\\s+with)\\b[^.\\n]{0,40}\\bgmail\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "any_department",
+   "status": "active",
+   "severity": "note",
+   "weight": 10,
+   "title": "Open to anyone in any department",
+   "why": "Fake 'research assistant' offers say any student from any department can do the job. Real research jobs name the skills and the lab.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:any|all)\\s+(?:academic\\s+)?departments?\\s+(?:of|in)\\s+(?:the|our)\\s+(?:institution|university|school|college)\\b",
+    "\\bfrom\\s+any\\s+(?:academic\\s+)?department\\b",
+    "\\bstudents?\\s*(?:and|/|\\\\)\\s*staffs?\\b[^.\\n]{0,80}\\b(?:job|position|opportunity|offer|employment)\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "student_hardship_bait",
+   "status": "active",
+   "severity": "note",
+   "weight": 10,
+   "title": "Promises money without touching your studies",
+   "why": "'Won't interfere with your academics', 'help struggling students cover expenses': this pitch targets students who need money and is written to lower your guard.",
+   "phrases": [],
+   "patterns": [
+    "\\bwithout\\s+(?:affecting|interfering\\s+with)\\s+(?:your|one'?s)\\s+(?:regular\\s+|daily\\s+)?(?:activities|academics?|academic\\s+performance|studies|classes|schedule|leisure)\\b",
+    "\\b(?:won'?t|will\\s+not|does\\s+not|doesn'?t)\\s+(?:interfere|affect)\\s+(?:with\\s+)?your\\s+(?:daily\\s+activities|academics|studies|present\\s+employment|study)\\b",
+    "\\bhelp\\s+(?:struggling|needy)\\s+students\\b",
+    "\\bcover\\s+expenses\\s+incurred\\b",
+    "\\bfinancial\\s+support\\s+to\\s+those\\s+who\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "reship_home",
+   "status": "active",
+   "severity": "critical",
+   "weight": 34,
+   "title": "Receive and re-ship packages from home",
+   "why": "The job is taking in parcels at your home and sending them on. That's reshipping stolen goods, and you're the one whose address is on the box.",
+   "phrases": [],
+   "patterns": [
+    "\\breshipp?(?:ing|er|ers)?\\b",
+    "\\b(?:parcels?|packages?|goods|items)\\b[^.\\n]{0,60}\\b(?:delivered|sent|shipped|mailed)\\s+to\\s+your\\s+(?:home|house|address|residence|apartment)\\b",
+    "\\bprepares?\\s+goods\\s+for\\s+forwarding\\b",
+    "\\baccept(?:ing)?\\s+and\\s+send(?:ing)?\\s+(?:mail|parcels?|packages?)\\b",
+    "\\b(?:outgoing|return)\\s+shipping\\s+labels?\\s+to\\s+print\\b",
+    "\\btake\\s+(?:pictures|photos)\\s+of\\s+(?:it|the\\s+parcels?|the\\s+packages?|each\\s+(?:parcel|package))\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "fake_check_funds",
+   "status": "active",
+   "severity": "critical",
+   "weight": 34,
+   "title": "They'll send you money to buy things",
+   "why": "You're promised a check or 'funds' to buy equipment, supplies or gifts, or you'll be 'paid in advance' for purchases. The check bounces after you've spent or forwarded the money.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:issue|send|mail|give|email)\\w*\\s+you\\s+(?:an?\\s+)?(?:official\\s+)?(?:check|cheque|paycheck)\\b",
+    "\\b(?:check|cheque|paycheck)\\s+(?:for|to\\s+cover)\\s+(?:the\\s+)?(?:office\\s+)?(?:supplies|equipment|expenses|purchases?|items)\\b",
+    "\\bfunds?\\b[^.\\n]{0,50}\\b(?:for|to\\s+(?:purchase|buy|handle|cover))\\s+(?:the\\s+)?(?:equipment|supplies|shipping|office\\s+items|gifts?|items)\\b",
+    "\\bmobile\\s+deposit\\b",
+    "\\bpurchase\\s+(?:gifts?|gift\\s+items)\\b",
+    "\\bnot\\s+to\\s+use\\s+your\\s+personal\\s+funds\\b",
+    "\\bdon'?t\\s+have\\s+to\\s+use\\s+your\\s+personal\\s+funds\\b",
+    "\\bpaid\\s+in\\s+advance\\s+for\\s+(?:all\\s+)?(?:tasks\\s+and\\s+)?purchases\\b",
+    "\\bsuppliers?\\s+payments?\\b"
+   ],
+   "guards": [
+    "negation"
+   ],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "app_boost_task",
+   "status": "active",
+   "severity": "critical",
+   "weight": 30,
+   "title": "Paid to boost apps, songs or products",
+   "why": "'Update app store data', 'increase app downloads', 'raise play counts': this is the task scam. Soon you're asked to deposit money to 'unlock' your earnings.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:increase|boost|improve|update|raise)\\w*\\s+(?:the\\s+)?(?:app(?:\\s+store)?\\s+(?:data|views|downloads|rankings?)|app\\s+views|play\\s+counts?|views\\s+and\\s+downloads|streams?\\s+(?:of|for))\\b",
+    "\\bplay\\s+counts?\\b",
+    "\\bapp\\s+store\\s+data\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "brand_recruiter_text",
+   "status": "active",
+   "severity": "warning",
+   "weight": 18,
+   "title": "Cold message 'from' a big brand's HR",
+   "why": "A text opening 'sorry to interrupt, I'm from Indeed/TikTok HR' with a daily pay range is the standard opener for task scams. Those companies don't recruit that way.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:i'?m|i\\s+am|this\\s+is)\\s+(?:a\\s+)?(?:recruit\\w*\\s+assistant\\s+at|from\\s+the\\s+hr\\s+department|from\\s+(?:indeed|linkedin|tiktok|amazon|ziprecruiter|glassdoor|temu|shein))\\b",
+    "\\bsorry\\s+to\\s+(?:interrupt|bother\\s+you)\\b",
+    "\\bexcuse\\s+me,?\\s+i'?m\\s+(?:a|from)\\b",
+    "\\bpart[- ]time\\s+partners\\b",
+    "\\bdaily\\s+salary\\s+(?:is\\s+)?(?:from\\s+)?\\$\\s?\\d"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "pet_sitter_relative",
+   "status": "active",
+   "severity": "warning",
+   "weight": 20,
+   "title": "A relative 'moving to the area' needs a pet sitter",
+   "why": "An uncle, aunt or friend 'moving to the college area' who needs a dog walker at a weekly rate is a fake-check script. The 'owner' is never there and the check arrives first.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:uncle|aunt|auntie|cousin|mother|father|mom|dad|brother|sister|relative)\\b[^.\\n]{0,100}\\b(?:moving|relocating)\\b",
+    "\\b(?:pet|dog)\\s*[- ]?\\s*(?:sitt?(?:er|ing)|walk(?:er|ing))\\b[^.\\n]{0,160}\\$\\s?\\d{3}\\s*(?:weekly|per\\s+week|a\\s+week)\\b",
+    "\\$\\s?\\d{3}\\s*(?:weekly|per\\s+week|a\\s+week)\\b[^.\\n]{0,160}\\b(?:pet|dog)\\s*[- ]?\\s*(?:sitt?(?:er|ing)|walk(?:er|ing))\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "crypto_atm",
+   "status": "active",
+   "severity": "critical",
+   "weight": 30,
+   "title": "Work involving crypto ATMs",
+   "why": "'Evaluate Bitcoin ATMs' jobs are how scammers get you to turn a fake check or stolen money into crypto they control.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:bitcoin|btc|crypto(?:currency)?)\\s+atms?\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "pii_upfront",
+   "status": "active",
+   "severity": "warning",
+   "weight": 18,
+   "title": "Asks for personal details before any interview",
+   "why": "A first message asking for your student ID number, date of birth, age or full home address, before any interview, is collecting what it needs for identity theft and to mail a fake check.",
+   "phrases": [],
+   "patterns": [
+    "\\bstudent\\s+id\\s+(?:number|no\\.?|#)\\b",
+    "\\bdate\\s+of\\s+birth\\b",
+    "(?:^|\\n)\\s*(?:age|dob)\\s*:",
+    "\\bfull\\s+names?\\b[^.\\n]{0,80}\\b(?:mailing|home|physical)\\s+address\\b[^.\\n]{0,80}\\b(?:phone|mobile|cell)\\b"
+   ],
+   "guards": [
+    "negation",
+    "post_hire"
+   ],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "startup_cost",
+   "status": "active",
+   "severity": "critical",
+   "weight": 30,
+   "title": "Costs money to start",
+   "why": "You're asked to put money in up front ('$8 to get started', 'startup cost') to earn later. Real jobs don't charge you to begin.",
+   "phrases": [],
+   "patterns": [
+    "\\$\\s?\\d+[^.\\n]{0,25}\\b(?:out\\s+of\\s+pocket|startup\\s+cost|start-?up\\s+(?:cost|fee))\\b",
+    "\\b(?:startup|start-?up)\\s+cost\\s+(?:is\\s+)?(?:holding|of|\\$)"
+   ],
+   "guards": [
+    "negation"
+   ],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "review_fraud",
+   "status": "active",
+   "severity": "critical",
+   "weight": 30,
+   "title": "Paid to post fake reviews",
+   "why": "Writing 5-star reviews you didn't earn is fraud the FTC fines businesses for, and these gigs often don't pay or turn into task scams.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:post(?:ing)?|write|writing|leave|leaving)\\s+(?:\\d+\\s+)?(?:5|five)[- ]star\\s+reviews?\\b",
+    "\\$\\s?\\d+\\s+(?:per|for\\s+each|each|a)\\s+review\\b",
+    "\\bpaid\\s+(?:to\\s+)?(?:post|write)\\s+reviews?\\b"
+   ],
+   "guards": [
+    "negation"
+   ],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "income_claim",
+   "status": "active",
+   "severity": "warning",
+   "weight": 18,
+   "title": "Promised income that data entry doesn't pay",
+   "why": "'$300 a day', '$15,000 a month', 'paychecks are guaranteed' for typing or forms. No real data-entry job pays like that.",
+   "phrases": [],
+   "patterns": [
+    "\\bpaychecks?\\s+are\\s+guaranteed\\b",
+    "\\b(?:make|earn)s?\\s+\\$\\s?\\d{1,3},\\d{3}\\s*/?\\s*(?:mo|month)\\b",
+    "\\$\\s?[3-9]\\d{2,}\\+?\\s*(?:/|per\\s+|a\\s+)day\\b",
+    "\\bproven\\s+to\\s+generate\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "field test Sept 2026 (Evan's labeled reasons)"
   }
  ]
 }

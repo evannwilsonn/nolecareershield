@@ -38,7 +38,7 @@ from .evaluate import evaluate, load_corpus
 DATA = Path(__file__).resolve().parent.parent / "data"
 BASELINE = DATA / "baseline.json"
 CORE = Path(rules_mod.__file__).parent / "rulepack" / "core.json"
-CORPORA = ["real_corpus_clean", "external_scams", "synthetic_scams", "stress_legit"]
+CORPORA = ["real_corpus_clean", "external_scams", "synthetic_scams", "stress_legit", "field_2026_09"]
 
 
 def measure(rules=None) -> dict:
