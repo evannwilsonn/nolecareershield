@@ -31,13 +31,16 @@ def esc(s) -> str:
 
 
 def crest(size: int = 36, label: str = "", key: str = "") -> str:
-    """The NoleCareerShield crest: the original garnet shield with a gold four-point star. `size` is the width and
-    height in px. Colours are literal so the same SVG works as the favicon. `key` is accepted for older callers.
+    """The NoleCareerShield crest: the original garnet shield with a gold-foil four-point star. `size` is the width and
+    height in px. Colours are literal so the same SVG works as the favicon. `key` gives the gradient its own id.
     demo/app.js has a twin (crest)."""
     a11y = f'role="img" aria-label="{esc(label)}"' if label else 'aria-hidden="true"'
+    n = "".join(ch for ch in (key or str(size)) if ch.isalnum())
     return (f'<svg class="crest" viewBox="0 0 40 40" width="{size}" height="{size}" {a11y} focusable="false">'
+            f'<defs><linearGradient id="ncsg{n}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FBE7AE"/>'
+            f'<stop offset=".45" stop-color="#E2BE6A"/><stop offset="1" stop-color="#C99B45"/></linearGradient></defs>'
             '<path d="M20 3 L34 8 V19 C34 28 28 34 20 37 C12 34 6 28 6 19 V8 Z" fill="#782F40"/>'
-            '<path d="M20 11 L22.4 17.6 L29 20 L22.4 22.4 L20 29 L17.6 22.4 L11 20 L17.6 17.6 Z" fill="#CEB888"/></svg>')
+            f'<path d="M20 11 L22.4 17.6 L29 20 L22.4 22.4 L20 29 L17.6 22.4 L11 20 L17.6 17.6 Z" fill="url(#ncsg{n})"/></svg>')
 
 
 EMBLEM = crest(30)       # kept for older imports (app.py); new code calls crest(size)

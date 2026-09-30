@@ -288,8 +288,8 @@ const pageHead = (t, lede, num, em) => `<div class="page-head">${num ? `<div cla
 const brandMark = sub => `<span class="brand-name">NoleCareer<b>Shield</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span>`;
 let crestN = 0;
 function crest(size, label) {   // twin of ui.crest: the original garnet shield with a gold star
-  size = size || 36; const a11y = label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"';
-  return `<svg class="crest" viewBox="0 0 40 40" width="${size}" height="${size}" ${a11y} focusable="false"><path d="M20 3 L34 8 V19 C34 28 28 34 20 37 C12 34 6 28 6 19 V8 Z" fill="#782F40"/><path d="M20 11 L22.4 17.6 L29 20 L22.4 22.4 L20 29 L17.6 22.4 L11 20 L17.6 17.6 Z" fill="#CEB888"/></svg>`;
+  size = size || 36; const a11y = label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"', n = "d" + (++crestN);
+  return `<svg class="crest" viewBox="0 0 40 40" width="${size}" height="${size}" ${a11y} focusable="false"><defs><linearGradient id="ncsg${n}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FBE7AE"/><stop offset=".45" stop-color="#E2BE6A"/><stop offset="1" stop-color="#C99B45"/></linearGradient></defs><path d="M20 3 L34 8 V19 C34 28 28 34 20 37 C12 34 6 28 6 19 V8 Z" fill="#782F40"/><path d="M20 11 L22.4 17.6 L29 20 L22.4 22.4 L20 29 L17.6 22.4 L11 20 L17.6 17.6 Z" fill="url(#ncsg${n})"/></svg>`;
 }
 const SEAL = '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M6 .8 7.3 2l1.7-.2.4 1.7 1.5.9-.7 1.6.7 1.6-1.5.9-.4 1.7-1.7-.2L6 11.2 4.7 10l-1.7.2-.4-1.7L1.1 7.6 1.8 6 1.1 4.4l1.5-.9.4-1.7 1.7.2z" fill="#3A2A08"/><path d="m3.9 6 1.4 1.4L8.2 4.6" fill="none" stroke="#F6DE9E" stroke-width="1.1" stroke-linecap="round"/></svg>';
 const verifiedBadge = (text, go, title) => { const inner = SEAL + esc(text || "Verified employer"), t = esc(title || "A reviewer approved this employer");
