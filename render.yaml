@@ -1,0 +1,36 @@
+# Render blueprint. The sync:false values are prompted for on first deploy so they
+# are never stored in the repo. BASE_URL is your public https address; SMTP_* is your
+# mail provider (Postmark, SendGrid, SES, Resend, a university relay...).
+services:
+  - type: web
+    name: nolecareershield
+    runtime: docker
+    plan: starter            # persistent disks require a paid instance
+    healthCheckPath: /healthz
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DB_PATH
+        value: /data/jobs.db
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CONTACT_EMAIL
+        sync: false
+      - key: BASE_URL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false

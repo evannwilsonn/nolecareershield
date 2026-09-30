@@ -1,0 +1,38 @@
+{
+ "real_corpus_clean": {
+  "scam_caught": 3,
+  "scam_total": 3,
+  "lead_flagged_blind": 2,
+  "lead_flagged_observed": 4,
+  "lead_total": 4,
+  "false_positives": [],
+  "legit_total": 2
+ },
+ "external_scams": {
+  "scam_caught": 3,
+  "scam_total": 5,
+  "lead_flagged_blind": 0,
+  "lead_flagged_observed": 0,
+  "lead_total": 0,
+  "false_positives": [],
+  "legit_total": 0
+ },
+ "synthetic_scams": {
+  "scam_caught": 12,
+  "scam_total": 12,
+  "lead_flagged_blind": 0,
+  "lead_flagged_observed": 0,
+  "lead_total": 0,
+  "false_positives": [],
+  "legit_total": 0
+ },
+ "stress_legit": {
+  "scam_caught": 0,
+  "scam_total": 0,
+  "lead_flagged_blind": 0,
+  "lead_flagged_observed": 0,
+  "lead_total": 0,
+  "false_positives": [],
+  "legit_total": 12
+ }
+}
