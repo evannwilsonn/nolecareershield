@@ -387,7 +387,7 @@ function nav() {
   if (me()) $("#navActions").innerHTML = extra + `<span class="who">${esc(me().email)}</span><button class="ghostbtn" type="button" data-do="logout">Log out</button>` + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "");
   else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="employers">For employers</a>';
 }
-const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages",
+const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages", tailor: "resume", standout: "resume", optimized: "resume",
   resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", network: "network", applications: "applications", emails: "emails", easy: "jobs", u: "", company: "", about: "", privacy: "", report: ""};
 
 // ---------------- pages ----------------
@@ -952,12 +952,12 @@ function rsLanding(p) {
 <div class="or"><span>or</span></div><details class="rs-up"><summary>${icon("plus", 16)} Upload resume</summary><div class="inner">${rsUpload("Upload and optimize")}</div></details>`
     : `<h2>Add your resume</h2><p class="sub">Upload a file or paste it, and we'll check it for ATS readiness.</p>${rsUpload("Optimize my resume", true)}`;
   const tools = srcs.length ? `<div class="rs-tools">
-<a class="card rs-tool" href="#" data-go="resume?tab=tailor">${icon("jobs", 20)}<b>Tailor to a job</b><span>Pick a listing and see which of its qualifications your resume covers.</span></a>
+<a class="card rs-tool" href="#" data-go="resume?tab=tailor">${icon("jobs", 20)}<b>Tailor to a job</b><span>Pick a listing and get a new resume made for it, ready to download.</span></a>
 <a class="card rs-tool" href="#" data-go="resume?src=main#rs-stand">${icon("spark", 20)}<b>Help me stand out</b><span>A few tips drawn from what your resume already says.</span></a>
 <a class="card rs-tool" href="#" data-go="resume?tab=edit">${icon("file", 20)}<b>Edit and versions</b><span>Edit the text, copy it, or reopen a saved version.</span></a></div>` : "";
-  return (srcs.length ? rsTabs("optimize") : "") + takeFlash() + `<section class="rs-hero"><div><div class="rs-badge">${icon("spark", 28)}</div>
+  return (srcs.length ? rsTabs("optimize") : "") + takeFlash() + rsSteps(1) + `<section class="rs-start"><div>
 <h1 class="rs-h1">Land more interviews with an ATS-ready resume</h1>
-<p class="rs-lede">Most employers screen resumes with software first. We check yours for the same things, then suggest fixes in your own words.</p>
+<p class="rs-lede">Most employers screen resumes with software first. Choose a resume, we scan it, and you review every change before you download the new one.</p>
 ${rsChecks(["Scored on formatting, keywords, impact and contact details", "<b>You approve every change.</b> Nothing is applied until you click Accept", "Suggestions rephrase what you wrote. They never make things up"])}</div>
 <div class="card rs-add">${card}<p class="rs-fine">Runs on the built-in reviewer, right in your browser. On the live site, optional AI features use Claude only when you press an AI button. Review every suggestion so it accurately reflects your own experience.</p></div></section>${tools}`;
 }
@@ -985,23 +985,33 @@ function rsReport(p, src) {
   S.suggs = Object.fromEntries(rp.suggestions.map(s => [s.id, s]));
   const by = {}; rp.sections.forEach(s => { by[s.key] = []; }); rp.suggestions.forEach(s => by[s.section].push(s));
   const openN = k => by[k].filter(s => !gone.has(s.id)).length, tone = {ok: " ok", warn: " warn", "": ""};
-  const nav = rp.sections.map(sc => `<a href="#" data-go="resume?src=${cur.key}#rs-${sc.key}"><span>${esc(sc.name)}</span><span class="pc">${sc.percent}%</span><div class="meter${tone[sc.tone]}"><i style="width:${sc.percent}%"></i></div><span class="open">${openN(sc.key)} suggestion${openN(sc.key) === 1 ? "" : "s"} open</span></a>`).join("");
-  const secs = rp.sections.map(sc => {
-    const list = by[sc.key], cards = list.filter(s => !gone.has(s.id)).map(s => rsCard(s, cur.key, true, true)).join("")
-      || `<div class="rs-clear">${list.length ? "You dismissed every suggestion here." : "Nothing to fix here. Nice."}</div>`;
-    const n = list.filter(s => gone.has(s.id)).length;
-    return `<section id="rs-${sc.key}"><div class="rs-sech"><h3>${esc(sc.name)}</h3><span class="pill ${sc.tone || "info"}">${sc.percent}%</span></div>${cards}${n ? `<p class="rs-dis">${n} dismissed. <button class="linkbtn" type="button" data-do="undismiss" data-ctx="${esc(cur.key)}">Show all again</button></p>` : ""}</section>`;
-  }).join("");
+  const nav = rp.sections.map(sc => `<a href="#rs-${sc.key}" data-go="resume?src=${cur.key}#rs-${sc.key}"><span>${esc(sc.name)}</span><span class="pc">${sc.percent}%</span><div class="meter${tone[sc.tone]}"><i style="width:${sc.percent}%"></i></div><span class="open">${openN(sc.key)} suggestion${openN(sc.key) === 1 ? "" : "s"} open</span></a>`).join("");
+  // Pin each suggestion to the line it's about (a doc comment in the margin); the rest are overall notes. Twin of resume_tools._report_page.
+  const names = Object.fromEntries(rp.sections.map(sc => [sc.key, sc.name])), lines = cur.text.split("\n"), skillsAt = N.parseResume(cur.text).sections.skills;
+  const atLine = {}, general = [], anchored = new Set();
+  rp.suggestions.forEach(sg => { const i = sg.kind === "rewrite" ? lines.findIndex(ln => sg.old && ln.includes(sg.old)) : sg.kind === "skills" && skillsAt !== undefined ? skillsAt : -1;
+    if (i >= 0) (atLine[i] = atLine[i] || []).push(sg); else general.push(sg); });
+  const cardsFor = sgs => sgs.filter(sg => !gone.has(sg.id)).map(sg => { let anchor = ""; if (!anchored.has(sg.section)) { anchored.add(sg.section); anchor = `<span class="rs-anchor" id="rs-${sg.section}"></span>`; }
+    return anchor + rsCard(sg, cur.key, true, true).replace("<h4>", `<div class="rs-sect">${esc(names[sg.section])}</div><h4>`); }).join("");
+  const notes = cardsFor(general); let rows = "", nNotes = 0;
+  lines.forEach((ln, i) => { const t = ln.trim(); if (!t) { rows += '<div class="rs-ln sp" aria-hidden="true"></div>'; return; }
+    const kind = N.heading(t) ? " lh" : /^\s*(?:[•▪●◦‣■\-*–]|o\s)\s*/.test(ln) ? " lb" : i === 0 ? " ln" : "", shown = kind === " lb" ? "• " + t.replace(/^\s*(?:[•▪●◦‣■\-*–]|o\s)\s*/, "") : t;
+    const margin = cardsFor(atLine[i] || []); nNotes += (margin.match(/class="rs-card/g) || []).length;
+    rows += `<div class="rs-ln${kind}${margin ? " hl" : ""}" id="rs-l${i}"><div class="rs-txt">${esc(shown)}</div><div class="rs-margin">${margin}</div></div>`; });
+  const nGone = rp.suggestions.filter(sg => gone.has(sg.id)).length;
+  const secs = (notes ? `<section id="rs-notes"><div class="rs-sech"><h3>Overall</h3></div>${notes}</section>` : "")
+    + `<section class="rs-sheet" id="rs-doc"><div class="rs-sech"><h3>Your resume, line by line</h3><span class="pill info">${nNotes} note${nNotes === 1 ? "" : "s"}</span></div><p class="small muted">Highlighted lines have a suggestion beside them. Accept one and the line changes; nothing else does.</p>`
+    + `<div class="rs-lines">${rows}</div>${nGone ? `<p class="rs-dis">${nGone} dismissed. <button class="linkbtn" type="button" data-do="undismiss" data-ctx="${esc(cur.key)}">Show all again</button></p>` : ""}</section>`;
   const tips = N.standOut(cur.text).map(t => `<div class="rs-card tip"><h4>${icon("spark", 15)} ${esc(t.title)}</h4><div class="why">${esc(t.detail)}</div></div>`).join("");
   const ranked = N.rankJobs(approvedJobs(), p, "", 40);
-  const tailor = ranked.length ? `<section id="rs-tailor"><div class="rs-sech"><h3>Tailor to a job</h3></div><div class="card" style="margin-top:10px"><p class="small muted" style="margin-bottom:10px">Pick a listing from the approved board. You'll see which of its listed qualifications your resume covers and get edits to accept or dismiss.</p>
-<form id="rsJobPick" class="rs-pick"><div><label class="hp" for="rs-job">Job</label><select id="rs-job" name="job"><option value="">Choose a listing...</option>${ranked.map(r => `<option value="${r.job.id}">${esc(r.job.title)} · ${esc(r.job.company)}</option>`).join("")}</select></div><button class="b" type="submit">Show match details</button></form></div></section>` : "";
+  const tailor = ranked.length ? `<section id="rs-tailor"><div class="rs-sech"><h3>Tailor to a job</h3></div><div class="card" style="margin-top:10px"><p class="small muted" style="margin-bottom:10px">Pick a listing from the approved board. You'll get a new resume made for it, with a preview and downloads.</p>
+<form id="rsJobPick" class="rs-pick"><div><label class="hp" for="rs-job">Job</label><select id="rs-job" name="job"><option value="">Choose a listing...</option>${ranked.map(r => `<option value="${r.job.id}">${esc(r.job.title)} · ${esc(r.job.company)}</option>`).join("")}</select></div><button class="b" type="submit">Tailor my resume</button></form></div></section>` : "";
   const st = rp.stats;
-  return rsTabs("optimize") + `<a class="rs-back" href="#" data-go="resume">&larr; Choose another resume</a>${takeFlash()}<div class="rs-report"><aside class="rs-side"><div class="card rs-score"><div class="eyebrow">ATS readiness</div>
-<div class="ring" style="--p:${rp.percent}"><b>${rp.percent}<small>%</small></b></div><h2>${esc(rp.label)}</h2><p>${esc(cur.name)} · ${st.words} words · ${st.bullets} bullets</p><nav class="rs-nav" aria-label="Report sections">${nav}</nav></div></aside>
+  return rsTabs("optimize") + rsSteps(2, cur.key) + `${takeFlash()}<div class="rs-report"><aside class="rs-side"><div class="card rs-score"><div class="eyebrow">ATS readiness</div>
+<div class="ring" style="--p:${rp.percent}"><b>${rp.percent}<small>%</small></b></div><h2>${esc(rp.label)}</h2><p>${esc(cur.name)} · ${st.words} words · ${st.bullets} bullets</p><nav class="rs-nav" aria-label="Report sections">${nav}</nav><a class="b rs-next" href="#" data-go="optimized?src=${cur.key}">See your optimized resume &rarr;</a></div></aside>
 <div class="rs-main"><div class="rs-approve">${icon("shield", 18)}<span><b>You approve every change.</b> Nothing on your resume changes until you press Accept, and you can dismiss anything.</span></div>${secs}
 <section id="rs-stand"><div class="rs-sech"><h3>Help me stand out</h3></div><div class="rs-stand">${tips || '<div class="rs-clear">Nothing to add right now.</div>'}</div></section>${tailor}
-<div class="row" style="margin-top:8px"><a class="b sec" href="#" data-go="resume?tab=edit">Edit resume</a></div></div></div>`;
+<div class="row" style="margin-top:8px"><a class="b" href="#" data-go="optimized?src=${cur.key}">See your optimized resume</a><a class="b sec" href="#" data-go="resume?tab=edit">Edit resume</a></div></div></div>`;
 }
 function rsWorking(p, jid) {
   const v = jid ? S.versions.find(x => x.user === me().id && x.job === jid) : null;
@@ -1062,6 +1072,136 @@ function rsAccept(ctx, sid) {
   delete S.dismissed[ctx]; render(true);
 }
 
+// ---- the new resume: tailored to a job, optimized in general, stand out, note to the poster (mirrors resume_tools.py) ----
+function rsSteps(n, src) {
+  const names = [["Choose resume", "resume"], ["Scan", "resume?src=" + (src || "main")], ["Review changes", "optimized?src=" + (src || "main")]];
+  return `<ol class="rs-steps" aria-label="Resume optimizer steps">${names.map(([t, h], k) => { const i = k + 1, inner = `<span class="n">${i < n ? icon("check", 14) : i}</span><span class="t">${t}</span>`;
+    return `<li class="${i === n ? "on" : i < n ? "done" : ""}"${i === n ? ' aria-current="step"' : ""}>${n > 1 && i !== n ? `<a href="#" data-go="${esc(h)}">${inner}</a>` : inner}</li>`; }).join("")}</ol>`;
+}
+const rsUndoSet = key => { S.rsUndo = S.rsUndo || {}; return S.rsUndo[key] || (S.rsUndo[key] = new Set()); };
+const rsMe = () => Object.assign({}, SP(me().id), {email: me().email});
+function rsDocFor(key) {   // key: "job<ID>" or "opt<src>"
+  const p = SP(me().id), jm = /^job(\d+)$/.exec(key), undo = [...rsUndoSet(key)];
+  if (jm) { const j = approvedJobs().find(x => x.id === Number(jm[1])); if (!j || !p.resume_text) return null; return {doc: N.buildResume(rsMe(), p.resume_text, j, null, undo), job: j, name: ("For " + j.title + " at " + j.company).slice(0, 80), text: p.resume_text}; }
+  const src = key.slice(3), cur = rsSources(p).find(c => c.key === src); if (!cur) return null;
+  return {doc: N.buildResume(rsMe(), cur.text, null, null, undo), job: null, name: ("Optimized: " + cur.name).slice(0, 80), text: cur.text, src: cur.name};
+}
+const RS_KINDS = {summary: "Summary", profile: "From your profile", order: "Order", trim: "Left out", rewrite: "Wording", skills: "Skills"};
+function rsChanges(doc, key) {
+  const items = doc.changes.map(c => {
+    let diff = "";
+    if (c.before && c.after && ["rewrite", "summary"].includes(c.kind)) diff = `<div class="rs-diff"><div class="was"><span class="lbl">Was</span>${esc(c.before)}</div><div class="now"><span class="lbl">Now</span>${esc(c.after)}</div></div>`;
+    else if (["summary", "skills", "profile"].includes(c.kind)) diff = `<div class="rs-diff"><div class="now"><span class="lbl">Adds</span>${esc(c.after)}</div></div>`;
+    else if (c.kind === "trim") diff = `<div class="rs-diff"><div class="was"><span class="lbl">Leaves out</span>${esc(c.before)}</div></div>`;
+    else if (c.kind === "order") diff = `<div class="rs-diff"><div class="now"><span class="lbl">Now first</span>${esc(c.after)}</div></div>`;
+    const acts = c.on ? `<span class="rs-kept">${icon("check", 14)} Kept</span><button class="b sm ghost" type="button" data-do="rs-undo" data-key="${key}" data-cid="${c.id}">Undo</button>`
+      : `<span class="rs-kept off">Undone</span><button class="b sm sec" type="button" data-do="rs-keep" data-key="${key}" data-cid="${c.id}">Keep</button>`;
+    return `<li class="rs-ch${c.on ? "" : " off"}" id="ch-${c.id}"><div class="rs-cht"><span class="pill info">${RS_KINDS[c.kind] || "Edit"}</span><b>${esc(c.title)}</b></div><p class="why">${esc(c.detail)}</p>${diff}<div class="rs-actions">${acts}</div></li>`;
+  }).join("");
+  const head = `<h3>Changes <small>${doc.changes.filter(c => c.on).length} of ${doc.changes.length} kept</small></h3>`;
+  return items ? `<section class="card rs-changes">${head}<ol>${items}</ol></section>` : `<section class="card rs-changes">${head}<p class="muted small">Your resume already reads well; nothing needed changing.</p></section>`;
+}
+function rsGenPage(key, top, heading, sub, score, extra) {
+  const got = rsDocFor(key), doc = got.doc;
+  const actions = `<section class="card rs-dl"><h3>Download</h3><div class="rs-dlrow"><button class="b" type="button" data-do="rs-dl" data-key="${key}" data-fmt="pdf">${icon("file", 16)} PDF</button><button class="b ghost" type="button" data-do="rs-dl" data-key="${key}" data-fmt="txt">.txt</button></div>
+<button class="b sec" type="button" data-do="rs-save" data-key="${key}">Save as version</button><a class="b ghost" href="#" data-go="resume?tab=edit&amp;from=${key}">Open in editor</a>
+<p class="small faint">The live site also downloads a Word (.docx) copy. Printing this page (Ctrl+P) prints just the resume.</p></section>`;
+  return top + takeFlash() + `<div class="rs-gen-head"><div><h1 class="rs-t1">${heading}</h1><p class="muted">${sub}</p></div></div>
+<div class="rs-gen"><div class="rs-paper">${N.docHtml(doc)}<p class="rs-legend"><span class="rs-chg">Highlighted</span> lines were reworded. Every fact is yours; check each line before you send it.</p></div>
+<aside class="rs-panel">${score(doc, got)}${actions}${rsChanges(doc, key)}${extra(doc)}</aside></div>`;
+}
+function rsJobTabs(jid, active) {
+  const tabs = [["tailor", `tailor?job=${jid}`, "Tailor my resume"], ["standout", `standout?job=${jid}`, "Help me stand out"], ["note", `tailor?job=${jid}&amp;mode=note`, "Message the poster"]];
+  return `<a class="rs-back" href="#" data-go="jobs?job=${jid}">&larr; Back to the listing</a><nav class="seg rs-jtabs" aria-label="Resume help for this job">${tabs.map(([k, h, v]) => `<a href="#" data-go="${h}"${k === active ? ' class="on" aria-current="page"' : ""}>${v}</a>`).join("")}</nav>`;
+}
+function rsNeedResume(title) {
+  return pageHead(title) + `<div class="card rs-need"><h2>Add your resume first</h2><p class="muted">We build the new resume from yours, so upload it once (PDF, Word or text). It takes a few seconds, and you approve every change after.</p>${rsUpload("Upload my resume", true)}</div>`;
+}
+function rsMatchBox(doc) {
+  const m = doc.match, up = m.after - m.before;
+  return `<section class="card rs-match"><div class="eyebrow">Match with this job</div><div class="rs-mm"><div><span class="lbl">Your resume</span><b>${m.before}%</b></div><span class="arr" aria-hidden="true">→</span><div class="new"><span class="lbl">Tailored</span><b>${m.after}%</b></div></div>
+<div class="meter"><i style="width:${m.before}%"></i></div><div class="meter ok"><i style="width:${m.after}%"></i></div>${m.total ? `<p class="small muted">Covers ${m.met_before} → ${m.met_after} of ${m.total} listed qualifications.</p>` : '<p class="small muted">This posting doesn\'t list qualifications, so this uses its skills and keywords.</p>'}
+<p class="small faint">${up > 0 ? `+${up} points, only from what you already have.` : "Scored on resume text only."}</p></section>`;
+}
+function rsGapsBox(doc) {
+  if (!doc.gaps.length) return "";
+  return `<section class="card rs-gaps"><h3>Not on your resume yet</h3><p class="small muted">We never add these for you. They're here so you can decide what's true.</p><ul class="reasons">${doc.gaps.map(g => `<li><b>${esc(g.text)}</b>${g.must ? ' <span class="pill warn">Required</span>' : ""}<span class="ev">${esc(g.advice)}</span></li>`).join("")}</ul></section>`;
+}
+const rsPoster = j => { const ep = j.employer_id ? EP(j.employer_id) || {} : {}; return (j.poster_name || ep.contact_name || "").trim(); };
+const rsShort = name => { const w = name.split(/\s+/); return w.length > 1 && ["dr", "mr", "mrs", "ms", "mx", "prof", "professor"].includes(w[0].replace(/\.$/, "").toLowerCase()) ? `${w[0]} ${w[w.length - 1]}` : w[0]; };
+P.tailor = () => {
+  if (!isStudent()) return needStudent("tailoring your resume");
+  const jid = Number(S.route.q.job), j = approvedJobs().find(x => x.id === jid), p = SP(me().id);
+  if (!j) return pageHead("Tailor my resume") + banner("info", "That listing isn't available anymore.") + '<a class="b sec" href="#" data-go="jobs">Browse jobs</a>';
+  if (!p.resume_text) return rsNeedResume("Tailor my resume");
+  if (S.route.q.mode === "note") return rsNotePage(j, p);
+  return rsGenPage("job" + jid, rsJobTabs(jid, "tailor"), `Your resume for ${esc(j.title)}`, `${esc(j.company)} · built from your resume and profile, aimed at this posting. Nothing is made up.`,
+    doc => rsMatchBox(doc), doc => rsGapsBox(doc));
+};
+function rsNotePage(j, p) {
+  const poster = rsPoster(j), note = N.coverNote(rsMe(), p.resume_text, j, poster ? rsShort(poster) : ""), canMsg = !!j.employer_id && approvedEmp(j.employer_id), applied = canMsg && appliedTo(j.id, me().id);
+  const who = poster ? esc(poster) : "the hiring team";
+  const send = applied ? `<form id="noteForm" data-to="${j.employer_id}" data-job="${j.id}"><label for="n-note">Your note (edit it first)</label><textarea id="n-note" name="body" maxlength="4000">${esc(note)}</textarea>
+<div class="row"><button class="b" type="submit">${icon("chat", 16)} Continue in Messages</button><button class="b sec" type="button" data-do="copy" data-text="${esc(note)}">Copy</button></div></form>`
+    : `<label for="n-note">Your note</label><textarea id="n-note" maxlength="4000">${esc(note)}</textarea><div class="row"><button class="b sec" type="button" data-do="copy" data-text="${esc(note)}">Copy</button>${canMsg ? `<a class="b" href="#" data-go="job?id=${j.id}">Go to the listing to apply</a>` : ""}</div>
+<p class="rs-note">${canMsg ? `You can message ${who} once you apply. Apply first, then come back here and send it.` : "This listing's poster can't be messaged on NoleCareerShield. Copy the note into your application instead."}</p>`;
+  const line = `To ${who}${j.poster_title && poster ? ", " + esc(j.poster_title) : ""} · ${esc(j.company)}`;
+  return rsJobTabs(j.id, "note") + `<div class="rs-gen-head"><div><h1 class="rs-t1">A short note to the poster</h1><p class="muted">${line}</p></div></div><div class="rs-gen one"><div class="card rs-notecard">${send}</div>
+<aside class="rs-panel"><section class="card"><h3>What makes it work</h3><ul class="reasons"><li><b>It's specific.</b><span class="ev">It names the role and one real thing you did that matches it.</span></li><li><b>It's short.</b><span class="ev">Under 120 words, so it gets read.</span></li>
+<li><b>It's yours.</b><span class="ev">Every line comes from your resume and profile. Change anything that doesn't sound like you.</span></li><li><b>Stay safe.</b><span class="ev">Never send your SSN, bank details or ID in a first message. Real employers don't ask.</span></li></ul></section></aside></div>`;
+}
+P.standout = () => {
+  if (!isStudent()) return needStudent("resume tips");
+  const jid = Number(S.route.q.job), j = approvedJobs().find(x => x.id === jid), p = SP(me().id);
+  if (!j) return pageHead("Help me stand out") + banner("info", "That listing isn't available anymore.") + '<a class="b sec" href="#" data-go="jobs">Browse jobs</a>';
+  if (!p.resume_text) return rsNeedResume("Help me stand out");
+  const tips = N.standOutJob(rsMe(), p.resume_text, j), poster = rsPoster(j), note = N.coverNote(rsMe(), p.resume_text, j, poster ? rsShort(poster) : "");
+  return rsJobTabs(jid, "standout") + `<div class="rs-gen-head"><div><h1 class="rs-t1">Help me stand out</h1><p class="muted">For ${esc(j.title)} at ${esc(j.company)}. Drawn from your own resume and profile.</p></div></div>
+<div class="rs-gen one"><div><ol class="rs-tips">${tips.map((t, i) => `<li class="rs-tipc"><span class="n">${i + 1}</span><div><b>${esc(t.title)}</b><p>${esc(t.detail)}</p></div></li>`).join("")}</ol></div>
+<aside class="rs-panel"><section class="card"><h3>A short cover note</h3><p class="rs-cn">${esc(note)}</p><div class="row"><button class="b sm sec" type="button" data-do="copy" data-text="${esc(note)}">Copy</button><a class="b sm ghost" href="#" data-go="tailor?job=${jid}&amp;mode=note">Send it to the poster</a></div></section>
+<section class="card"><h3>Next</h3><p class="small muted">Put these into a resume made for this job.</p><a class="b" href="#" data-go="tailor?job=${jid}">${icon("file", 16)} Tailor my resume</a></section></aside></div>`;
+};
+P.optimized = () => {
+  if (!isStudent()) return needStudent("the resume studio");
+  const p = SP(me().id), src = /^(main|v\d+)$/.test(S.route.q.src || "") ? S.route.q.src : "main";
+  if (!rsSources(p).some(c => c.key === src)) return p.resume_text ? rsLanding(p) : rsNeedResume("Your optimized resume");
+  const got = rsDocFor("opt" + src);
+  return rsGenPage("opt" + src, rsTabs("optimize") + rsSteps(3, src), "Your optimized resume", `From ${esc(got.src)}. Same facts, clearer wording, a standard layout. Undo anything you don't want.`,
+    doc => { const b = N.report(got.text, p.skills).percent, a = N.report(doc.text, p.skills).percent;
+      return `<section class="card rs-match"><div class="eyebrow">ATS readiness</div><div class="rs-mm"><div><span class="lbl">Before</span><b>${b}%</b></div><span class="arr" aria-hidden="true">→</span><div class="new"><span class="lbl">Optimized</span><b>${a}%</b></div></div>
+<div class="meter"><i style="width:${b}%"></i></div><div class="meter ok"><i style="width:${a}%"></i></div><p class="small faint">Scored the same way as step 2. Fill in real numbers where a bullet has none to go higher.</p></section>`; },
+    () => `<section class="card"><h3>Aim it at a job</h3><p class="small muted">Tailor it to one listing and it picks the bullets and skills that job asks for.</p><a class="b sec" href="#" data-go="resume?tab=tailor">${icon("jobs", 16)} Tailor to a job</a></section>`);
+};
+function rsDraft(key) {
+  const got = rsDocFor(key); if (!got) return "";
+  const back = got.job ? `tailor?job=${got.job.id}` : "optimized?src=" + key.slice(3);
+  return `<form id="draftForm" class="card rs-draft" data-job="${got.job ? got.job.id : 0}"><div class="row between"><h3 class="sec" style="margin:0">Edit your new resume</h3><a class="small" href="#" data-go="${back}">&larr; Back to the preview</a></div>
+<p class="small muted">Change anything, then save it as a version. Your main resume stays as it is.</p><div class="form-field"><label for="d-name">Version name</label><input id="d-name" name="name" maxlength="80" value="${esc(got.name)}"></div>
+<label for="d-body" class="hp">Resume text</label><textarea id="d-body" class="resume" name="body" maxlength="22000">${esc(got.doc.text)}</textarea><div class="row" style="margin-top:10px"><button class="b" type="submit">Save as version</button></div></form>`;
+}
+function rsAddVersion(name, body, job) {
+  S.versions.unshift({id: Date.now(), user: me().id, name: name.slice(0, 80) || "Tailored copy", body: body.trim().slice(0, 22000), job: job || 0, at: NOW()});
+  const mine = S.versions.filter(x => x.user === me().id); if (mine.length > 10) S.versions.splice(S.versions.indexOf(mine[mine.length - 1]), 1);
+}
+// Downloads: the artifact's downloads capability when the page has it, otherwise an ordinary <a download>.
+async function rsSaveFile(filename, data, type) {
+  let dl = null;
+  try { dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null; } catch (err) { dl = null; }
+  if (dl) {
+    try { await dl.save({filename, data}); return; }
+    catch (err) { const code = err && err.code; if (code === "declined") return; if (code === "rate_limited") { flash("info", "A download is already waiting for you to confirm."); return render(true); }
+      if (code !== "unavailable" && code !== "not_granted" && code !== "capability_disabled" && code !== "capability_removed") { flash("warning", "That download didn't work. Try again."); return render(true); } }
+  }
+  const url = URL.createObjectURL(new Blob([data], {type})), a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+function rsDownload(key, fmt) {
+  const got = rsDocFor(key); if (!got) return;
+  const base = (got.doc.name + " resume" + (got.job ? " " + got.job.company : "")).replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/ /g, "_").slice(0, 70) || "resume";
+  if (fmt === "pdf") rsSaveFile(base + ".pdf", N.toPdf(got.doc), "application/pdf");
+  else rsSaveFile(base + ".txt", got.doc.text, "text/plain");
+}
+
 // ---- resume studio ----
 P.resume = () => {
   if (!isStudent()) return needStudent("the resume studio");
@@ -1083,6 +1223,7 @@ P.resume = () => {
 <div class="card"><h3 class="sec" style="margin-top:0">What to fix first</h3><ul style="list-style:none;padding:0" class="stack">${finds}</ul></div></div>
 <h3 class="sec">Bullet rewrites <small>${rv.bullets.length} to improve</small></h3>${bullets || '<p class="muted">Every bullet already starts strong and has a number.</p>'}<div class="row" style="margin-top:18px"><a class="b sec" href="#" data-go="resume?tab=edit">Edit resume</a></div>${note}`;
   }
+  if (tab === "edit" && /^(job\d+|opt(main|v\d+))$/.test(S.route.q.from || "")) { const dr = rsDraft(S.route.q.from); if (dr) return head + tabs + dr; }
   if (tab === "edit") return head + tabs + `<div class="split"><form id="resumeSave" class="card"><div class="row between" style="margin-bottom:8px"><label for="r-text" style="margin:0">Your resume</label><span class="small faint">${esc(p.resume_name || "")}</span></div>
 <textarea id="r-text" class="resume" name="text" maxlength="20000">${esc(p.resume_text)}</textarea><div class="row" style="margin-top:10px"><button class="b" type="submit">Save</button><button class="b sec" type="button" data-do="copy-resume">Copy text</button></div>
 <p class="small faint" style="margin-top:8px">The live site also downloads a Word (.docx) copy.</p></form>
@@ -1093,10 +1234,10 @@ ${S.bulletOut ? `<div class="sugg-item"><div class="was">${esc(S.bulletOut.origi
   if (tab === "tailor") {
     const ranked = N.rankJobs(approvedJobs(), p, "", 40), sel = Number(S.route.q.job) || 0;
     let result = "";
-    if (sel) { const j = approvedJobs().find(x => x.id === sel); result = j ? rsTailor(p, sel, j.title, j.description) : '<div class="banner warning" role="alert">That listing isn\'t available anymore.</div>'; }
+    if (sel) { S.route = {name: "tailor", q: {job: sel}}; return P.tailor(); }     // the listing's "Tailor my resume" lands on that job's new resume
     else if (S.tailor) result = rsTailor(p, 0, S.tailor.title, S.tailor.desc);
-    return head + tabs + `<form id="tailorForm" class="card"><div class="form-field"><label for="t-job">A job on the board</label><select id="t-job" name="job_id"><option value="">Choose a listing...</option>${ranked.map(r => `<option value="${r.job.id}"${r.job.id === sel ? " selected" : ""}>${esc(r.job.title)} · ${esc(r.job.company)} (fit ${r.fit ? r.fit.score : r.score})</option>`).join("")}</select></div>
-<div class="or"><span>Or paste a job description</span></div><div class="form-field"><label for="t-title">Job title</label><input id="t-title" name="title" maxlength="200" placeholder="Marketing Intern"></div>
+    return head + tabs + `<form id="rsJobPick" class="card rs-tpick"><div class="form-field"><label for="t-job">A job on the board</label><p class="hint">You'll get a new resume made for that listing: a preview, every change listed with Undo, and a PDF download.</p><select id="t-job" name="job"><option value="">Choose a listing...</option>${ranked.map(r => `<option value="${r.job.id}"${r.job.id === sel ? " selected" : ""}>${esc(r.job.title)} · ${esc(r.job.company)} (fit ${r.fit ? r.fit.score : r.score})</option>`).join("")}</select></div><button class="b" type="submit">${icon("file", 16)} Tailor my resume</button></form>
+<form id="tailorForm" class="card" style="margin-top:14px"><div class="or"><span>Or paste a job description</span></div><div class="form-field"><label for="t-title">Job title</label><input id="t-title" name="title" maxlength="200" placeholder="Marketing Intern"></div>
 <div class="form-field"><label for="t-desc">Job description</label><textarea id="t-desc" name="description" maxlength="8000" placeholder="Paste the posting"></textarea></div><button class="b" type="submit">Show match details</button></form><div style="margin-top:18px">${result}</div>${note}`;
   }
   const vs = S.versions.filter(v => v.user === me().id);
@@ -1140,7 +1281,7 @@ P.newmsg = () => {
   const [ok, why] = canStart(me(), to);
   if (!ok) return pageHead("New message") + banner("info", why) + '<a class="b sec" href="#" data-go="messages">Messages</a>';
   return pageHead("New message", "", "Messages") + `<div class="card" style="max-width:640px">${person(to)}${job ? `<p class="small muted" style="margin-top:8px">About: ${esc(job.title)}</p>` : ""}
-<form id="newMsgForm" data-to="${to}" data-job="${job ? job.id : 0}" style="margin-top:12px"><div class="form-field"><label for="n-body">Message</label><textarea id="n-body" name="body" required maxlength="4000">${isStudent() && job ? esc(`Hi! I'm interested in the ${job.title} role. `) : isEmployer() && job && S.route.q.invite ? esc(inviteText(me().id, SP(to), job)) : ""}</textarea></div><button class="submit-btn" type="submit">Send</button></form></div>`;
+<form id="newMsgForm" data-to="${to}" data-job="${job ? job.id : 0}" style="margin-top:12px"><div class="form-field"><label for="n-body">Message</label><textarea id="n-body" name="body" required maxlength="4000">${isStudent() && S.route.q.body ? esc(String(S.route.q.body).slice(0, 4000)) : isStudent() && job ? esc(`Hi! I'm interested in the ${job.title} role. `) : isEmployer() && job && S.route.q.invite ? esc(inviteText(me().id, SP(to), job)) : ""}</textarea></div><button class="submit-btn" type="submit">Send</button></form></div>`;
 };
 function canStart(sender, to) {
   const u = U(to); if (!u || to === sender.id) return [false, "That account isn't available."];
@@ -2109,6 +2250,10 @@ document.addEventListener("click", e => {
     "copy-resume": () => { const t = $("#r-text"); try { navigator.clipboard.writeText(t.value).then(() => { d.textContent = "Copied"; }, () => t.select()); } catch (x) { t.select(); } },
     "use-version": () => { const v = S.versions.find(x => x.id === id); if (v) { SP(me().id).resume_text = v.body; flash("verified", `"${v.name}" is now your main resume.`); } render(); },
     accept: () => rsAccept(d.dataset.ctx, d.dataset.sid),
+    "rs-undo": () => { rsUndoSet(d.dataset.key).add(d.dataset.cid); S.scrollTo = "ch-" + d.dataset.cid; render(true); },
+    "rs-keep": () => { rsUndoSet(d.dataset.key).delete(d.dataset.cid); S.scrollTo = "ch-" + d.dataset.cid; render(true); },
+    "rs-dl": () => rsDownload(d.dataset.key, d.dataset.fmt),
+    "rs-save": () => { const got = rsDocFor(d.dataset.key); if (got) { rsAddVersion(got.name, got.doc.text, got.job ? got.job.id : 0); flash("verified", `Saved as “${got.name}”. It's under Versions.`); } render(true); },
     dismiss: () => { const k = d.dataset.ctx; (S.dismissed[k] || (S.dismissed[k] = new Set())).add(d.dataset.sid); render(true); },
     undismiss: () => { delete S.dismissed[d.dataset.ctx]; render(true); },
     "del-version": () => { S.versions = S.versions.filter(x => x.id !== id); render(true); },
@@ -2348,10 +2493,13 @@ document.addEventListener("submit", e => {
     SP(me().id).resume_text = t.slice(0, 20000); flash("verified", "Saved."); return render(true); }
   if (id === "bulletForm") { S.bulletIn = g("bullet"); S.bulletOut = S.bulletIn ? N.improveBullet(S.bulletIn) : null; return render(true); }
   if (id === "rsPick") return go("resume?src=" + g("src"));
-  if (id === "rsJobPick") { if (!g("job")) return; return go("resume?tab=tailor&job=" + g("job")); }
+  if (id === "rsJobPick") { if (!g("job")) return; return go("tailor?job=" + g("job")); }
+  if (id === "draftForm") { const b = String(fd.get("body") || ""); if (b.trim().length < 80) { flash("warning", "A resume needs 80 to 20,000 characters."); return render(true); }
+    rsAddVersion(g("name") || "Tailored copy", b, Number(f.dataset.job)); flash("verified", "Saved as a version. Your main resume didn't change."); return go("resume?tab=versions"); }
+  if (id === "noteForm") return go(`newmsg?to=${f.dataset.to}&job=${f.dataset.job}&body=${encodeURIComponent(String(fd.get("body") || "").slice(0, 4000))}`);
   if (id === "tailorForm") {
     const jid = Number(g("job_id"));
-    if (jid) { if (!approvedJobs().some(x => x.id === jid)) return; S.tailor = null; return go("resume?tab=tailor&job=" + jid); }
+    if (jid) { if (!approvedJobs().some(x => x.id === jid)) return; S.tailor = null; return go("tailor?job=" + jid); }
     const ttl = g("title") || "this job", desc = g("description");
     if (desc.length < 60) { flash("warning", "Pick a listing, or paste a job description (at least a few sentences)."); return render(); }
     S.tailor = {title: ttl, desc}; S.route.q.job = 0; return render();

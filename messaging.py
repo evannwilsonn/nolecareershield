@@ -229,7 +229,7 @@ def inbox(request: Request):
 
 
 @router.get("/messages/new", response_class=HTMLResponse)
-def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0):
+def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0, body: str = ""):
     user = web.require_user(request)
     with store.db() as conn:
         ok, why = can_start(conn, user, to)
@@ -247,6 +247,8 @@ def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0):
         draft = ""
         if invite and jobrow and user["role"] == "employer":
             draft = hiring.invite_text(conn, user["id"], store.student_profile(conn, to) or {}, jobrow)
+        if not draft and body:                  # a draft handed over by the page that linked here (e.g. the resume studio's note)
+            draft = security._CONTROL_CHARS_RE.sub("", body.replace("\r\n", "\n"))[:MAX_BODY]
     about = f'<p class="small muted" style="margin:10px 0 0">About: <b>{esc(jobrow["title"])}</b></p>' if jobrow else ""
     tip = ("Introduce yourself and say which role you're interested in. Don't include your student ID, SSN or bank details. No real employer needs them in a first message."
            if user["role"] == "student" else

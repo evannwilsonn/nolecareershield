@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 import io
+import math
 import re
 import zipfile
 
@@ -586,8 +587,10 @@ def _x(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def to_docx(text: str) -> bytes:
-    """A clean one-column Word document from the resume text (name, headings, bullets)."""
+def to_docx(text) -> bytes:
+    """A clean one-column Word document: from a built resume (build_resume's dict) or from plain resume text."""
+    if isinstance(text, dict):
+        return doc_docx(text)
     paras = []
     first = True
     for ln in (text or "").splitlines():
@@ -609,7 +612,10 @@ def to_docx(text: str) -> bytes:
             s = "•\t" + _BULLET.sub("", s)
             ppr = '<w:pPr><w:ind w:left="360" w:hanging="220"/><w:spacing w:after="20"/></w:pPr>'
         paras.append(f'<w:p>{ppr}<w:r>{run_props}<w:t xml:space="preserve">{_x(s)}</w:t></w:r></w:p>')
-    body = "".join(paras)
+    return _docx_pack("".join(paras))
+
+
+def _docx_pack(body: str) -> bytes:
     document = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
                 f'{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
@@ -643,3 +649,732 @@ def to_docx(text: str) -> bytes:
         z.writestr("word/styles.xml", styles)
         z.writestr("word/_rels/document.xml.rels", doc_rels)
     return buf.getvalue()
+
+
+# ---------- the new resume: build it, then write it as HTML, text, .docx and .pdf ----------
+#
+# build_resume() turns the student's own resume text (plus their profile) into a clean, structured
+# resume. For a job it also picks and orders what to show. Every change is listed with an id so the
+# student can undo it, and the same ids drive the downloads (?undo=c2,c5). It only rephrases,
+# reorders and selects: numbers, employers, dates and skills all come from the student.
+# demo/engine.js has a line-for-line port (buildResume, toPdf) checked by tests/test_tailored_resume.py.
+
+DOC_ORDER = ["summary", "education", "experience", "projects", "skills", "awards", "leadership", "coursework"]
+DOC_TITLES = {"summary": "Summary", "education": "Education", "experience": "Experience", "projects": "Projects", "skills": "Skills",
+              "awards": "Certifications", "leadership": "Activities", "coursework": "Relevant Coursework"}
+BULLET_KEYS = ("experience", "projects", "leadership")
+PLACEHOLDER_TAIL = " [add a number: how many, how much, or how often]"
+_SCHOOL = re.compile(r"\b(?:university|college|institute|school|academy)\b", re.IGNORECASE)
+_MON = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+|(?:spring|summer|fall|winter)\s+"
+_DSTART = rf"(?:expected\s+)?(?:{_MON})?(?:19|20)\d{{2}}"
+_DOC_DATE = re.compile(rf"(?:^|[\s,|(·—–-])({_DSTART}(?:\s*(?:-|–|—|to)\s*(?:{_DSTART}|present|current|now))?)[\s)|,.]*$", re.IGNORECASE)
+_DATE_ONLY = re.compile(rf"^{_DSTART}(?:\s*(?:-|–|—|to)\s*(?:{_DSTART}|present|current|now))?$", re.IGNORECASE)
+_SEG = re.compile(r"\s+[|·]\s+")
+_SPLIT_CONTACT = re.compile(r"\s*[|·•]\s*|\s{3,}")
+_EDGE = " ,|·—–-"
+PROFILE_ITEM_KEYS = {"experience": "experience", "project": "projects", "organization": "leadership", "certification": "awards"}
+
+
+def _nrm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+
+def _edge_strip(s: str) -> str:
+    a, b = 0, len(s)
+    while a < b and s[a] in _EDGE:
+        a += 1
+    while b > a and s[b - 1] in _EDGE:
+        b -= 1
+    return s[a:b]
+
+
+def _tc(s: str) -> str:
+    """Title-case an ALL-CAPS heading (SKILLS & INTERESTS -> Skills & Interests); leave others alone."""
+    return " ".join(w[:1].upper() + w[1:].lower() for w in s.split()) if s == s.upper() else s
+
+
+def _and(xs: list) -> str:
+    xs = [str(x) for x in xs]
+    if not xs:
+        return ""
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
+
+
+def _entry(line: str) -> dict:
+    m = _DOC_DATE.search(line)
+    if m and m.group(1).strip() != line.strip():
+        return {"head": _edge_strip(line[:m.start(1)].strip()), "date": m.group(1).strip(), "line": line, "sub": [], "bullets": []}
+    parts = _SEG.split(line)                        # "Role — Org | Aug 2026 – Present | Remote": the date is one of the parts
+    for i, p in enumerate(parts):
+        if i and _DATE_ONLY.match(p.strip()):
+            return {"head": " | ".join(parts[:i] + parts[i + 1:]), "date": p.strip(), "line": line, "sub": [], "bullets": []}
+    return {"head": line, "date": "", "line": line, "sub": [], "bullets": []}
+
+
+def _doc_parse(text: str) -> dict:
+    lines = (text or "").splitlines()
+    any_bullet = any(_BULLET.match(ln) for ln in lines if ln.strip())
+    header: list[str] = []
+    sections: list[dict] = []
+    cur = None
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        h = _heading(s)
+        if h:
+            cur = {"key": h, "title": _tc(re.sub(r"[:\s]+$", "", s)), "text": "", "lines": [], "entries": []}
+            sections.append(cur)
+            continue
+        if cur is None:
+            header.append(s)
+        else:
+            cur["lines"].append(s)
+    n = 0
+    for sec in sections:
+        raw, sec["lines"] = sec["lines"], []
+        if sec["key"] == "summary":
+            sec["text"] = " ".join(_BULLET.sub("", s).strip() for s in raw).strip()
+            continue
+        if sec["key"] == "skills":
+            sec["lines"] = [t for t in (_BULLET.sub("", s).strip() for s in raw) if t]
+            continue
+        e = None
+        for s in raw:
+            if any_bullet:
+                is_b = bool(_BULLET.match(s))
+            else:
+                is_b = sec["key"] in BULLET_KEYS and len(s.split()) >= 6 and not _DATE_TAIL.search(s[-14:])
+            if is_b:
+                t = _BULLET.sub("", s).strip() if any_bullet else s
+                if not t:
+                    continue
+                if e is None:
+                    e = _entry("")
+                    sec["entries"].append(e)
+                n += 1
+                e["bullets"].append({"id": f"b{n}", "text": t, "change": ""})
+            elif e is None or e["bullets"] or sec["key"] in ("awards", "coursework") or \
+                    (sec["key"] == "education" and _SCHOOL.search(s) and e["head"]):
+                e = _entry(s)
+                sec["entries"].append(e)
+            else:
+                e["sub"].append(s)
+    name = ""
+    contact_lines = header
+    if header and "@" not in header[0] and not re.search(r"\d", header[0]) and len(header[0].split()) <= 6 and len(header[0]) <= 60:
+        name, contact_lines = header[0], header[1:]
+    contact: list[str] = []
+    for ln in contact_lines:
+        for part in _SPLIT_CONTACT.split(ln):
+            part = part.strip()
+            if part and part not in contact:
+                contact.append(part)
+    return {"name": name, "contact": contact, "sections": sections}
+
+
+def _linknorm(s: str) -> str:
+    return re.sub(r"^(?:https?://)?(?:www\.)?", "", (s or "").strip().lower()).rstrip("/")
+
+
+def _relevance(text: str, jskills: list, kws: list) -> tuple[int, list]:
+    low = text.lower()
+    has = [x.lower() for x in extract_skills(text)]
+    hits = [s for s in jskills if s.lower() in has or _has_word(low, s)]
+    hl = [h.lower() for h in hits]
+    more = [k for k in kws if k not in hl and _has_word(low, k)]
+    return 2 * len(hits) + len(more), hits + more
+
+
+def _summary_text(profile: dict, doc: dict, have: list, jl: list | None, job: dict | None) -> str:
+    major = str(profile.get("major") or "").strip()
+    grad = str(profile.get("grad_term") or "").strip()
+    s = (major + " student" if major else "Student") + " at Florida State University" + (" graduating " + grad if grad else "")
+    pick = [h for h in have if h.lower() in jl] if jl is not None else []
+    if not pick:
+        pick = have[:3]
+    if pick:
+        s += " with hands-on experience in " + _and(pick[:3])
+    s += "."
+    exp = next((sec for sec in doc["sections"] if sec["key"] == "experience" and sec["entries"]), None)
+    head = _SEG.split(next((e["head"] for e in (exp["entries"] if exp else []) if e["head"]), ""))[0].strip()
+    if head and len(head) <= 90:
+        s += " Experience includes " + head.rstrip(".") + "."
+    cat = str((job or {}).get("category") or "").strip()
+    if job and cat and cat.lower() != "other":
+        s += " Interested in " + cat.lower() + " work."
+    return s
+
+
+def _profile_entry(it: dict) -> dict:
+    title, org = str(it.get("title") or "").strip(), str(it.get("org") or "").strip()
+    head = title + (", " + org if org and title else "") if title else org
+    start = str(it.get("start") or "").strip()
+    end = "Present" if it.get("current") else str(it.get("end") or "").strip()
+    date = start + " – " + end if start and end else (start or end)
+    bl = [t for t in (_BULLET.sub("", x).strip() for x in re.split(r"\n+", str(it.get("description") or ""))) if t][:3]
+    return {"head": head, "date": date, "line": head + (", " + date if date else ""), "sub": [],
+            "bullets": [{"id": "", "text": t, "change": ""} for t in bl]}
+
+
+def build_resume(profile: dict | None, base_text: str, job: dict | None = None, accepted=None, *, undo=None,
+                 ai_edits: dict | None = None, today: tuple[int, int] | None = None) -> dict:
+    """A complete resume document from the student's resume text and profile, optionally aimed at one job.
+
+    Returns {name, contact, sections, changes, gaps, match, job, text}. `accepted` (ids to apply; None = all) and
+    `undo` (ids to leave out) choose which changes are applied; every change is always listed, with `on`."""
+    import copy as _copy
+    profile = profile or {}
+    text = base_text or ""
+    undo = set(undo or [])
+
+    def on(cid: str) -> bool:
+        return (accepted is None or cid in accepted) and cid not in undo
+
+    parsed = _doc_parse(text)
+    doc = _copy.deepcopy(parsed)
+    changes: list[dict] = []
+
+    def change(kind, title, detail="", before="", after="") -> str:
+        cid = f"c{len(changes) + 1}"
+        changes.append({"id": cid, "kind": kind, "title": title, "detail": detail, "before": before, "after": after, "on": on(cid)})
+        return cid
+
+    def section(key: str, make: bool = False) -> dict | None:
+        sec = next((s for s in doc["sections"] if s["key"] == key), None)
+        if sec is None and make:
+            sec = {"key": key, "title": DOC_TITLES[key], "text": "", "lines": [], "entries": []}
+            doc["sections"].append(sec)
+        return sec
+
+    # Header: the resume's own name and contact line, plus the profile's email and links if it doesn't show them.
+    if not doc["name"]:
+        doc["name"] = str(profile.get("display_name") or "").strip() or "Your Name"
+    have_links = " ".join(_linknorm(c) for c in doc["contact"])
+    email = str(profile.get("email") or "").strip()
+    if email and not _EMAIL.search(text):
+        doc["contact"].append(email)
+    links = profile.get("links") or {}
+    for k in ("linkedin", "website"):
+        v = str(links.get(k) or "").strip()
+        if v and _linknorm(v) not in have_links and not (k == "linkedin" and "linkedin.com" in have_links):
+            doc["contact"].append(re.sub(r"^(?:https?://)?(?:www\.)?", "", v).rstrip("/"))
+
+    jl = None
+    jskills: list = []
+    kws: list = []
+    if job:
+        jskills, kws = _job_terms(job)
+        jl = [s.lower() for s in jskills]
+    skills_profile = [str(s).strip() for s in (profile.get("skills") or []) if str(s).strip()]
+    have: list = []
+    listed = " ".join(ln for sec in parsed["sections"] if sec["key"] == "skills" for ln in sec["lines"])
+    for s in extract_skills(listed) + extract_skills(text) + skills_profile:
+        if s.lower() not in [h.lower() for h in have]:
+            have.append(s)
+
+    # 1. Summary: written from the student's major, graduation term, skills and first role.
+    old_sum = (section("summary") or {}).get("text", "")
+    gen = (ai_edits or {}).get("summary") or _summary_text(profile, parsed, have, jl, job)
+    if (job and _nrm(gen) != _nrm(old_sum)) or (not job and not old_sum):
+        cid = change("summary", ("Rewrote your summary for this job" if old_sum else "Added a summary for this job") if job else "Added a short summary",
+                     "Built from your major, graduation term, skills" + (" this job lists" if job else "") + " and experience. Nothing new is claimed.",
+                     old_sum, gen)
+        if on(cid):
+            section("summary", True)["text"] = gen
+
+    # 2. Profile entries the resume doesn't have yet (they're the student's own).
+    text_n = _nrm(text)
+    added = 0
+    for it in profile.get("items") or []:
+        key = PROFILE_ITEM_KEYS.get(it.get("kind") or "")
+        title = str(it.get("title") or "").strip()
+        if not key or not title or _nrm(title) in text_n or added >= 4:
+            continue
+        added += 1
+        e = _profile_entry(it)
+        label = {"awards": "certification", "projects": "project", "leadership": "activity"}.get(key, "experience")
+        cid = change("profile", f"Added your {label} “{title}” from your profile", "It's on your profile but wasn't on this resume.", "", e["line"])
+        if on(cid):
+            section(key, True)["entries"].append(e)
+
+    # 3. Order bullets: most relevant to the job first (with no job, the strongest result first).
+    score_of: dict = {}
+    for sec in doc["sections"]:
+        if sec["key"] not in BULLET_KEYS:
+            continue
+        for e in sec["entries"]:
+            sc = []
+            for b in e["bullets"]:
+                if job:
+                    r, hits = _relevance(b["text"], jskills, kws)
+                else:
+                    r, hits = (1 if _NUM.search(b["text"]) and not bullet_issues(b["text"]) else 0), []
+                if b["id"]:
+                    score_of[b["id"]] = r
+                sc.append((r, hits))
+            if len(e["bullets"]) < 2:
+                continue
+            order = sorted(range(len(e["bullets"])), key=lambda i: (-sc[i][0], i))
+            if order != list(range(len(order))) and sc[order[0]][0] > sc[0][0]:
+                where = e["head"] or DOC_TITLES.get(sec["key"], "")
+                detail = (f"It mentions {_and(sc[order[0]][1][:3])}, which this job asks for." if job
+                          else "It shows a result with a number, so it should come first.")
+                cid = change("order", ("Led " + where[:60] + " with its most relevant bullet") if job else ("Led " + where[:60] + " with its strongest result"),
+                             detail, e["bullets"][0]["text"], e["bullets"][order[0]]["text"])
+                if on(cid):
+                    e["bullets"] = [e["bullets"][i] for i in order]
+
+    # 4. For a job, leave out bullets that don't relate to it when one role has more than four.
+    dropped: set = set()
+    if job:
+        for sec in doc["sections"]:
+            if sec["key"] not in BULLET_KEYS:
+                continue
+            for e in sec["entries"]:
+                if len(e["bullets"]) <= 4:
+                    continue
+                ranked = sorted(e["bullets"], key=lambda b: -score_of.get(b["id"], 0))
+                gone = [b for b in ranked[4:] if b["id"] and score_of.get(b["id"], 0) == 0]
+                if gone:
+                    where = e["head"] or DOC_TITLES.get(sec["key"], "")
+                    cid = change("trim", f"Left out {len(gone)} bullet{'s' if len(gone) != 1 else ''} under {where[:60]} that don't relate to this job",
+                                 "Keeps the page on what this employer asks for. They stay on your main resume.",
+                                 " / ".join(b["text"] for b in gone), "")
+                    ids = {b["id"] for b in gone}
+                    dropped |= ids
+                    if on(cid):
+                        e["bullets"] = [b for b in e["bullets"] if b["id"] not in ids]
+
+    # 5. Reword weak bullets: same facts; anything unknown is left for the student to add.
+    ai_b = (ai_edits or {}).get("bullets") or {}
+    n_rw = 0
+    for b in [b for sec in parsed["sections"] for e in sec["entries"] for b in e["bullets"]]:
+        if b["id"] in dropped or n_rw >= 10:
+            continue
+        t = b["text"]
+        if t in ai_b:
+            new, why, title = ai_b[t].get("text", ""), ai_b[t].get("why") or "Reworded to match the posting.", "Reworded a bullet to match the posting"
+        else:
+            iss = bullet_issues(t)
+            if not iss:
+                continue
+            new = improve_bullet(t)["rewrite"].replace(PLACEHOLDER_TAIL, "")
+            why = iss[0] + (" If you have a number for it, add it." if not _NUM.search(t) and not iss[0].startswith("No number") else "")
+            title = "Reworded a bullet to lead with what you did"
+        if not new or _nrm(new) == _nrm(t):
+            continue
+        n_rw += 1
+        cid = change("rewrite", title, why, t, new)
+        if on(cid):
+            for sec in doc["sections"]:
+                for e in sec["entries"]:
+                    for x in e["bullets"]:
+                        if x["id"] == b["id"]:
+                            x["text"], x["change"] = new, cid
+
+    # 6. Skills from the profile that the resume doesn't list (for a job: only the ones the job asks for).
+    cand = [s for s in skills_profile if s.lower() in jl] if jl is not None else skills_profile
+    miss = missing_profile_skills(text, cand)
+    if miss:
+        many = len(miss) > 1
+        cid = change("skills", "Added " + _and(miss[:4]) + (f" and {len(miss) - 4} more" if len(miss) > 4 else "") + " to Skills",
+                     ("This job lists " + ("them" if many else "it") + ", and " + ("they're" if many else "it's") + " on your profile.") if job
+                     else (("They're" if many else "It's") + " on your profile but " + ("weren't" if many else "wasn't") + " on your resume."),
+                     "", ", ".join(miss))
+        if on(cid):
+            sec = section("skills", True)
+            i = next((k for k, ln in enumerate(sec["lines"]) if ":" not in ln), -1)
+            if i >= 0:
+                sec["lines"][i] = sec["lines"][i].rstrip().rstrip(",;") + ", " + ", ".join(miss)
+            else:
+                sec["lines"].append(("Additional: " if sec["lines"] else "") + ", ".join(miss))
+
+    doc["sections"] = [s for s in sorted(doc["sections"], key=lambda s: DOC_ORDER.index(s["key"])) if s["text"] or s["lines"] or s["entries"]]
+    out = {"name": doc["name"], "contact": doc["contact"], "sections": doc["sections"], "changes": changes, "gaps": [], "match": None,
+           "job": {"id": job.get("id"), "title": job.get("title") or "", "company": job.get("company") or ""} if job else None}
+    out["text"] = doc_text(out)
+    if job:
+        import fit as _fit
+        lean = lambda t: dict(profile, skills=[], items=[], headline="", bio="", resume_text=t)      # noqa: E731
+        f0 = _fit.fit_score(job, lean(text), today)
+        f1 = _fit.fit_score(job, lean(out["text"]), today)
+        out["match"] = {"before": f0["percent"], "after": f1["percent"], "met_before": f0["met"], "met_after": f1["met"], "total": f1["total"]}
+        out["gaps"] = [{"text": c["text"], "must": bool(c.get("must")), "advice": _gap_advice(c["text"], c["status"])}
+                       for c in f1["checklist"] if c["status"] != "met"][:8]
+    return out
+
+
+def fact_safe(new: str, orig: str, allowed=()) -> bool:
+    """True when `new` claims nothing `orig` doesn't: no new numbers, skills, names, links or emails.
+    Used to check wording from the AI before it can reach a resume."""
+    new, orig = str(new or "").strip(), str(orig or "")
+    if not new or len(new) > 320 or _EMAIL.search(new) or re.search(r"https?://|www\.|\[", new):
+        return False
+    nums = lambda s: set(re.findall(r"\d[\d,.]*\d|\d", s))      # noqa: E731
+    if not nums(new) <= nums(orig):
+        return False
+    ok = {s.lower() for s in extract_skills(orig)} | {str(a).lower() for a in allowed}
+    if any(s.lower() not in ok for s in extract_skills(new)):
+        return False
+    words = set(re.findall(r"[a-z0-9]+", (orig + " " + " ".join(str(a) for a in allowed)).lower()))
+    names = re.findall(r"(?<=[a-z,;] )[A-Z][A-Za-z]+", new)            # capitalized words mid-sentence: names of places, firms, tools
+    return all(n.lower() in words for n in names)
+
+
+def _job_terms(job: dict) -> tuple[list, list]:
+    from quals import of as _quals_of
+    jtext = str(job.get("title") or "") + "\n" + str(job.get("description") or "")
+    jskills = list(dict.fromkeys(extract_skills(jtext) + [q["label"] for q in _quals_of(job) if q.get("kind") == "skill"]))
+    return jskills, _keywords(str(job.get("title") or "") + " " + str(job.get("description") or ""))
+
+
+def _best_entry(doc: dict, keys: tuple, jskills: list, kws: list) -> tuple[dict | None, int, list]:
+    best, top, hits = None, 0, []
+    for sec in doc["sections"]:
+        if sec["key"] not in keys:
+            continue
+        for e in sec["entries"]:
+            sc, hs = _relevance(e["head"] + " " + " ".join(b["text"] for b in e["bullets"]), jskills, kws)
+            if sc > top:
+                best, top, hits = e, sc, hs
+    return best, top, hits
+
+
+def stand_out_job(profile: dict | None, text: str, job: dict, today: tuple[int, int] | None = None) -> list[dict]:
+    """'Help me stand out' for one job: 3-6 concrete tips drawn only from the student's own resume and profile."""
+    profile = profile or {}
+    doc = _doc_parse(text)
+    jskills, kws = _job_terms(job)
+    tips: list[dict] = []
+    e, sc, hits = _best_entry(doc, ("experience", "leadership"), jskills, kws)
+    if e and (e["head"] or e["bullets"]):
+        where = _SEG.split(e["head"])[0].strip() or "that role"
+        tips.append({"title": "Lead with " + where[:80], "kind": "lead",
+                     "detail": f"It shows {_and(hits[:3])}, which this posting asks for. Keep it near the top, and bring it up first when you talk to them."})
+    proj, psc, phits = _best_entry(doc, ("projects",), jskills, kws)
+    ptitle = _SEG.split(proj["head"])[0].strip() if proj else ""
+    if not proj:
+        for it in profile.get("items") or []:
+            if it.get("kind") == "project" and it.get("title"):
+                s2, h2 = _relevance(str(it.get("title")) + " " + str(it.get("description") or ""), jskills, kws)
+                if s2 > psc:
+                    ptitle, psc, phits = str(it["title"]).strip(), s2, h2
+    if ptitle and psc:
+        tips.append({"title": "Mention your project " + ptitle[:70], "kind": "project",
+                     "detail": f"It's the project that best matches this job: it shows {_and(phits[:3])}. Put the link on your resume if it's online."})
+    import fit as _fit
+    f = _fit.fit_score(job, dict(profile, skills=[], items=[], headline="", bio="", resume_text=text), today)
+    mine = {str(s).lower() for s in (profile.get("skills") or [])}
+    shown = 0
+    for c in f["checklist"]:
+        if c["status"] != "missing" or c["text"].startswith(("Major:", "GPA", "Class standing")) or shown >= 2:
+            continue
+        s = c["text"].replace(" (preferred)", "")
+        if s.lower() in mine:
+            tips.append({"title": f"Show where you used {s}", "kind": "evidence",
+                         "detail": f"It's on your profile and this job lists it, but nothing on your resume shows it. Add one bullet about where you used it."})
+        else:
+            tips.append({"title": f"Build evidence for {s}", "kind": "gap",
+                         "detail": f"The posting asks for {s} and nothing you've shared shows it. If you've used it in a class or club, add that. If not, a short course or a small project can show it. Don't list it until it's true."})
+        shown += 1
+    if e:
+        bare = [b for b in e["bullets"] if not _NUM.search(b["text"])]
+        if bare:
+            tips.append({"title": "Add numbers to " + (_SEG.split(e["head"])[0].strip() or "your top role")[:70], "kind": "numbers",
+                         "detail": f"{len(bare)} of its bullets {'has' if len(bare) == 1 else 'have'} no number. How many people, hours, dollars or percent? Numbers are what screeners remember."})
+    if any(c["status"] == "met" and c["text"].startswith("Major:") for c in f["checklist"]):
+        tips.append({"title": "Say your major up front", "kind": "major",
+                     "detail": "This posting lists your major. Your summary and note should say it in the first line."})
+    if len(tips) < 3:
+        tips.append({"title": "Open with a summary aimed at this job", "kind": "summary",
+                     "detail": "Two lines on your major, your strongest skills for this role and your most relevant experience. Tailor my resume writes one from what you've shared."})
+    if len(tips) < 3:
+        tips.append({"title": "Follow up after you apply", "kind": "follow",
+                     "detail": "Once you've applied, a short, specific note to the person who posted the job helps you stand out. There's a draft under Message the poster."})
+    return tips[:6]
+
+
+def cover_note(profile: dict | None, text: str, job: dict, poster: str = "") -> str:
+    """A short note to the listing's poster, built only from what the student has shared."""
+    profile = profile or {}
+    doc = _doc_parse(text)
+    jskills, kws = _job_terms(job)
+    name = str(profile.get("display_name") or doc["name"] or "").strip()
+    major, grad = str(profile.get("major") or "").strip(), str(profile.get("grad_term") or "").strip()
+    who = (f"I'm {name}, a" if name else "I'm a") + (f" {major}" if major else "") + " student at Florida State University" + (f" graduating {grad}" if grad else "") + "."
+    title, company = str(job.get("title") or "this").strip(), str(job.get("company") or "").strip()
+    body = who + f" I'm interested in the {title} role" + (f" at {company}" if company else "") + "."
+    best, top = "", 0
+    for sec in doc["sections"]:
+        if sec["key"] not in BULLET_KEYS:
+            continue
+        for e in sec["entries"]:
+            for b in e["bullets"]:
+                t = b["text"].rstrip(".")
+                fw = _first_word(t)
+                sc, _ = _relevance(t, jskills, kws)
+                if sc > top and (fw in STRONG_VERBS or fw.endswith("ed")) and not _PRONOUN.search(t) and len(t.split()) <= 30:
+                    best, top = t, sc
+    if best:
+        body += " For example, I " + best[:1].lower() + best[1:] + "."
+    have = []
+    for s in extract_skills(text) + [str(x) for x in profile.get("skills") or []]:
+        if s.lower() in [j.lower() for j in jskills] and s.lower() not in [h.lower() for h in have]:
+            have.append(s)
+    if have:
+        body += f" I've worked with {_and(have[:3])}, which the posting mentions."
+    body += " I'd welcome the chance to talk about how I could help. Thank you for your time."
+    return (f"Hi {poster}," if poster else "Hi,") + "\n\n" + body + ("\n\n" + name if name else "")
+
+
+def _gap_advice(item: str, status: str) -> str:
+    if item.startswith("Major:"):
+        return "They list these majors. If yours is related, say how your classes connect in your note to the poster."
+    if item.startswith("GPA"):
+        return "Add your GPA to the Education line if you meet it. If you don't, leave it off; many employers still consider you."
+    if item.startswith("Class standing"):
+        return "Make sure your expected graduation month and year are on the resume."
+    s = item.replace(" (preferred)", "")
+    if status == "unknown":
+        return f"We can't tell from your resume. If {s} applies to you, add it."
+    return (f"Only add {s} if you've really used it, in a class, a club, a project or a job. If you have, write a bullet that shows it. "
+            "If not, leave it off and mention a related skill you do have.")
+
+
+def doc_text(doc: dict) -> str:
+    """The resume as plain text (the same form the studio stores, so it can be re-read and re-scored)."""
+    out = [doc["name"]]
+    if doc["contact"]:
+        out.append(" | ".join(doc["contact"]))
+    for sec in doc["sections"]:
+        out += ["", sec["title"].upper()]
+        if sec["key"] == "summary":
+            out.append(sec["text"])
+            continue
+        out += sec["lines"]
+        for e in sec["entries"]:
+            if e["line"]:
+                out.append(e["line"])
+            out += e["sub"]
+            out += ["• " + b["text"] for b in e["bullets"]]
+    return "\n".join(out).strip() + "\n"
+
+
+def doc_html(doc: dict, marks: bool = True) -> str:
+    """The resume as a page-like block (.rs-doc); css_resume styles it and prints only it."""
+    e_ = lambda s: html.escape(s or "", quote=True)      # noqa: E731
+    parts = [f'<article class="rs-doc" aria-label="Resume preview"><div class="rs-dhd"><h1>{e_(doc["name"])}</h1>']
+    if doc["contact"]:
+        parts.append('<p class="rs-dc">' + '<i aria-hidden="true"> · </i>'.join(f"<span>{e_(c)}</span>" for c in doc["contact"]) + "</p>")
+    parts.append("</div>")
+    for sec in doc["sections"]:
+        parts.append(f'<section><h2>{e_(sec["title"])}</h2>')
+        if sec["key"] == "summary":
+            parts.append(f'<p class="rs-ds">{e_(sec["text"])}</p>')
+        for ln in sec["lines"]:
+            k = ln.find(":")
+            parts.append(f'<p class="rs-dsk"><b>{e_(ln[:k + 1])}</b>{e_(ln[k + 1:])}</p>' if 0 < k < 40 else f'<p class="rs-dsk">{e_(ln)}</p>')
+        for en in sec["entries"]:
+            parts.append('<div class="rs-de">')
+            if en["head"] or en["date"]:
+                parts.append(f'<div class="rs-dh"><b>{e_(en["head"])}</b>' + (f'<span>{e_(en["date"])}</span>' if en["date"] else "") + "</div>")
+            parts += [f'<p class="rs-dsub">{e_(s)}</p>' for s in en["sub"]]
+            if en["bullets"]:
+                chg = ' class="rs-chg"'
+                parts.append("<ul>" + "".join(f'<li{chg if marks and b["change"] else ""}>{e_(b["text"])}</li>' for b in en["bullets"]) + "</ul>")
+            parts.append("</div>")
+        parts.append("</section>")
+    parts.append("</article>")
+    return "".join(parts)
+
+
+def doc_docx(doc: dict) -> bytes:
+    """The structured resume as Word: centered name and contact line, ruled headings, bold entry lines with dates, bullets."""
+    rows: list[tuple[str, str]] = [("name", doc["name"])] + ([("contact", " | ".join(doc["contact"]))] if doc["contact"] else [])
+    for sec in doc["sections"]:
+        rows.append(("h", sec["title"].upper()))
+        if sec["key"] == "summary":
+            rows.append(("p", sec["text"]))
+        rows += [("p", ln) for ln in sec["lines"]]
+        for e in sec["entries"]:
+            if e["head"] or e["date"]:
+                rows.append(("e", e["head"] + ("\t" + e["date"] if e["date"] else "")))
+            rows += [("p", s) for s in e["sub"]]
+            rows += [("b", b["text"]) for b in e["bullets"]]
+    return _docx_rows(rows)
+
+
+def _docx_rows(rows: list[tuple[str, str]]) -> bytes:
+    paras = []
+    for kind, s in rows:
+        rpr, ppr = "", ""
+        if kind == "name":
+            rpr, ppr = '<w:rPr><w:b/><w:sz w:val="36"/></w:rPr>', '<w:pPr><w:jc w:val="center"/><w:spacing w:after="40"/></w:pPr>'
+        elif kind == "contact":
+            rpr, ppr = '<w:rPr><w:sz w:val="19"/></w:rPr>', '<w:pPr><w:jc w:val="center"/><w:spacing w:after="120"/></w:pPr>'
+        elif kind == "h":
+            rpr = '<w:rPr><w:b/><w:caps/><w:sz w:val="22"/></w:rPr>'
+            ppr = ('<w:pPr><w:spacing w:before="200" w:after="60"/><w:pBdr><w:bottom w:val="single" w:sz="4" '
+                   'w:space="1" w:color="999999"/></w:pBdr></w:pPr>')
+        elif kind == "e":
+            rpr = "<w:rPr><w:b/></w:rPr>"
+            ppr = '<w:pPr><w:tabs><w:tab w:val="right" w:pos="10512"/></w:tabs><w:spacing w:before="80" w:after="20"/></w:pPr>'
+        elif kind == "b":
+            s = "•\t" + s
+            ppr = '<w:pPr><w:ind w:left="360" w:hanging="220"/><w:spacing w:after="20"/></w:pPr>'
+        if kind == "e" and "\t" in s:
+            head, date = s.split("\t", 1)
+            paras.append(f'<w:p>{ppr}<w:r>{rpr}<w:t xml:space="preserve">{_x(head)}</w:t></w:r><w:r><w:tab/>'
+                         f'<w:t xml:space="preserve">{_x(date)}</w:t></w:r></w:p>')
+        else:
+            paras.append(f'<w:p>{ppr}<w:r>{rpr}<w:t xml:space="preserve">{_x(s)}</w:t></w:r></w:p>')
+    return _docx_pack("".join(paras))
+
+
+# ---------- .pdf export (a small PDF writer: Helvetica, letter size, no dependencies) ----------
+
+# Advance widths (1/1000 em) of Helvetica and Helvetica-Bold for WinAnsi codes 32..255 (0 = not drawable).
+_HELV = [int(x) for x in """278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584,0,556,0,222,556,333,1000,556,556,333,1000,667,333,1000,0,611,0,0,222,222,333,333,350,556,1000,333,1000,500,333,944,0,500,667,0,333,556,556,556,556,260,556,333,737,370,556,584,0,737,333,400,584,0,0,333,556,537,278,333,0,365,556,834,834,834,611,667,667,667,667,667,667,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,500,556,556,556,556,278,278,278,278,556,556,556,556,556,556,556,584,611,556,556,556,556,500,556,500""".split(",")]
+_HELVB = [int(x) for x in """278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584,0,556,0,278,556,500,1000,556,556,333,1000,667,333,1000,0,611,0,0,278,278,500,500,350,556,1000,333,1000,556,333,944,0,500,667,0,333,556,556,556,556,280,556,333,737,370,556,584,0,737,333,400,584,0,0,333,611,556,278,333,0,365,556,834,834,834,611,722,722,722,722,722,722,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,556,556,556,556,556,278,278,278,278,611,611,611,611,611,611,611,584,611,611,611,611,611,556,611,556""".split(",")]
+_WIN_HI = "€\x81‚ƒ„…†‡ˆ‰Š‹Œ\x8dŽ\x8f\x90‘’“”•–—˜™š›œ\x9džŸ"      # the characters at WinAnsi 128..159
+
+
+def _win(ch: str) -> int:
+    o = ord(ch)
+    if 32 <= o <= 126 or 160 <= o <= 255:
+        c = o
+    elif ch in _WIN_HI:
+        c = 128 + _WIN_HI.index(ch)
+    elif ch in "\t   ":
+        c = 32
+    elif ch in "‐‑‒":
+        c = 45
+    else:
+        return 63
+    return c if _HELV[c - 32] else 63
+
+
+def _pdf_width(s: str, bold: bool, size: float) -> float:
+    w = _HELVB if bold else _HELV
+    return sum(w[_win(ch) - 32] for ch in s) * size / 1000
+
+
+def _pdf_str(s: str) -> str:
+    out = []
+    for ch in s:
+        c = _win(ch)
+        if c in (40, 41, 92):
+            out.append("\\" + chr(c))
+        elif c > 126:
+            out.append("\\" + format(c, "o").zfill(3))
+        else:
+            out.append(chr(c))
+    return "(" + "".join(out) + ")"
+
+
+def _wrap(s: str, bold: bool, size: float, width: float) -> list[str]:
+    lines, cur = [], ""
+    for w in s.split():
+        t = cur + " " + w if cur else w
+        if cur and _pdf_width(t, bold, size) > width:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = t
+        while len(cur) > 1 and _pdf_width(cur, bold, size) > width:       # one very long word: break it
+            k = len(cur)
+            while k > 1 and _pdf_width(cur[:k], bold, size) > width:
+                k -= 1
+            lines.append(cur[:k])
+            cur = cur[k:]
+    if cur:
+        lines.append(cur)
+    return lines or [""]
+
+
+def _num(v: float) -> str:
+    s = str(math.floor(v * 100 + 0.5) / 100)          # half-up, the same as the demo's Math.round port
+    s = s[:-2] if s.endswith(".0") else s
+    return "0" if s == "-0" else s
+
+
+def pdf_bytes(pages: list[list[str]], title: str = "Resume") -> bytes:
+    """Assemble a PDF from per-page content-stream operators: uncompressed, ASCII and deterministic."""
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", "",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+            f"<< /Title {_pdf_str(title)} /Producer (NoleCareerShield) >>"]
+    kids = []
+    for ops in pages:
+        stream = "\n".join(ops)
+        objs.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {len(objs)} 0 R >>")
+        kids.append(f"{len(objs)} 0 R")
+    objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >>"
+    out = "%PDF-1.4\n"
+    offs = []
+    for i, o in enumerate(objs):
+        offs.append(len(out))
+        out += f"{i + 1} 0 obj\n{o}\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n" + "".join(str(o).zfill(10) + " 00000 n \n" for o in offs)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R /Info 5 0 R >>\nstartxref\n{xref}\n%%EOF\n"
+    return out.encode("ascii")
+
+
+def to_pdf(doc: dict) -> bytes:
+    """The resume as a letter-size PDF: name, contact line, ruled section headings, entries with dates on the right, bullets."""
+    M, W, TOP, BOT = 54, 504, 738, 54
+    pages: list[list[str]] = [[]]
+    st = {"y": TOP}
+
+    def need(h):
+        if st["y"] - h < BOT:
+            pages.append([])
+            st["y"] = TOP
+
+    def put(x, s, bold, size):
+        pages[-1].append(f"BT /{'F2' if bold else 'F1'} {_num(size)} Tf {_num(x)} {_num(st['y'])} Td {_pdf_str(s)} Tj ET")
+
+    def para(s, indent=0, bullet=False):
+        for i, ln in enumerate(_wrap(s, False, 10, W - indent)):
+            need(12.5)
+            st["y"] -= 12.5
+            if i == 0 and bullet:
+                put(M + indent - 10, "•", False, 10)
+            put(M + indent, ln, False, 10)
+
+    for ln in _wrap(doc["name"], True, 20, W):
+        st["y"] -= 22
+        put(M + (W - _pdf_width(ln, True, 20)) / 2, ln, True, 20)
+    if doc["contact"]:
+        for ln in _wrap("  |  ".join(doc["contact"]), False, 9.5, W):
+            st["y"] -= 13
+            put(M + (W - _pdf_width(ln, False, 9.5)) / 2, ln, False, 9.5)
+    for sec in doc["sections"]:
+        need(40)
+        st["y"] -= 20
+        put(M, sec["title"].upper(), True, 10.5)
+        pages[-1].append(f"0.6 w 0.55 G {M} {_num(st['y'] - 4)} m {M + W} {_num(st['y'] - 4)} l S 0 G")
+        st["y"] -= 4
+        if sec["key"] == "summary":
+            para(sec["text"])
+        for ln in sec["lines"]:
+            para(ln)
+        for e in sec["entries"]:
+            if e["head"] or e["date"]:
+                dw = _pdf_width(e["date"], False, 10) if e["date"] else 0
+                heads = _wrap(e["head"], True, 10, W - dw - 12)
+                need(3 + 12.5 * len(heads))
+                st["y"] -= 3
+                for i, h in enumerate(heads):
+                    st["y"] -= 12.5
+                    put(M, h, True, 10)
+                    if i == 0 and e["date"]:
+                        put(M + W - dw, e["date"], False, 10)
+            for s in e["sub"]:
+                para(s)
+            for b in e["bullets"]:
+                para(b["text"], 14, True)
+    return pdf_bytes([p for p in pages if p] or [[]], doc["name"] + " resume")

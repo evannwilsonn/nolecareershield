@@ -11,6 +11,11 @@ Resume studio: review, edit and tailor a resume.
               one, get an ATS readiness score in four sections, and every suggestion as a card the student
               accepts or dismisses. Nothing is applied without a click ("You approve every change").
 
+  * New resume - /job/{id}/tailor (a full resume built for one listing, with match before -> after, every change
+              with Keep/Undo, gaps as advice, PDF/Word/.txt downloads, save as version, open in editor),
+              /job/{id}/standout (job-specific tips + a cover note), /job/{id}/tailor?mode=note (a note to the
+              poster, sent through Messages once the student applied) and /resume/optimized (step 3 of the studio).
+
 Honesty rule for every suggestion: rephrase what the student wrote, never add experience.
 Unknown numbers stay as [placeholders]; missing skills come with "only add this if true".
 """
@@ -181,15 +186,27 @@ def _landing(conn, user, p: dict, extra: str = "", status: int = 200) -> HTMLRes
                if ai.enabled() else "Runs on the built-in reviewer. Your resume text stays on this site.")
     fine = f'<p class="rs-fine">{ai_line} Review every suggestion so it accurately reflects your own experience.</p>'
     tools = f"""<div class="rs-tools">
-<a class="card rs-tool" href="/resume?tab=tailor">{ui.icon("jobs", 20)}<b>Tailor to a job</b><span>Pick a listing and see which of its qualifications your resume covers.</span></a>
+<a class="card rs-tool" href="/resume?tab=tailor">{ui.icon("jobs", 20)}<b>Tailor to a job</b><span>Pick a listing and get a new resume made for it, ready to download.</span></a>
 <a class="card rs-tool" href="/resume/optimize?src=main#rs-stand">{ui.icon("spark", 20)}<b>Help me stand out</b><span>A few tips drawn from what your resume already says.</span></a>
 <a class="card rs-tool" href="/resume?tab=edit">{ui.icon("file", 20)}<b>Edit and versions</b><span>Edit the text, download a copy, or reopen a saved version.</span></a></div>"""
-    body = f"""{_tabs("optimize") if srcs else ""}{extra}<section class="rs-hero"><div><div class="rs-badge">{ui.icon("spark", 28)}</div>
+    body = f"""{_tabs("optimize") if srcs else ""}{extra}{_steps(1)}<section class="rs-start"><div>
 <h1 class="rs-h1">Land more interviews with an ATS-ready resume</h1>
-<p class="rs-lede">Most employers screen resumes with software first. We check yours for the same things, then suggest fixes in your own words.</p>
+<p class="rs-lede">Most employers screen resumes with software first. Choose a resume, we scan it, and you review every change before you download the new one.</p>
 {_check_list(["Scored on formatting, keywords, impact and contact details", "<b>You approve every change.</b> Nothing is applied until you click Accept", "Suggestions rephrase what you wrote. They never make things up"])}</div>
 <div class="card rs-add">{card}{fine}</div></section>{tools if srcs else ""}"""
     return web.page(body, "Resume studio", active="/resume", js=True, status=status)
+
+
+def _steps(n: int, src: str = "main") -> str:
+    """The studio's three steps across the top: 1 Choose resume, 2 Scan, 3 Review changes."""
+    names = [("Choose resume", "/resume"), ("Scan", f"/resume/optimize?src={src}"), ("Review changes", f"/resume/optimized?src={src}")]
+    out = ""
+    for i, (t, h) in enumerate(names, 1):
+        inner = f'<span class="n">{ui.icon("check", 14) if i < n else i}</span><span class="t">{t}</span>'
+        link = n > 1 and i != n
+        out += (f'<li class="{"on" if i == n else "done" if i < n else ""}"{" aria-current=step" if i == n else ""}>'
+                + (f'<a href="{esc(h)}">{inner}</a>' if link else inner) + "</li>")
+    return f'<ol class="rs-steps" aria-label="Resume optimizer steps">{out}</ol>'
 
 
 def _href(path: str, params: dict, frag: str = "") -> str:
@@ -229,6 +246,7 @@ def _report_page(conn, user, p: dict, src: str, x: str = "", ok: bool = False) -
     rp = resume_engine.report(cur["text"], p.get("skills"))
     dismissed = set(re.findall(r"s\d{1,3}", x or ""))
     base = {"src": cur["key"]}
+    names = {k: n for k, n, _ in resume_engine.REPORT_SECTIONS}
     by = {k: [] for k, _, _ in resume_engine.REPORT_SECTIONS}
     for sg in rp["suggestions"]:
         by[sg["section"]].append(sg)
@@ -237,42 +255,71 @@ def _report_page(conn, user, p: dict, src: str, x: str = "", ok: bool = False) -
     nav = "".join(f'<a href="#rs-{sc["key"]}"><span>{esc(sc["name"])}</span><span class="pc">{sc["percent"]}%</span>'
                   f'<div class="meter{tone[sc["tone"]]}"><i style="width:{sc["percent"]}%"></i></div>'
                   f'<span class="open">{open_n[sc["key"]]} suggestion{"" if open_n[sc["key"]] == 1 else "s"} open</span></a>' for sc in rp["sections"])
-    secs = ""
-    for sc in rp["sections"]:
-        ids = {sg["id"] for sg in by[sc["key"]]}
-        cards = ""
-        for sg in by[sc["key"]]:
+    # Pin each suggestion to the resume line it's about (a doc comment in the margin); the rest are overall notes.
+    lines = cur["text"].splitlines()
+    skills_at = resume_engine.parse(cur["text"])["sections"].get("skills")
+    at_line: dict[int, list] = {}
+    general: list = []
+    for sg in rp["suggestions"]:
+        i = next((k for k, ln in enumerate(lines) if sg["old"] and sg["old"] in ln), None) if sg["kind"] == "rewrite" else \
+            (skills_at if sg["kind"] == "skills" else None)
+        (at_line.setdefault(i, []) if i is not None else general).append(sg)
+    anchored: set = set()
+
+    def cards_for(sgs: list, frag: str) -> str:
+        out = ""
+        for sg in sgs:
             if sg["id"] in dismissed:
                 continue
+            anchor = ""
+            if sg["section"] not in anchored:
+                anchored.add(sg["section"])
+                anchor = f'<span class="rs-anchor" id="rs-{sg["section"]}"></span>'
             nxt = ",".join(sorted(dismissed | {sg["id"]}))
-            cards += _sugg_card(sg, cur["key"], _href("/resume/optimize", {**base, "x": nxt}, "#rs-" + sc["key"]))
-        if not cards:
-            cards = f'<div class="rs-clear">{"You dismissed every suggestion here." if ids else "Nothing to fix here. Nice."}</div>'
-        gone = len(dismissed & ids)
-        restore = f'<p class="rs-dis">{gone} dismissed. <a href="{_href("/resume/optimize", base, "#rs-" + sc["key"])}">Show all again</a></p>' if gone else ""
-        pill = f'<span class="pill {sc["tone"] or "info"}">{sc["percent"]}%</span>'
-        secs += f'<section id="rs-{sc["key"]}"><div class="rs-sech"><h3>{esc(sc["name"])}</h3>{pill}</div>{cards}{restore}</section>'
+            card = _sugg_card(sg, cur["key"], _href("/resume/optimize", {**base, "x": nxt}, frag))
+            out += anchor + card.replace("<h4>", f'<div class="rs-sect">{esc(names[sg["section"]])}</div><h4>', 1)
+        return out
+    notes = cards_for(general, "#rs-notes")
+    rows, n_notes = "", 0
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if not s:
+            rows += '<div class="rs-ln sp" aria-hidden="true"></div>'
+            continue
+        kind = " lh" if resume_engine._heading(s) else " lb" if resume_engine._BULLET.match(ln) else " ln" if i == 0 else ""
+        shown = "• " + resume_engine._BULLET.sub("", s) if kind == " lb" else s
+        margin = cards_for(at_line.get(i, []), f"#rs-l{i}")
+        n_notes += margin.count('class="rs-card')
+        rows += (f'<div class="rs-ln{kind}{" hl" if margin else ""}" id="rs-l{i}"><div class="rs-txt">{esc(shown)}</div>'
+                 f'<div class="rs-margin">{margin}</div></div>')
+    gone = len(dismissed & {sg["id"] for sg in rp["suggestions"]})
+    restore = f'<p class="rs-dis">{gone} dismissed. <a href="{_href("/resume/optimize", base, "#rs-doc")}">Show all again</a></p>' if gone else ""
+    secs = ((f'<section id="rs-notes"><div class="rs-sech"><h3>Overall</h3></div>{notes}</section>' if notes else "") +
+            f'<section class="rs-sheet" id="rs-doc"><div class="rs-sech"><h3>Your resume, line by line</h3><span class="pill info">{n_notes} note{"" if n_notes == 1 else "s"}</span></div>'
+            f'<p class="small muted">Highlighted lines have a suggestion beside them. Accept one and the line changes; nothing else does.</p>'
+            f'<div class="rs-lines">{rows}</div>{restore}</section>')
     tips = "".join(f'<div class="rs-card tip"><h4>{ui.icon("spark", 15)} {esc(t["title"])}</h4><div class="why">{esc(t["detail"])}</div></div>' for t in resume_engine.stand_out(cur["text"]))
     jobs = store.live_jobs(conn, security.LISTING_TTL_DAYS)
     ranked = matching.rank_jobs(jobs, p, limit=40) if jobs else []
     jopts = "".join(f'<option value="{int(r["job"]["id"])}">{esc(r["job"]["title"])} · {esc(r["job"]["company"])}</option>' for r in ranked)
     tailor = (f'<section id="rs-tailor"><div class="rs-sech"><h3>Tailor to a job</h3></div><div class="card" style="margin-top:10px">'
-              f'<p class="small muted" style="margin-bottom:10px">Pick a listing from the approved board. You\'ll see which of its listed qualifications your resume covers and get edits to accept or dismiss.</p>'
-              f'<form method="get" action="/resume" class="rs-pick"><input type="hidden" name="tab" value="tailor"><div><label class="hp" for="rs-job">Job</label>'
+              f'<p class="small muted" style="margin-bottom:10px">Pick a listing from the approved board. You\'ll get a new resume made for it, with a preview and downloads.</p>'
+              f'<form method="get" action="/resume/tailor-go" class="rs-pick"><div><label class="hp" for="rs-job">Job</label>'
               f'<select id="rs-job" name="job"><option value="">Choose a listing...</option>{jopts}</select></div>'
-              f'<button class="b" type="submit">Show match details</button></form></div></section>') if ranked else ""
+              f'<button class="b" type="submit">Tailor my resume</button></form></div></section>') if ranked else ""
     ai_btn = (f'<form method="post" action="/resume/ai-review" class="navform">{ui.user_csrf_input()}<button class="b ghost" type="submit">{ui.icon("spark", 16)} Get an AI review</button></form>'
               if ai.enabled() and cur["key"] == "main" else "")
     flash = ui.banner("verified", "Applied. Your other suggestions are still here, and the score is updated.") if ok else ""
     st = rp["stats"]
     side = f"""<aside class="rs-side"><div class="card rs-score"><div class="eyebrow">ATS readiness</div>
 <div class="ring" style="--p:{rp['percent']}"><b>{rp['percent']}<small>%</small></b></div><h2>{esc(rp['label'])}</h2>
-<p>{esc(cur['name'])} · {st['words']} words · {st['bullets']} bullets</p><nav class="rs-nav" aria-label="Report sections">{nav}</nav></div></aside>"""
-    body = f"""{_tabs("optimize")}<a class="rs-back" href="/resume">&larr; Choose another resume</a>{flash}
+<p>{esc(cur['name'])} · {st['words']} words · {st['bullets']} bullets</p><nav class="rs-nav" aria-label="Report sections">{nav}</nav>
+<a class="b rs-next" href="/resume/optimized?src={esc(cur['key'])}">See your optimized resume &rarr;</a></div></aside>"""
+    body = f"""{_tabs("optimize")}{_steps(2, cur["key"])}{flash}
 <div class="rs-report">{side}<div class="rs-main">
 <div class="rs-approve">{ui.icon("shield", 18)}<span><b>You approve every change.</b> Nothing on your resume changes until you press Accept, and you can dismiss anything.</span></div>
 {secs}<section id="rs-stand"><div class="rs-sech"><h3>Help me stand out</h3></div><div class="rs-stand">{tips or '<div class="rs-clear">Nothing to add right now.</div>'}</div></section>
-{tailor}<div class="row" style="margin-top:8px">{ai_btn}<a class="b sec" href="/resume?tab=edit">Edit resume</a><a class="b ghost" href="/resume/download.docx">Download .docx</a></div></div></div>"""
+{tailor}<div class="row" style="margin-top:8px"><a class="b" href="/resume/optimized?src={esc(cur['key'])}">See your optimized resume</a>{ai_btn}<a class="b sec" href="/resume?tab=edit">Edit resume</a><a class="b ghost" href="/resume/download.docx">Download .docx</a></div></div></div>"""
     return web.page(body, "Resume studio", active="/resume", js=True)
 
 
@@ -313,7 +360,8 @@ def _ai_review_html(o: dict, resume: str) -> str:
 {f'<ul class="reasons">{pri}</ul>' if pri else ''}</div>{rw}"""
 
 
-def _studio(conn, user, tab: str = "optimize", extra: str = "", notice: str = "", status: int = 200, job: int = 0, auto: bool = True, x: str = "", ok: bool = False) -> HTMLResponse:
+def _studio(conn, user, tab: str = "optimize", extra: str = "", notice: str = "", status: int = 200, job: int = 0, auto: bool = True, x: str = "",
+            ok: bool = False, draft: str = "") -> HTMLResponse:
     p = _profile(conn, user)
     head = ui.page_head("Resume studio", "Score it, fix it line by line, and tailor it to any job on the board. Suggestions rephrase what you wrote; they never make things up.",
                         num="Resume")
@@ -329,6 +377,8 @@ def _studio(conn, user, tab: str = "optimize", extra: str = "", notice: str = ""
         ai_btn = (f'<form method="post" action="/resume/ai-review" class="navform">{ui.user_csrf_input()}<button class="b" type="submit">{ui.icon("spark", 16)} Get an AI review</button></form>'
                   if ai.enabled() else "")
         body += extra + _review_html(rv) + f'<div class="row" style="margin-top:18px">{ai_btn}<a class="b sec" href="/resume?tab=edit">Edit resume</a></div>{ai_line}'
+    elif tab == "edit" and draft:
+        body += extra + draft + ai_line
     elif tab == "edit":
         body += f"""{extra}<div class="split"><form method="post" action="/resume/save" class="card">{ui.user_csrf_input()}
 <div class="row between" style="margin-bottom:8px"><label for="r-text" style="margin:0">Your resume</label><span class="small faint">{esc(p.get('resume_name') or '')}</span></div>
@@ -347,8 +397,11 @@ def _studio(conn, user, tab: str = "optimize", extra: str = "", notice: str = ""
         if job and auto:
             jrow = store.row(conn, "SELECT * FROM jobs WHERE id = ? AND review_status = 'approved'", (job,))
             extra += _tailor_html(conn, user, p, job, jrow["title"], jrow["description"], None, x, ok) if jrow else ui.banner("warning", "That listing isn't available anymore.")
-        body += f"""<form method="post" action="/resume/tailor" class="card">{ui.user_csrf_input()}
-<div class="form-field"><label for="t-job">A job on the board</label><select id="t-job" name="job_id"><option value="">Choose a listing...</option>{opts}</select></div>
+        body += f"""<form method="get" action="/resume/tailor-go" class="card rs-tpick"><div class="form-field"><label for="t-job">A job on the board</label>
+<p class="hint">You'll get a new resume made for that listing: a preview, every change listed with Undo, and PDF or Word downloads.</p>
+<select id="t-job" name="job"><option value="">Choose a listing...</option>{opts}</select></div>
+<button class="b" type="submit">{ui.icon("file", 16)} Tailor my resume</button></form>
+<form method="post" action="/resume/tailor" class="card" style="margin-top:14px">{ui.user_csrf_input()}
 <div class="or"><span>Or paste a job description</span></div>
 <div class="form-field"><label for="t-title">Job title</label><input id="t-title" name="title" maxlength="200" placeholder="Marketing Intern"></div>
 <div class="form-field"><label for="t-desc">Job description</label><textarea id="t-desc" name="description" maxlength="8000" placeholder="Paste the posting"></textarea></div>
@@ -369,11 +422,17 @@ def _studio(conn, user, tab: str = "optimize", extra: str = "", notice: str = ""
 # ---------- routes ----------
 
 @router.get("/resume", response_class=HTMLResponse)
-def studio(request: Request, tab: str = "optimize", job: int = 0, x: str = "", ok: int = 0):
+def studio(request: Request, tab: str = "optimize", job: int = 0, x: str = "", ok: int = 0, undo: str = "", ai: int = 0, src: str = ""):
     user = web.require_user(request, "student")
     tab = tab if tab in ("optimize", "review", "edit", "tailor", "versions") else "optimize"
+    if tab == "tailor" and job > 0:              # "Tailor my resume" on a listing lands on that job's new resume
+        return RedirectResponse(f"/job/{int(job)}/tailor", status_code=303)
+    frm = request.query_params.get("from", "")
     with store.db() as conn:
-        return _studio(conn, user, tab, job=job, x=x, ok=bool(ok))
+        draft = ""
+        if tab == "edit" and re.fullmatch(r"main|v\d{1,9}|job\d{1,9}", frm or ""):
+            draft = _editor_draft(conn, user, _profile(conn, user), frm, _undo(undo), bool(ai))
+        return _studio(conn, user, tab, job=job, x=x, ok=bool(ok), draft=draft)
 
 
 @router.get("/resume/optimize", response_class=HTMLResponse)
@@ -779,3 +838,443 @@ def download_version(vid: int, request: Request):
     if not v:
         return web.page('<p class="empty" style="margin:40px 0">That version isn\'t available.</p>', "Resume studio", active="/resume", status=404)
     return _download(v["body"], v["name"], True)
+
+
+# ---------- the new resume: tailored to a job, or optimized in general ----------
+#
+# Both pages show the full new resume (resume_engine.build_resume) with a panel of every change, each with
+# Keep / Undo links. The choice travels in the URL (?undo=c2,c5), so the preview, the downloads, "Save as
+# version" and "Open in editor" all use the same resume. No JavaScript needed; Ctrl+P prints just the page.
+
+_AI_CACHE: dict = {}          # (user, key, text hash) -> checked AI wording, so previews and downloads match
+_AI_CACHE_MAX = 300
+
+
+def _undo(s: str) -> list[str]:
+    return sorted(set(re.findall(r"c\d{1,3}", s or "")), key=lambda c: int(c[1:]))
+
+
+def _q(params: dict) -> str:
+    from urllib.parse import urlencode
+    q = urlencode({k: v for k, v in params.items() if v not in ("", None, 0)})
+    return "?" + q if q else ""
+
+
+def _live_job(conn, jid: int) -> dict | None:
+    return store.row(conn, "SELECT * FROM jobs WHERE id = ? AND review_status = 'approved'", (jid,))
+
+
+def _me(conn, user, p: dict) -> dict:
+    """The profile plus the account email and profile sections, as build_resume reads it."""
+    r = conn.execute("SELECT email FROM users WHERE id = ?", (user["id"],)).fetchone()
+    return dict(p, email=r[0] if r else "", items=p.get("items") or store.profile_items(conn, user["id"]))
+
+
+def _ai_key(user, key: str, text: str) -> tuple:
+    import hashlib
+    return (int(user["id"]), key, hashlib.sha256(text.encode()).hexdigest()[:24])
+
+
+def ai_polish(profile: dict, text: str, job: dict | None) -> dict | None:
+    """Ask Claude to reword bullets and the summary. Every line is checked with resume_engine.fact_safe:
+    anything with a new number, skill, name, link or placeholder is thrown away."""
+    doc = resume_engine._doc_parse(text)
+    bullets = [b["text"] for s in doc["sections"] for e in s["entries"] for b in e["bullets"]][:24]
+    if not bullets:
+        return None
+    schema = {"type": "object", "properties": {
+        "summary": {"type": "string", "description": "Two sentences, true to the resume"},
+        "bullets": {"type": "array", "maxItems": 12, "items": {"type": "object", "properties": {
+            "original": {"type": "string", "description": "The bullet exactly as given"}, "improved": {"type": "string"},
+            "why": {"type": "string"}}, "required": ["original", "improved", "why"]}}},
+        "required": ["summary", "bullets"]}
+    system = ("You polish the wording of an FSU student's resume" + (" for one job posting" if job else "") + ". Reword bullets to lead with a strong "
+              "verb and, where true, mirror the posting's language. Keep every fact exactly: never add numbers, tools, employers, places, "
+              "results or skills that aren't in that bullet. Don't use placeholders. Under 30 words each. Quote originals exactly.")
+    content = ai.tag("resume", "\n".join("- " + b for b in bullets), 8000)
+    if job:
+        content += "\n" + ai.tag("job", f"{job.get('title', '')}\n\n{job.get('description', '')}", 5000)
+    about = json.dumps({k: profile.get(k) for k in ("major", "grad_term", "skills") if profile.get(k)})
+    content += f"\nStudent profile: {ai.tag('profile', about, 800)}"
+    try:
+        o = ai.structured(system, content, "resume_wording", schema, max_tokens=1800)
+    except ai.AIUnavailable:
+        return None
+    skills = [str(s) for s in profile.get("skills") or []]
+    out: dict = {"bullets": {}}
+    for r in o.get("bullets") or []:
+        if isinstance(r, dict) and r.get("original") in bullets and resume_engine.fact_safe(r.get("improved"), r["original"], skills):
+            out["bullets"][r["original"]] = {"text": str(r["improved"]).strip(), "why": str(r.get("why") or "")[:200]}
+    s = str(o.get("summary") or "").strip()
+    facts = text + " " + " ".join(str(profile.get(k) or "") for k in ("major", "grad_term")) + " Florida State University FSU"
+    if resume_engine.fact_safe(s, facts, skills):
+        out["summary"] = s
+    return out if out["bullets"] or out.get("summary") else None
+
+
+def _build(conn, user, p: dict, text: str, job: dict | None, undo: list, ai_key: str = "") -> dict:
+    me = _me(conn, user, p)
+    edits = _AI_CACHE.get(_ai_key(user, ai_key, text)) if ai_key else None
+    return resume_engine.build_resume(me, text, job, undo=undo, ai_edits=edits)
+
+
+def _no_resume_page(title: str) -> HTMLResponse:
+    body = (ui.page_head(title) + f'<div class="card rs-need"><h2>Add your resume first</h2><p class="muted">We build the new resume from yours, '
+            f'so upload it once (PDF, Word or text). It takes a few seconds, and you approve every change after.</p>{_upload_form("Upload my resume")}</div>')
+    return web.page(body, title, active="/resume", js=True)
+
+
+def _changes_html(doc: dict, href) -> str:
+    kinds = {"summary": "Summary", "profile": "From your profile", "order": "Order", "trim": "Left out", "rewrite": "Wording", "skills": "Skills"}
+    items = ""
+    for c in doc["changes"]:
+        diff = ""
+        if c["before"] and c["after"] and c["kind"] in ("rewrite", "summary"):
+            diff = f'<div class="rs-diff"><div class="was"><span class="lbl">Was</span>{esc(c["before"])}</div><div class="now"><span class="lbl">Now</span>{esc(c["after"])}</div></div>'
+        elif c["kind"] in ("summary", "skills", "profile"):
+            diff = f'<div class="rs-diff"><div class="now"><span class="lbl">Adds</span>{esc(c["after"])}</div></div>'
+        elif c["kind"] == "trim":
+            diff = f'<div class="rs-diff"><div class="was"><span class="lbl">Leaves out</span>{esc(c["before"])}</div></div>'
+        elif c["kind"] == "order":
+            diff = f'<div class="rs-diff"><div class="now"><span class="lbl">Now first</span>{esc(c["after"])}</div></div>'
+        if c["on"]:
+            acts = (f'<span class="rs-kept">{ui.icon("check", 14)} Kept</span>'
+                    f'<a class="b sm ghost" href="{href(add=c["id"])}#ch-{c["id"]}">Undo</a>')
+        else:
+            acts = (f'<span class="rs-kept off">Undone</span>'
+                    f'<a class="b sm sec" href="{href(drop=c["id"])}#ch-{c["id"]}">Keep</a>')
+        items += (f'<li class="rs-ch{"" if c["on"] else " off"}" id="ch-{c["id"]}"><div class="rs-cht"><span class="pill info">{kinds.get(c["kind"], "Edit")}</span>'
+                  f'<b>{esc(c["title"])}</b></div><p class="why">{esc(c["detail"])}</p>{diff}<div class="rs-actions">{acts}</div></li>')
+    n_on = sum(1 for c in doc["changes"] if c["on"])
+    head = f'<h3>Changes <small>{n_on} of {len(doc["changes"])} kept</small></h3>'
+    if not items:
+        return f'<section class="card rs-changes">{head}<p class="muted small">Your resume already reads well; nothing needed changing.</p></section>'
+    return f'<section class="card rs-changes">{head}<ol>{items}</ol></section>'
+
+
+def _gen_page(doc: dict, *, path: str, base: dict, undo: list, heading: str, sub: str, top: str, score: str, extra: str,
+              save_action: str, edit_href: str, flash: str = "", title: str = "Resume studio") -> HTMLResponse:
+    cur = set(undo)
+
+    def href(add: str = "", drop: str = "") -> str:
+        u = sorted((cur | {add}) - {drop, ""}, key=lambda c: int(c[1:]))
+        return esc(path + _q({**base, "undo": ",".join(u)}))
+    q = {**base, "undo": ",".join(undo)}
+    dl = lambda ext: esc(path + "." + ext + _q(q))      # noqa: E731
+    hidden = "".join(f'<input type="hidden" name="{esc(k)}" value="{esc(str(v))}">' for k, v in q.items() if v)
+    actions = f"""<section class="card rs-dl"><h3>Download</h3><div class="rs-dlrow">
+<a class="b" href="{dl('pdf')}" download>{ui.icon("file", 16)} PDF</a><a class="b sec" href="{dl('docx')}" download>Word</a><a class="b ghost" href="{dl('txt')}" download>.txt</a></div>
+<form method="post" action="{esc(save_action)}" class="rs-save">{ui.user_csrf_input()}{hidden}<button class="b sec" type="submit">Save as version</button></form>
+<a class="b ghost" href="{esc(edit_href)}">Open in editor</a>
+<p class="small faint">Tip: printing this page (Ctrl+P) prints just the resume.</p></section>"""
+    body = f"""{top}{flash}<div class="rs-gen-head"><div><h1 class="rs-t1">{heading}</h1><p class="muted">{sub}</p></div></div>
+<div class="rs-gen"><div class="rs-paper">{resume_engine.doc_html(doc)}<p class="rs-legend"><span class="rs-chg">Highlighted</span> lines were reworded. Every fact is yours; check each line before you send it.</p></div>
+<aside class="rs-panel">{score}{actions}{_changes_html(doc, href)}{extra}</aside></div>"""
+    return web.page(body, title, active="/resume", js=True)
+
+
+def _job_tabs(jid: int, active: str) -> str:
+    tabs = [("tailor", f"/job/{jid}/tailor", "Tailor my resume"), ("standout", f"/job/{jid}/standout", "Help me stand out"),
+            ("note", f"/job/{jid}/tailor?mode=note", "Message the poster")]
+    return (f'<a class="rs-back" href="/jobs?job={jid}">&larr; Back to the listing</a><nav class="seg rs-jtabs" aria-label="Resume help for this job">'
+            + "".join(f'<a href="{h}"{" class=on aria-current=page" if k == active else ""}>{v}</a>' for k, h, v in tabs) + "</nav>")
+
+
+def _match_box(doc: dict) -> str:
+    m = doc["match"] or {"before": 0, "after": 0, "met_before": 0, "met_after": 0, "total": 0}
+    up = m["after"] - m["before"]
+    quals = (f'<p class="small muted">Covers {m["met_before"]} → {m["met_after"]} of {m["total"]} listed qualifications.</p>' if m["total"] else
+             '<p class="small muted">This posting doesn\'t list qualifications, so this uses its skills and keywords.</p>')
+    return f"""<section class="card rs-match"><div class="eyebrow">Match with this job</div>
+<div class="rs-mm"><div><span class="lbl">Your resume</span><b>{m['before']}%</b></div><span class="arr" aria-hidden="true">→</span><div class="new"><span class="lbl">Tailored</span><b>{m['after']}%</b></div></div>
+<div class="meter"><i style="width:{m['before']}%"></i></div><div class="meter ok"><i style="width:{m['after']}%"></i></div>
+{quals}<p class="small faint">{"+" + str(up) + " points, only from what you already have." if up > 0 else "Scored on resume text only."}</p></section>"""
+
+
+def _gaps_box(doc: dict) -> str:
+    if not doc["gaps"]:
+        return ""
+    req = ' <span class="pill warn">Required</span>'
+    lis = "".join(f'<li><b>{esc(g["text"])}</b>{req if g["must"] else ""}<span class="ev">{esc(g["advice"])}</span></li>' for g in doc["gaps"])
+    return (f'<section class="card rs-gaps"><h3>Not on your resume yet</h3><p class="small muted">We never add these for you. '
+            f'They\'re here so you can decide what\'s true.</p><ul class="reasons">{lis}</ul></section>')
+
+
+def _ai_form(action: str, hidden: dict) -> str:
+    if not ai.enabled():
+        return ""
+    h = "".join(f'<input type="hidden" name="{esc(k)}" value="{esc(str(v))}">' for k, v in hidden.items() if v)
+    return (f'<form method="post" action="{esc(action)}" class="card rs-aibox">{ui.user_csrf_input()}{h}<p class="small muted">Optional: Claude can polish the wording. '
+            f'Anything that adds a number, skill or name that isn\'t yours is thrown away.</p><button class="b ghost sm" type="submit">{ui.icon("spark", 14)} Improve wording with AI</button></form>')
+
+
+def _tailor_page(conn, user, p: dict, j: dict, undo: list, ai_on: bool, saved: bool = False, ai_note: str = "") -> HTMLResponse:
+    jid = int(j["id"])
+    doc = _build(conn, user, p, p["resume_text"], j, undo, f"job{jid}" if ai_on else "")
+    base = {"ai": 1} if ai_on else {}
+    flash = ui.banner("verified", f"Saved as “For {j['title']} at {j['company']}”. It's under Versions.") if saved else ""
+    flash += ui.banner("info", ai_note) if ai_note else ""
+    q = {**base, "undo": ",".join(undo)}
+    return _gen_page(doc, path=f"/job/{jid}/tailor", base=base, undo=undo, top=_job_tabs(jid, "tailor"),
+                     heading=f"Your resume for {esc(j['title'])}", sub=f"{esc(j['company'])} · built from your resume and profile, aimed at this posting. Nothing is made up.",
+                     score=_match_box(doc), extra=_gaps_box(doc) + _ai_form(f"/job/{jid}/tailor/ai", q),
+                     save_action=f"/job/{jid}/tailor/save", edit_href=f"/resume?tab=edit&from=job{jid}" + ("&" + _q(q)[1:] if _q(q) else ""),
+                     flash=flash, title="Tailor my resume")
+
+
+@router.get("/job/{jid}/tailor", response_class=HTMLResponse)
+def tailor_job(jid: int, request: Request, undo: str = "", mode: str = "", ai: int = 0, saved: int = 0):
+    user = web.require_user(request, "student")
+    with store.db() as conn:
+        j = _live_job(conn, jid)
+        if not j:
+            return web.page(ui.page_head("Tailor my resume") + ui.banner("info", "That listing isn't available anymore.") +
+                            '<a class="b sec" href="/jobs">Browse jobs</a>', "Tailor my resume", active="/resume", status=404)
+        p = _profile(conn, user)
+        if not p.get("resume_text"):
+            return _no_resume_page("Tailor my resume")
+        if mode == "note":
+            return _note_page(conn, user, p, j)
+        return _tailor_page(conn, user, p, j, _undo(undo), bool(ai), bool(saved))
+
+
+@router.get("/job/{jid}/tailor.{ext}")
+def tailor_download(jid: int, ext: str, request: Request, undo: str = "", ai: int = 0):
+    user = web.require_user(request, "student")
+    if ext not in ("pdf", "docx", "txt"):
+        return RedirectResponse(f"/job/{jid}/tailor", status_code=303)
+    with store.db() as conn:
+        j = _live_job(conn, jid)
+        p = _profile(conn, user)
+        if not j or not p.get("resume_text"):
+            return RedirectResponse(f"/job/{jid}/tailor", status_code=303)
+        doc = _build(conn, user, p, p["resume_text"], j, _undo(undo), f"job{jid}" if ai else "")
+    return _send(doc, f"{doc['name']} resume {j['company']}", ext)
+
+
+def _send(doc: dict, name: str, ext: str) -> Response:
+    safe = re.sub(r"[^A-Za-z0-9 _-]+", "", name).strip().replace(" ", "_")[:70] or "resume"
+    data, kind = {"pdf": (resume_engine.to_pdf, "application/pdf"),
+                  "docx": (resume_engine.to_docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+                  "txt": (lambda d: d["text"].encode(), "text/plain; charset=utf-8")}[ext]
+    return Response(data(doc), media_type=kind, headers={"Content-Disposition": f'attachment; filename="{safe}.{ext}"', "Cache-Control": "no-store"})
+
+
+def _save_version(conn, user, name: str, body: str, job_id: int | None) -> None:
+    n = conn.execute("SELECT COUNT(*) FROM resume_versions WHERE user_id = ?", (user["id"],)).fetchone()[0]
+    if n >= MAX_VERSIONS:
+        conn.execute("DELETE FROM resume_versions WHERE id = (SELECT id FROM resume_versions WHERE user_id = ? ORDER BY created_at LIMIT 1)", (user["id"],))
+    conn.execute("INSERT INTO resume_versions (user_id, name, body, job_id, created_at) VALUES (?,?,?,?,?)",
+                 (user["id"], name[:80], resume_engine.clean(body), job_id, time.time()))
+
+
+@router.post("/job/{jid}/tailor/save")
+def tailor_save(jid: int, request: Request, undo: str = Form(""), ai: int = Form(0), csrf: str = Form("")):
+    user = web.require_user(request, "student")
+    security.enforce_key_limit(security.profile_limiter, f"u{user['id']}", "saving")
+    with store.db() as conn:
+        j = _live_job(conn, jid)
+        p = _profile(conn, user)
+        if not web.csrf_ok(request, csrf) or not j or not p.get("resume_text"):
+            return RedirectResponse(f"/job/{jid}/tailor", status_code=303)
+        doc = _build(conn, user, p, p["resume_text"], j, _undo(undo), f"job{jid}" if ai else "")
+        _save_version(conn, user, "For " + j["title"] + " at " + j["company"], doc["text"], jid)
+    return RedirectResponse(f"/job/{jid}/tailor" + _q({"ai": ai, "undo": ",".join(_undo(undo)), "saved": 1}), status_code=303)
+
+
+@router.post("/job/{jid}/tailor/ai")
+def tailor_ai(jid: int, request: Request, undo: str = Form(""), csrf: str = Form("")):
+    user = web.require_user(request, "student")
+    security.enforce_key_limit(security.ai_limiter, f"u{user['id']}", "AI requests")
+    with store.db() as conn:
+        j = _live_job(conn, jid)
+        p = _profile(conn, user)
+        if not web.csrf_ok(request, csrf) or not j or not p.get("resume_text"):
+            return RedirectResponse(f"/job/{jid}/tailor", status_code=303)
+        ok = _take_ai(conn, user)
+        me = _me(conn, user, p)
+    o = ai_polish(me, p["resume_text"], j) if ok else None
+    if not o:
+        with store.db() as conn:
+            return _tailor_page(conn, user, p, j, _undo(undo), False, ai_note="AI wording isn't available right now, so this is the built-in version.")
+    if len(_AI_CACHE) >= _AI_CACHE_MAX:
+        _AI_CACHE.pop(next(iter(_AI_CACHE)))
+    _AI_CACHE[_ai_key(user, f"job{jid}", p["resume_text"])] = o
+    return RedirectResponse(f"/job/{jid}/tailor?ai=1", status_code=303)
+
+
+def _note_page(conn, user, p: dict, j: dict) -> HTMLResponse:
+    import jobboard
+    jid = int(j["id"])
+    ep = store.employer_profile(conn, j["employer_id"]) if j.get("employer_id") else None
+    poster = (j.get("poster_name") or (ep or {}).get("contact_name") or "").strip()
+    me = _me(conn, user, p)
+    note = resume_engine.cover_note(me, p["resume_text"], j, jobboard.short_name(poster) if poster else "")
+    can_msg = bool(j.get("employer_id")) and store.employer_approved(conn, j["employer_id"])
+    applied = can_msg and jobboard.applied(conn, jid, user["id"])
+    who = esc(poster) if poster else "the hiring team"
+    if applied:
+        send = (f'<form method="get" action="/messages/new" class="rs-note-form"><input type="hidden" name="to" value="{int(j["employer_id"])}">'
+                f'<input type="hidden" name="job" value="{jid}"><label for="n-note">Your note (edit it first)</label>'
+                f'<textarea id="n-note" name="body" maxlength="4000" data-count>{esc(note)}</textarea>'
+                f'<div class="row"><button class="b" type="submit">{ui.icon("chat", 16)} Continue in Messages</button>'
+                f'<button class="b sec" type="button" data-copy="{esc(note)}">Copy</button></div></form>')
+    else:
+        why = (f"You can message {who} once you apply. Apply first, then come back here and send it."
+               if can_msg else "This listing's poster can't be messaged on NoleCareerShield. Copy the note into your application instead.")
+        send = (f'<label for="n-note">Your note</label><textarea id="n-note" maxlength="4000" data-count>{esc(note)}</textarea>'
+                f'<div class="row"><button class="b sec" type="button" data-copy="{esc(note)}">Copy</button>'
+                f'{f"<a class=b href=/job/{jid}>Go to the listing to apply</a>" if can_msg else ""}</div><p class="rs-note">{why}</p>')
+    poster_line = f"To {who}" + (f", {esc(j.get('poster_title'))}" if j.get("poster_title") and poster else "") + f" · {esc(j['company'])}"
+    body = (_job_tabs(jid, "note") + f'<div class="rs-gen-head"><div><h1 class="rs-t1">A short note to the poster</h1><p class="muted">{poster_line}</p></div></div>'
+            f'<div class="rs-gen one"><div class="card rs-notecard">{send}</div><aside class="rs-panel"><section class="card"><h3>What makes it work</h3>'
+            f'<ul class="reasons"><li><b>It\'s specific.</b><span class="ev">It names the role and one real thing you did that matches it.</span></li>'
+            f'<li><b>It\'s short.</b><span class="ev">Under 120 words, so it gets read.</span></li>'
+            f'<li><b>It\'s yours.</b><span class="ev">Every line comes from your resume and profile. Change anything that doesn\'t sound like you.</span></li>'
+            f'<li><b>Stay safe.</b><span class="ev">Never send your SSN, bank details or ID in a first message. Real employers don\'t ask.</span></li></ul></section></aside></div>')
+    return web.page(body, "Message the poster", active="/resume", js=True)
+
+
+@router.get("/job/{jid}/standout", response_class=HTMLResponse)
+def standout_job(jid: int, request: Request):
+    user = web.require_user(request, "student")
+    with store.db() as conn:
+        j = _live_job(conn, jid)
+        if not j:
+            return web.page(ui.page_head("Help me stand out") + ui.banner("info", "That listing isn't available anymore.") +
+                            '<a class="b sec" href="/jobs">Browse jobs</a>', "Help me stand out", active="/resume", status=404)
+        p = _profile(conn, user)
+        if not p.get("resume_text"):
+            return _no_resume_page("Help me stand out")
+        me = _me(conn, user, p)
+        import jobboard
+        ep = store.employer_profile(conn, j["employer_id"]) if j.get("employer_id") else None
+        poster = (j.get("poster_name") or (ep or {}).get("contact_name") or "").strip()
+    tips = resume_engine.stand_out_job(me, p["resume_text"], j)
+    note = resume_engine.cover_note(me, p["resume_text"], j, jobboard.short_name(poster) if poster else "")
+    cards = "".join(f'<li class="rs-tipc"><span class="n">{i}</span><div><b>{esc(t["title"])}</b><p>{esc(t["detail"])}</p></div></li>' for i, t in enumerate(tips, 1))
+    body = (_job_tabs(jid, "standout") + f'<div class="rs-gen-head"><div><h1 class="rs-t1">Help me stand out</h1><p class="muted">For {esc(j["title"])} at {esc(j["company"])}. '
+            f'Drawn from your own resume and profile.</p></div></div><div class="rs-gen one"><div><ol class="rs-tips">{cards}</ol></div>'
+            f'<aside class="rs-panel"><section class="card"><h3>A short cover note</h3><p class="rs-cn">{esc(note)}</p><div class="row">'
+            f'<button class="b sm sec" type="button" data-copy="{esc(note)}">Copy</button><a class="b sm ghost" href="/job/{jid}/tailor?mode=note">Send it to the poster</a></div></section>'
+            f'<section class="card"><h3>Next</h3><p class="small muted">Put these into a resume made for this job.</p><a class="b" href="/job/{jid}/tailor">{ui.icon("file", 16)} Tailor my resume</a></section></aside></div>')
+    return web.page(body, "Help me stand out", active="/resume", js=True)
+
+
+# ---------- the general version: "Your optimized resume" (step 3 of the studio) ----------
+
+def _src_text(conn, user, p: dict, src: str) -> tuple[str, str] | None:
+    if src == "main":
+        return (p.get("resume_text") or "", p.get("resume_name") or "My resume") if p.get("resume_text") else None
+    m = re.fullmatch(r"v(\d{1,9})", src or "")
+    v = _version(conn, user, int(m.group(1))) if m else None
+    return (v["body"], v["name"]) if v else None
+
+
+def _optimized_doc(conn, user, p: dict, src: str, undo: list, ai_on: bool) -> tuple[dict, str, str] | None:
+    got = _src_text(conn, user, p, src)
+    if not got:
+        return None
+    text, name = got
+    return _build(conn, user, p, text, None, undo, "opt" + src if ai_on else ""), text, name
+
+
+@router.get("/resume/optimized", response_class=HTMLResponse)
+def optimized(request: Request, src: str = "main", undo: str = "", ai: int = 0, saved: int = 0):
+    user = web.require_user(request, "student")
+    with store.db() as conn:
+        p = _profile(conn, user)
+        got = _optimized_doc(conn, user, p, src, _undo(undo), bool(ai))
+        if not got:
+            if not p.get("resume_text"):
+                return _no_resume_page("Your optimized resume")
+            return RedirectResponse("/resume", status_code=303)
+        doc, text, name = got
+    base = {"src": src, "ai": 1 if ai else 0}
+    before, after = resume_engine.report(text, p.get("skills"))["percent"], resume_engine.report(doc["text"], p.get("skills"))["percent"]
+    score = (f'<section class="card rs-match"><div class="eyebrow">ATS readiness</div><div class="rs-mm"><div><span class="lbl">Before</span><b>{before}%</b></div>'
+             f'<span class="arr" aria-hidden="true">→</span><div class="new"><span class="lbl">Optimized</span><b>{after}%</b></div></div>'
+             f'<div class="meter"><i style="width:{before}%"></i></div><div class="meter ok"><i style="width:{after}%"></i></div>'
+             f'<p class="small faint">Scored the same way as step 2. Fill in real numbers where a bullet has none to go higher.</p></section>')
+    flash = ui.banner("verified", "Saved as a version. It's under Versions.") if saved else ""
+    q = {**base, "undo": ",".join(_undo(undo))}
+    jobs_card = (f'<section class="card"><h3>Aim it at a job</h3><p class="small muted">Tailor it to one listing and it picks the bullets and skills that job asks for.</p>'
+                 f'<a class="b sec" href="/resume?tab=tailor">{ui.icon("jobs", 16)} Tailor to a job</a></section>')
+    return _gen_page(doc, path="/resume/optimized", base=base, undo=_undo(undo), top=_tabs("optimize") + _steps(3, src),
+                     heading="Your optimized resume", sub=f"From {esc(name)}. Same facts, clearer wording, a standard layout. Undo anything you don't want.",
+                     score=score, extra=jobs_card + _ai_form("/resume/optimized/ai", {"src": src, "undo": q["undo"]}),
+                     save_action="/resume/optimized/save", edit_href="/resume?tab=edit&from=" + src + ("&" + _q(q)[1:] if _q(q) else ""), flash=flash)
+
+
+@router.get("/resume/optimized.{ext}")
+def optimized_download(ext: str, request: Request, src: str = "main", undo: str = "", ai: int = 0):
+    user = web.require_user(request, "student")
+    if ext not in ("pdf", "docx", "txt"):
+        return RedirectResponse("/resume/optimized", status_code=303)
+    with store.db() as conn:
+        p = _profile(conn, user)
+        got = _optimized_doc(conn, user, p, src, _undo(undo), bool(ai))
+    if not got:
+        return RedirectResponse("/resume", status_code=303)
+    return _send(got[0], got[0]["name"] + " resume", ext)
+
+
+@router.post("/resume/optimized/save")
+def optimized_save(request: Request, src: str = Form("main"), undo: str = Form(""), ai: int = Form(0), csrf: str = Form("")):
+    user = web.require_user(request, "student")
+    security.enforce_key_limit(security.profile_limiter, f"u{user['id']}", "saving")
+    with store.db() as conn:
+        p = _profile(conn, user)
+        got = _optimized_doc(conn, user, p, src, _undo(undo), bool(ai))
+        if not web.csrf_ok(request, csrf) or not got:
+            return RedirectResponse("/resume", status_code=303)
+        _save_version(conn, user, "Optimized: " + got[2], got[0]["text"], None)
+    return RedirectResponse("/resume/optimized" + _q({"src": src, "ai": ai, "undo": ",".join(_undo(undo)), "saved": 1}), status_code=303)
+
+
+@router.post("/resume/optimized/ai")
+def optimized_ai(request: Request, src: str = Form("main"), undo: str = Form(""), csrf: str = Form("")):
+    user = web.require_user(request, "student")
+    security.enforce_key_limit(security.ai_limiter, f"u{user['id']}", "AI requests")
+    with store.db() as conn:
+        p = _profile(conn, user)
+        got = _src_text(conn, user, p, src)
+        if not web.csrf_ok(request, csrf) or not got:
+            return RedirectResponse("/resume", status_code=303)
+        ok = _take_ai(conn, user)
+        me = _me(conn, user, p)
+    o = ai_polish(me, got[0], None) if ok else None
+    if o:
+        if len(_AI_CACHE) >= _AI_CACHE_MAX:
+            _AI_CACHE.pop(next(iter(_AI_CACHE)))
+        _AI_CACHE[_ai_key(user, "opt" + src, got[0])] = o
+    return RedirectResponse("/resume/optimized" + _q({"src": src, "ai": 1 if o else 0, "undo": ",".join(_undo(undo))}), status_code=303)
+
+
+@router.get("/resume/tailor-go")
+def tailor_go(request: Request, job: str = ""):
+    """The Tailor tab's job picker (a plain GET form) lands on that job's tailored resume."""
+    web.require_user(request, "student")
+    return RedirectResponse(f"/job/{int(job)}/tailor" if job.isdigit() else "/resume?tab=tailor", status_code=303)
+
+
+def _editor_draft(conn, user, p: dict, src: str, undo: list, ai_on: bool) -> str:
+    """'Open in editor': the generated resume in a text box, saved as a version (the main resume stays as it is)."""
+    m = re.fullmatch(r"job(\d{1,9})", src or "")
+    if m:
+        j = _live_job(conn, int(m.group(1)))
+        if not j or not p.get("resume_text"):
+            return ""
+        doc = _build(conn, user, p, p["resume_text"], j, undo, src if ai_on else "")
+        name, jid, back = ("For " + j["title"] + " at " + j["company"])[:80], int(j["id"]), f"/job/{int(j['id'])}/tailor"
+    else:
+        got = _optimized_doc(conn, user, p, src, undo, ai_on)
+        if not got:
+            return ""
+        doc, name, jid, back = got[0], ("Optimized: " + got[2])[:80], 0, "/resume/optimized?src=" + src
+    return f"""<form method="post" action="/resume/versions" class="card rs-draft">{ui.user_csrf_input()}<input type="hidden" name="job_id" value="{jid}">
+<div class="row between"><h3 class="sec" style="margin:0">Edit your new resume</h3><a class="small" href="{esc(back)}">&larr; Back to the preview</a></div>
+<p class="small muted">Change anything, then save it as a version. Your main resume stays as it is.</p>
+<div class="form-field"><label for="d-name">Version name</label><input id="d-name" name="name" maxlength="80" value="{esc(name)}"></div>
+<label for="d-body" class="hp">Resume text</label><textarea id="d-body" class="resume" name="body" maxlength="22000" data-count>{esc(doc["text"])}</textarea>
+<div class="row" style="margin-top:10px"><button class="b" type="submit">Save as version</button></div></form>"""

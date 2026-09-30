@@ -65,7 +65,7 @@ def test_landing_has_hero_add_card_and_trust_line(net):
     page = s2.get("/resume").text
     assert 'action="/resume/optimize"' in page and 'name="src"' in page and "Upload resume" in page and "Optimize my resume" in page
     assert "<script" not in page.split("</head>", 1)[1].split("<script src", 1)[0]     # no inline script in the body
-    assert "rs-hero" in net.app.ui.CSS                                                # styles come from css_resume via ui.CSS
+    assert 'class="rs-steps"' in page and "rs-steps" in net.app.ui.CSS              # three steps; styles come from css_resume via ui.CSS
 
 
 def test_report_shows_score_sections_and_cards_and_changes_nothing(net):
@@ -153,7 +153,12 @@ def test_tailor_shows_coverage_and_accepts_into_a_copy(net):
     t = ucsrf(s)
     with net.app.store.db() as conn:
         conn.execute("UPDATE student_profiles SET skills = ? WHERE user_id = ?", (json.dumps(["Python", "SQL", "Power BI"]), sid))
-    page = s.get(f"/resume?tab=tailor&job={job}").text
+    assert s.get(f"/resume?tab=tailor&job={job}").headers["location"] == f"/job/{job}/tailor"     # the new resume page (test_tailored_resume)
+    tab = s.get("/resume?tab=tailor").text
+    assert 'action="/resume/tailor-go"' in tab and f'<option value="{job}"' in tab
+    assert s.get(f"/resume/tailor-go?job={job}").headers["location"] == f"/job/{job}/tailor"
+    # the coverage view with accept/dismiss cards is still there for a listing (and for pasted descriptions)
+    page = s.post("/resume/tailor", data={"csrf": t, "job_id": str(job), "mode": "builtin"}).text
     assert f'<option value="{job}" selected>' in page and "Match details" in page
     assert "listed qualifications" in page and "Covered by your resume" in page and "Not shown yet" in page and "Tableau" in page
     assert "Add skills this job lists that you already have on your profile" in page and "Add a summary written for this role" in page
@@ -167,7 +172,7 @@ def test_tailor_shows_coverage_and_accepts_into_a_copy(net):
     vid = int(re.search(r"/resume/versions/(\d+)\.docx", vpage).group(1))
     docx = s.get(f"/resume/versions/{vid}.docx")
     assert docx.status_code == 200
-    again = s.get(f"/resume?tab=tailor&job={job}").text
+    again = s.post("/resume/tailor", data={"csrf": t, "job_id": str(job), "mode": "builtin"}).text
     assert "tailored copy" in again
     assert "Add skills this job lists" not in again                                          # already accepted
     # pasted descriptions show the coverage but offer no Accept button
@@ -179,12 +184,13 @@ def test_tailor_dismiss_and_access_rules(net):
     s, sid = student(net)
     emp, eid = employer(net)
     job = add_job(net, eid)
-    page = s.get(f"/resume?tab=tailor&job={job}").text
+    page = s.post("/resume/tailor", data={"csrf": ucsrf(s), "job_id": str(job), "mode": "builtin"}).text
     assert re.search(r'href="/resume\?tab=tailor&amp;job=\d+&amp;x=s\d+"', page)
     assert emp.get("/resume/optimize").status_code == 403
     assert net.client().get("/resume/optimize").status_code == 303
     assert s.post("/resume/accept", data={"ctx": "job999", "kind": "summary", "new": "x", "csrf": ucsrf(s)}).status_code == 303
-    assert s.get("/resume?tab=tailor&job=99999").status_code == 200
+    assert s.get("/resume?tab=tailor&job=99999").headers["location"] == "/job/99999/tailor"
+    assert s.get("/job/99999/tailor").status_code == 404
 
 
 # ---------- demo engine parity ----------
