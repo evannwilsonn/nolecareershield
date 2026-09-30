@@ -34,5 +34,14 @@
   "lead_total": 0,
   "false_positives": [],
   "legit_total": 12
+ },
+ "field_2026_09": {
+  "scam_caught": 35,
+  "scam_total": 42,
+  "lead_flagged_blind": 10,
+  "lead_flagged_observed": 10,
+  "lead_total": 12,
+  "false_positives": [],
+  "legit_total": 49
  }
 }

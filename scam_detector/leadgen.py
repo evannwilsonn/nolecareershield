@@ -11,7 +11,8 @@ band. The tell usually lives in the URL and the apply flow, not the words, which
 why most of the signal here is structural (url_flow.py) or user-observed
 (context flags).
 
-Weights are judgment calibrated on four real examples. That is far too few to claim
+Weights are judgment calibrated on four real examples, then extended with text tells from
+the Sept 2026 field test (12 hand-labeled lead-gen listings). That is far too few to claim
 a measured accuracy; treat this axis as a transparent heuristic until the review
 queue has produced more labeled cases.
 """
@@ -47,6 +48,19 @@ TEXT_PATTERNS = [
      2, "The employer is described but not named"),
     (re.compile(r"\bregardless\s+of\s+(?:your\s+)?experience\b", re.I),
      1, "Generic 'regardless of experience' boilerplate"),
+    # Added from the Sept 2026 field test (103 hand-labeled listings, 12 of them lead-gen).
+    (re.compile(r"\btaking\s+a\s+(?:minute|moment)\s+to\s+(?:fill\s+out|complete|finish)\s+our\s+(?:online\s+)?application\b", re.I),
+     4, "Boilerplate 'start a career, fill out our application' pitch with no real role"),
+    (re.compile(r"\b(?:research|market\s+research|focus\s+group|survey)\s+panel(?:ist)?s?\b|\bpaid\s+(?:focus\s+groups?|surveys?|research\s+studies)\b|\btake\s+(?:paid\s+)?surveys?\b|\bfocus\s+group\s+(?:participants?|studies)\b", re.I),
+     4, "A survey or focus-group panel signup dressed up as a job"),
+    (re.compile(r"\byou\s+will\s+receive\s+an\s+email\s+within\b|\bcheck\s+your\s+(?:inbox|email)\s+or\s+spam\b", re.I),
+     4, "An automated funnel that emails you right after you apply"),
+    (re.compile(r"\bnot\s+a\s+salaried\s+job\b|\b(?:independent\s+)?(?:business|income)\s+opportunity\b|\bearnings\s+depend\s+on\s+your\b", re.I),
+     4, "An income or referral 'opportunity', not a job with an employer"),
+    (re.compile(r"\bcreate\s+(?:your\s+)?(?:a\s+)?free\s+account\b|\bsign\s+up\s+(?:for\s+)?free\b", re.I),
+     2, "Asks you to create an account on a third-party site"),
+    (re.compile(r"\bljbffr\b", re.I),
+     3, "Carries a scraped job ID from a reposting network"),
 ]
 
 FLAG_THRESHOLD = 6
