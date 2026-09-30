@@ -192,17 +192,15 @@ const MEDIA = u => u === "arch-074.webp" ? NCS_FRAMES[74] : u === "arch-060.webp
 const kpi = (n, l, go, hot) => go ? `<a class="kpi${hot ? " hot" : ""}" href="#" data-go="${go}"><span class="n">${n}</span><span class="l">${esc(l)}</span></a>` : `<div class="kpi${hot ? " hot" : ""}"><span class="n">${n}</span><span class="l">${esc(l)}</span></div>`;
 const helloBand = (eyebrow, titleHtml, lede, kpis, photo) => `<section class="hello">${photo ? `<div class="ph" aria-hidden="true" style="--ph:url(${MEDIA(photo)})"></div>` : ""}<div class="eyebrow">${esc(eyebrow)}</div><h1>${titleHtml}</h1><p>${esc(lede)}</p>${kpis ? `<div class="kpis">${kpis}</div>` : ""}</section>`;
 const fitBadge = (score, label) => `<span class="fitb${score >= 65 ? " hi" : score < 45 ? " lo" : ""}" style="--p:${score}" title="${esc(label || "Fit score")}"><i aria-hidden="true"></i><b>Fit ${score}</b></span>`;
-// Twin of ui.risk_position / ui.risk_meter: four zones, marker kept off the edges, aggregators mid-Review.
-const RISK_ZONES = ["Clear", "Caution", "Review", "Scam"], RISK_BANDS = [[0, 14], [15, 34], [35, 64], [65, 100]];
+// Twin of ui.risk_position / ui.risk_meter: 0-25 green, 26-50 yellow, 51-75 orange, 76-100 red; marker at the score.
+const RISK_BANDS = [[0, 25], [26, 50], [51, 75], [76, 100]];
 function riskPosition(score, status, agg) {
-  const sc = Math.max(0, Math.min(100, score));
-  if (agg && sc < 15) return [2, 62.5];
-  let zone = RISK_BANDS.findIndex(([, hi]) => sc <= hi); if (status === "held") zone = 3;
-  const [lo, hi] = RISK_BANDS[zone], frac = (Math.min(Math.max(sc, lo), hi) - lo) / (hi - lo);
-  return [zone, Math.round((zone * 25 + 7 + frac * 11) * 10) / 10];
+  let sc = Math.max(0, Math.min(100, score)); if (agg && sc < 15) sc = 60;
+  const zone = RISK_BANDS.findIndex(([, hi]) => sc <= hi), [lo, hi] = RISK_BANDS[zone];
+  return [zone, sc, Math.round((sc - lo) / (hi - lo) * 100) / 100];
 }
-const riskMeter = (score, status, agg) => { const [zone, pos] = riskPosition(score, status, agg), label = agg && score < 15 ? "Aggregator" : RISK_ZONES[zone];
-  return `<div class="risk z${zone}" style="--pos:${pos}%"><span class="gauge" role="img" aria-label="${label}: scam risk ${Math.max(0, Math.min(100, score))} of 100">${[0, 1, 2, 3].map(i => `<i class="z${i}${i === zone ? " on" : ""}"></i>`).join("")}<b></b></span><span class="rl">${label}</span></div>`; };
+const riskMeter = (score, status, agg) => { const [zone, pos, frac] = riskPosition(score, status, agg), isAgg = agg && score < 15, real = Math.max(0, Math.min(100, score));
+  return `<div class="risk z${zone}" style="--pos:${pos}%;--f:${Math.trunc(frac * 100)}%"><span class="end">0</span><span class="gauge" role="img" aria-label="Scam risk ${real} of 100${isAgg ? ", aggregator" : ""}">${[0, 1, 2, 3].map(i => `<i class="z${i}${i === zone ? " on" : ""}"></i>`).join("")}<b></b></span><span class="end">100</span><span class="rl">${isAgg ? "Aggregator" : real}</span></div>`; };
 const pageHead = (t, lede, num) => `<div class="page-head">${num ? `<div class="num">${esc(num)}</div>` : ""}<h1>${esc(t)}</h1>${lede ? `<p>${lede}</p>` : ""}</div>`;
 const takeFlash = () => { const f = S.flash; S.flash = null; return f ? banner(f.kind, f.text, f.raw) : ""; };
 const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };

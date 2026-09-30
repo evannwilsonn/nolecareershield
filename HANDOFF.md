@@ -56,11 +56,11 @@ stand, what was decided and why, and what's next.
 - **The listing scanner** (one effect, merging this chat's teardown with the `scan-hero` branch from another chat,
   commit 583902f): a fake listing on the student home ("Know it's real before you apply"). As you scroll, a gold
   line runs down it; each phrase the detector caught lights up (amber for warnings, red for critical) with a
-  number, and its label appears beside that line. Then the card breaks apart line by line (the old teardown's
-  effect): each sentence becomes its own paper strip, barely tilted, carrying its own labels, and the stamp lands
-  flat on the pieces before the verdict shows "Scam risk 100/100 from 8 signals". Scrolling back reverses it. On
-  phones the labels sit under each strip and open as it breaks. There is no separate flag list. The break is `--b`
-  on `.scan-card` (0 whole, 1 in pieces); it rests at 1, so no-JS and reduced-motion visitors see it finished.
+  number, and its flag joins a stack below the card. Once the line reaches the bottom, the stack of flags breaks
+  apart into separate chips with a slight tilt (the old teardown's break, applied only to the flags 1-8; the listing
+  stays whole so it stays easy to read), the stamp lands flat and the verdict shows "Scam risk 100/100 from 8
+  signals". Scrolling back reverses it. The break is `--b` on `.scan-flags` (0 joined, 1 apart); it rests at 1, so
+  no-JS and reduced-motion visitors see the finished state.
   - Nothing is hand-written: `ui.scan_findings()` runs `ui.SCAN_SAMPLE` through `msgcheck.check_listing`, the same
     code as the public scam check's listing tab, and the flag titles, stamp, verdict and advice are its output.
     `test_scanner_flags_come_from_the_detector` fails if any rule in `ui.SCAN_EXPECTED` stops firing on its phrase.
@@ -80,10 +80,10 @@ stand, what was decided and why, and what's next.
     a funnel (a bar under each shows it as a share of students who viewed); a stage pipeline on the Candidates
     tab. The Messages tile on employer home was dropped since the band shows unread.
   - Reviewers: a "desk" header with every queue as a big count (replaces the small tabs), a scam-risk meter on
-    each listing card, and J / K to move between cards. The meter is a four-zone gauge (Clear, Caution, Review, Scam,
-    the detector's bands) with a marker kept off the ends, so 0 sits inside green and 100 inside red; the number in
-    the pill stays the real score. Aggregators (scam score 0 by design) sit mid-Review, labelled "Aggregator".
-    `ui.risk_position` decides the spot; `demo/app.js` has a twin.
+    each listing card, and J / K to move between cards. The meter is a 0-100 gauge in four
+    sections, Evan's cutoffs: green 0-25, yellow 26-50, orange 51-75, red 76-100, each shading darker toward its top.
+    The marker sits at the listing's scam score and the score shows beside it. Aggregators (scam score 0 by design)
+    sit at 60, labelled "Aggregator". `ui.risk_position` decides the spot; `demo/app.js` has a twin.
   - Everywhere: "/" jumps to the page's search box. Reduced motion turns all of it off.
 - **Other effects:** a light that follows the cursor around card borders, a slight cursor parallax on the hero
   footage, and one marquee of scam patterns.

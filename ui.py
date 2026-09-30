@@ -529,75 +529,62 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .marquee li{font-family:var(--display);font-weight:750;font-stretch:72%;text-transform:uppercase;font-size:clamp(20px,2.4vw,30px);letter-spacing:.005em;color:var(--ink-2);padding:0 22px;white-space:nowrap;display:flex;align-items:center;gap:22px}
 .marquee li::after{content:"";width:9px;height:9px;background:var(--gold);transform:rotate(45deg);flex:none}
 .marquee .cap{font-size:12.5px;color:var(--faint);text-align:center;margin-top:8px}
-/* the scanner: a fake listing read by the real detector as you scroll (static/fx.js drives it).
-   With no JS or reduced motion it is shown finished: every flag underlined and listed, stamp down. */
+/* the scanner: a fake listing read by the real detector as you scroll (static/fx.js drives it). The card stays whole;
+   at the end the flag chips break apart (--b on .scan-flags: 0 joined, 1 apart). With no JS or reduced motion it is
+   shown finished: every phrase marked, the flags apart, the stamp down. */
 .scan{background:var(--stage);color:var(--on-stage);position:relative}
-.scan-stick{max-width:1160px;margin:0 auto;padding:84px 20px;display:grid;grid-template-columns:.92fr 1.08fr;gap:56px;align-items:center}
-.scan h2.display{font-size:clamp(42px,4.4vw,62px);color:var(--on-stage);margin:12px 0 18px}
+.scan-stick{max-width:1160px;margin:0 auto;padding:84px 20px;display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:56px;align-items:center}
+.scan h2.display{font-size:clamp(42px,4.8vw,70px);color:var(--on-stage);margin:12px 0 18px}
 .scan h2.display em{color:var(--gold)}
 .scan .eyebrow{color:var(--gold);letter-spacing:.14em}
 .scan-copy p{color:var(--on-stage-2);font-size:17px;max-width:40ch;margin:0}
 .scan-cta{margin-top:22px!important}
 .scan-cta a{color:var(--gold);font-weight:600;text-decoration:none}.scan-cta a:hover{text-decoration:underline}
-.scan-board,.scan-side{position:relative;min-width:0}
-/* --b is how far the card has broken apart (0 whole, 1 in pieces). It rests at 1, so without JS it is shown broken. */
-.scan-card{--b:1;--gap:10px;position:relative;isolation:isolate;color:#1c1917;padding:12px 12px 14px}
-/* the whole sheet of paper, fading out as it breaks; on wide screens it stops short of the label column */
-.scan-card::before{content:"";position:absolute;top:0;bottom:0;left:0;right:var(--lab,0px);z-index:-1;border-radius:14px;background:rgba(250,248,243,clamp(0,1 - var(--b) * 2.5,1));
-  box-shadow:0 24px 60px rgba(0,0,0,clamp(0,.45 - var(--b),.45)),0 0 0 1px rgba(255,255,255,clamp(0,.06 - var(--b) * .15,.06))}
-/* each piece: goes solid first, then drifts and tilts a little */
-.scan-card .sl{position:relative;transform:translateX(calc(var(--x) * var(--b))) rotate(calc(var(--r) * var(--b)))}
-.scan-card .body .sl,.scan-card .sl.apply{margin-top:calc(var(--b) * var(--gap))}
-.scan-card .tx,.scan-card .paper{border-radius:9px}
+.scan-side,.scan-board{position:relative;min-width:0}
+.scan .live-only,.scan.armed .static-only{display:none}.scan.armed .live-only{display:inline}
+.scan-card{position:relative;overflow:hidden;background:#faf8f3;color:#1c1917;border-radius:14px;padding:20px 22px 18px;box-shadow:0 24px 60px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.06)}
 .scan-card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .scan-card h3{font-size:16.5px;font-weight:700;line-height:1.3}
 .scan-card .tag{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b655c;border:1px solid #d9d3c7;border-radius:999px;padding:3px 9px;flex:none}
-.scan-card .co{font-size:12.5px;color:#6b655c;margin:2px 0 0}
-.scan-card .body{font-size:14.5px;line-height:1.75}
-.scan-card .sl.apply{font-size:13px;color:#6b655c}
+.scan-card .co{font-size:12.5px;color:#6b655c;margin:2px 0 12px}
+.scan-card .body{font-size:14.5px;line-height:1.85;margin:0}
+.scan-card .apply{font-size:13px;color:#6b655c;margin:12px 0 0}
 .scan-card mark{background:color-mix(in srgb,var(--sev,#c2410c) 13%,transparent);color:inherit;border-radius:2px;box-shadow:inset 0 -2px 0 var(--sev,#c2410c);transition:box-shadow .35s var(--ease),background-color .45s}
 .scan-card mark.crit{--sev:#b91c1c}.scan-card mark.warn{--sev:#b7791f}
 .scan-card sup{font-size:10px;font-weight:700;color:var(--sev,#b7791f);margin:0 2px 0 1px;transition:opacity .3s}
 .scan-card sup.crit{--sev:#b91c1c}.scan-card sup.warn{--sev:#b7791f}
 .scan-line{position:absolute;left:0;right:0;top:0;height:2px;background:var(--gold);box-shadow:0 0 14px 2px color-mix(in srgb,var(--gold) 70%,transparent);opacity:0;pointer-events:none;z-index:2}
-.scan-line::before{content:"";position:absolute;left:0;right:0;bottom:2px;height:min(56px,var(--ly,56px));background:linear-gradient(0deg,color-mix(in srgb,var(--gold) 22%,transparent),transparent)}
-.scan-stamp{position:absolute;right:16px;bottom:14px;z-index:3;border:2.5px solid #b91c1c;color:#b91c1c;background:rgba(250,248,243,.92);border-radius:8px;padding:5px 12px;font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:21px;letter-spacing:.01em;transform:rotate(-3deg)}
-/* flag labels ride on the piece they belong to: beside the card on wide screens, under the line on phones */
-.scan-card .flag{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;font-weight:600;line-height:1.3;transition:opacity .35s var(--ease),transform .35s var(--ease)}
-.scan-card .flag b{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:800;flex:none;background:#e3b964;color:#2a1f0a;margin-top:-1px}
-.scan-card .flag.crit b{background:#f0a193;color:#3a1410}
-.scan-card .flag i{display:block;font-style:normal;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;margin-top:1px}
-@media(min-width:901px){
-  .scan-stick{max-width:1240px;grid-template-columns:minmax(0,.75fr) minmax(0,1.25fr)}
-  .scan-card{--lab:238px;padding-right:0}
-  .scan-card .sl{display:grid;grid-template-columns:minmax(0,1fr) 202px;column-gap:48px;align-items:center}
-  .scan-card .tx{padding:5px 10px;background:rgba(250,248,243,clamp(0,var(--b) * 6,1));box-shadow:0 12px 26px rgba(0,0,0,calc(.42 * var(--b))),0 0 0 1px rgba(28,25,23,calc(.07 * var(--b)))}
-  .scan-card .sl.head .tx{padding:8px 10px}
-  .scan-line{right:238px}.scan-stamp{right:254px}.scan-verdict{margin-right:238px}
-  .scan-card .fl{grid-column:2;position:relative;display:grid;gap:6px}
-  .scan-card .fl::before{content:"";position:absolute;left:-40px;top:50%;width:28px;height:1px;background:rgba(243,238,230,.3)}
-  .scan-card .flag{color:var(--on-stage)}.scan-card .flag.crit{color:#f7c2b7}
-  .scan-card .flag i{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
-  .scan.armed .scan-card .flag:not(.on){opacity:0;transform:translateX(10px)}
-  .scan-card .fl::before{transition:opacity .35s}.scan.armed .scan-card .fl:not(:has(.flag.on))::before{opacity:0}
-}
-@media(max-width:900px){
-  .scan-card .sl{padding:3px 9px;border-radius:9px;background:rgba(250,248,243,clamp(0,var(--b) * 6,1));box-shadow:0 12px 26px rgba(0,0,0,calc(.42 * var(--b))),0 0 0 1px rgba(28,25,23,calc(.07 * var(--b)))}
-  .scan-card .fl{display:grid;gap:4px;overflow:hidden;max-height:calc(var(--b) * 120px);opacity:var(--b);margin-top:calc(var(--b) * 6px)}
-  .scan-card .flag{color:#1c1917;font-size:12px}.scan-card .flag i{color:#6b655c}.scan-card .flag.crit i{color:#b91c1c}
-  .scan-stamp{top:6px;bottom:auto;right:8px;font-size:17px}
-}
-.scan-verdict{margin-top:12px;border-radius:12px;padding:13px 16px;background:#3a1a17;border:1px solid rgba(240,161,147,.35);color:#fbe4df;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+.scan-line::before{content:"";position:absolute;left:0;right:0;bottom:2px;height:56px;background:linear-gradient(0deg,color-mix(in srgb,var(--gold) 22%,transparent),transparent)}
+.scan-stamp{position:absolute;right:16px;bottom:14px;z-index:3;border:2.5px solid #b91c1c;color:#b91c1c;background:rgba(250,248,243,.94);border-radius:8px;padding:5px 12px;
+  font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:21px;letter-spacing:.01em;line-height:1.1;white-space:nowrap;transform:rotate(-3deg)}
+/* the flags: one joined stack while the scan runs, then they break apart */
+.scan-flags{--b:1;list-style:none;padding:0;margin:14px 0 0;display:grid;gap:calc(var(--b) * 7px)}
+.scan-flags li{display:flex;align-items:center;gap:10px;background:var(--stage-2);border:1px solid rgba(243,238,230,.1);padding:8px 12px;font-size:13.5px;font-weight:600;
+  border-radius:calc(var(--b) * 9px);transform:translateX(calc(var(--x) * var(--b) * var(--dx,1))) rotate(calc(var(--r) * var(--b)));
+  box-shadow:0 10px 22px rgba(0,0,0,calc(var(--b) * .35));transition:opacity .4s var(--ease)}
+.scan-flags li:first-child{border-top-left-radius:9px;border-top-right-radius:9px}
+.scan-flags li:last-child{border-bottom-left-radius:9px;border-bottom-right-radius:9px}
+.scan-flags li+li{margin-top:calc((1 - var(--b)) * -1px)}
+.scan-flags .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;flex:none;background:#e3b964;color:#2a1f0a}
+.scan-flags li.crit .n{background:#f0a193;color:#3a1410}
+.scan-flags .sev{margin-left:auto;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--on-stage-2);font-weight:700}
+.scan-flags li.crit .sev{color:#f0a193}
+.scan-verdict{margin-top:14px;border-radius:12px;padding:13px 16px;background:#3a1a17;border:1px solid rgba(240,161,147,.35);color:#fbe4df;transition:opacity .5s var(--ease),transform .5s var(--ease)}
 .scan-verdict b{font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:20px;letter-spacing:.01em;color:#f0a193;margin-right:8px}
 .scan-verdict span{font-size:13px}
 .scan-verdict p{font-size:13px;margin:4px 0 0;color:#e8cfc9}.scan-verdict a{color:#fff;font-weight:600}
-@media(max-width:900px){.scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}.scan-side{min-width:0}.scan-card{padding:10px 8px 12px;--gap:6px}.scan-card .body{font-size:13.5px;line-height:1.55}.scan-card .sl.head{padding-top:6px;padding-bottom:6px}.scan-stamp{font-size:18px;bottom:12px}}
+@media(max-width:900px){
+  .scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}
+  .scan-card{padding:16px 16px 52px}.scan-card .body{font-size:13.5px;line-height:1.7}.scan-card .co{margin-bottom:8px}
+  .scan-stamp{bottom:12px;right:12px;font-size:17px}
+  .scan-flags{--dx:.4;margin-top:10px;gap:calc(var(--b) * 5px)}.scan-flags li{padding:6px 10px;font-size:12.5px}.scan-flags .n{width:18px;height:18px}
+}
 /* armed by fx.js: things appear as the scan line reaches them */
 .scan.armed .scan-line{opacity:1}
 .scan.armed .scan-card mark:not(.on){box-shadow:inset 0 -2px 0 transparent;background-color:transparent}
 .scan.armed .scan-card mark.flash{background-color:color-mix(in srgb,var(--sev) 30%,transparent)}
-.scan .live-only,.scan.armed .static-only{display:none}.scan.armed .live-only{display:inline}
 .scan.armed .scan-card sup:not(.on){opacity:0}
+.scan.armed .scan-flags li:not(.on){opacity:0}
 .scan.armed .scan-verdict:not(.on){opacity:0;transform:translateY(10px)}
 .scan.armed .scan-stamp{opacity:0;transform:rotate(-3deg) scale(1.15)}
 .scan.armed .scan-stamp.on{opacity:1;transform:rotate(-3deg) scale(1);transition:opacity .25s,transform .35s var(--ease)}
@@ -728,15 +715,20 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 .rev-card:focus{outline:none}
 .hello,.desk{box-shadow:0 0 0 1px var(--whisper) inset}
 @media (hover:none){.keys{display:none}}
-/* reviewer gauge: four zones, a marker at the listing's place (ui.risk_position) */
-.risk{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:11.5px;font-weight:600;color:var(--muted)}
-.risk .gauge{position:relative;flex:1;max-width:360px;height:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
-.risk .gauge i{border-radius:999px;opacity:.45}.risk .gauge i.on{opacity:1}
-.risk .z0{background:var(--ok)}.risk .z1{background:var(--info)}.risk .z2{background:var(--warn)}.risk .z3{background:var(--bad)}
-.risk .gauge i:not(.on){background:var(--sand);opacity:1}
-.risk .gauge b{position:absolute;top:50%;left:var(--pos);width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--surface);box-shadow:0 0 0 3px currentColor,0 2px 6px rgba(0,0,0,.25)}
-.risk.z0 .gauge b{color:var(--ok)}.risk.z1 .gauge b{color:var(--info)}.risk.z2 .gauge b{color:var(--warn)}.risk.z3 .gauge b{color:var(--bad)}
-.risk.z0 .rl{color:var(--ok)}.risk.z1 .rl{color:var(--info)}.risk.z2 .rl{color:var(--warn)}.risk.z3 .rl{color:var(--bad)}
+/* reviewer gauge: 0-100 in four zones (0-25 green, 26-50 yellow, 51-75 orange, 76-100 red), each shading darker toward
+   its top; the marker sits at the score (ui.risk_position) */
+.risk{--g1:#9fd4b1;--g2:#1f7a4d;--y1:#f6e39a;--y2:#c99a06;--o1:#f9c08f;--o2:#cf5a0c;--r1:#f3a69a;--r2:#a3170c;
+  display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11.5px;font-weight:600;color:var(--muted)}
+.risk .end{font-size:10.5px;color:var(--faint);font-weight:500;font-variant-numeric:tabular-nums}
+.risk .gauge{position:relative;flex:1;max-width:360px;height:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin:0 8px}
+.risk .gauge i{border-radius:999px}
+.risk .gauge .z0{background:linear-gradient(90deg,var(--g1),var(--g2))}.risk .gauge .z1{background:linear-gradient(90deg,var(--y1),var(--y2))}
+.risk .gauge .z2{background:linear-gradient(90deg,var(--o1),var(--o2))}.risk .gauge .z3{background:linear-gradient(90deg,var(--r1),var(--r2))}
+.risk .gauge i:not(.on){opacity:.5}
+.risk .gauge b{position:absolute;top:50%;left:var(--pos);width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--surface);box-shadow:0 0 0 3px var(--mk),0 2px 6px rgba(0,0,0,.25)}
+.risk.z0{--mk:color-mix(in oklab,var(--g2) var(--f),var(--g1))}.risk.z1{--mk:color-mix(in oklab,var(--y2) var(--f),var(--y1))}
+.risk.z2{--mk:color-mix(in oklab,var(--o2) var(--f),var(--o1))}.risk.z3{--mk:color-mix(in oklab,var(--r2) var(--f),var(--r1))}
+.risk .rl{color:color-mix(in oklab,var(--mk) 80%,var(--ink));margin-left:4px;font-family:var(--display);font-weight:750;font-stretch:80%;font-size:15px;font-variant-numeric:tabular-nums;min-width:3ch}
 .risk.in .gauge b{transition:left 1s var(--ease)}
 /* profile covers use the site's own photography */
 .pbanner.ph{height:150px;background:var(--ph) 50% 60%/cover no-repeat}
@@ -973,39 +965,26 @@ def _scan_text(text: str, findings: list, breaks: tuple = ()) -> str:
 def scan_block(cta_html: str) -> str:
     """Rendered finished (every flag underlined, listed and stamped), so it reads without JS or with reduced motion.
     static/fx.js arms it and replays the scan as you scroll."""
-    import re
-    from bisect import bisect_right
     s, r = SCAN_SAMPLE, scan_findings()
-    # The card breaks line by line: one piece per sentence, plus the header and the apply line. Each flag rides on the
-    # piece where its underline ends, so when the card comes apart every piece carries its own label.
-    breaks = tuple(m.end() for m in re.finditer(r"[.!?](?=\s)", r["text"]) if m.end() < len(r["text"]))
-    pieces = [x.strip() for x in _scan_text(r["text"], r["findings"], breaks).split("\x00")]
-    on_piece: dict[int, list] = {}
-    for i, f in enumerate(r["findings"], 1):
-        if f["spans"]:
-            on_piece.setdefault(bisect_right(breaks, f["spans"][-1][1] - 1), []).append((i, f))
+    body, _, apply = _scan_text(r["text"], r["findings"]).rpartition("\n")
+    # The flags break apart at the end (the old teardown's effect): each gets a small fixed tilt and drift.
+    tilt = ("-.6deg", ".5deg", "-.3deg", ".6deg", "-.5deg", ".35deg", "-.25deg", ".45deg")
+    drift = ("-4px", "5px", "-2px", "4px", "-5px", "3px", "-2px", "4px")
     crit = lambda f: f["severity"] == "critical"
-    def labels(k: int) -> str:
-        fl = on_piece.get(k)
-        return ('<span class="fl">' + "".join(
-            f'<span class="flag{" crit" if crit(f) else ""}" data-f="{i}"><b>{i}</b><span>{esc(f["title"])}'
-            f'<i>{"Critical" if crit(f) else "Warning"}</i></span></span>' for i, f in fl) + "</span>") if fl else ""
-    tilt = ("-.5deg", ".4deg", "-.25deg", ".5deg", "-.4deg", ".3deg", "-.2deg", ".35deg")
-    drift = ("-3px", "4px", "-2px", "3px", "-4px", "2px", "-2px", "3px")
-    sl = lambda i, cls, inner, k=None: (f'<div class="sl{cls}" style="--r:{tilt[i % 8]};--x:{drift[i % 8]}"><div class="tx">{inner}</div>'
-                                          f'{labels(k) if k is not None else ""}</div>')
-    body = "".join(sl(i + 1, "", x, i) for i, x in enumerate(pieces[:-1]))
-    apply = sl(len(pieces), " apply", "Apply: " + pieces[-1], len(pieces) - 1)
-    head = sl(0, " head", f'<div class="top"><h3>{esc(s["title"])}</h3><span class="tag">Sample</span></div>'
-                          f'<p class="co">{esc(s["company"])} · {esc(s["meta"])}</p>')
+    flags = "".join(
+        f'<li class="{"crit" if crit(f) else "warn"}" data-f="{i}" style="--r:{tilt[(i - 1) % 8]};--x:{drift[(i - 1) % 8]}">'
+        f'<span class="n">{i}</span>{esc(f["title"])}<span class="sev">{"Critical" if crit(f) else "Warning"}</span></li>'
+        for i, f in enumerate(r["findings"], 1))
     n = len(r["findings"])
     return f"""<section class="scan" data-scan aria-labelledby="scan-h"><div class="scan-stick">
 <div class="scan-copy"><div class="eyebrow">A fake listing, read by the real detector</div>
 <h2 class="display" id="scan-h">Know it's real<br><em>before you apply.</em></h2>
-<p>This listing is made up. <span class="live-only">Scroll and watch the scam check read it, then take it apart.</span><span class="static-only">Here's the scam check taking it apart.</span> Every flag is something the detector caught on its own, not something we wrote in.</p>
+<p>This listing is made up. <span class="live-only">Scroll and watch the scam check read it.</span><span class="static-only">Here's what the scam check found in it.</span> Every flag is something the detector caught on its own, not something we wrote in.</p>
 <p class="scan-cta">{cta_html}</p></div>
 <div class="scan-side"><div class="scan-track"><div class="scan-board"><div class="scan-card"><div class="scan-line" aria-hidden="true"></div>
-{head}<div class="body">{body}</div>{apply}<div class="scan-stamp" aria-hidden="true">{esc(r["title"])}</div></div></div></div>
+<div class="top"><h3>{esc(s["title"])}</h3><span class="tag">Sample</span></div><p class="co">{esc(s["company"])} · {esc(s["meta"])}</p>
+<p class="body">{body}</p><p class="apply">Apply: {apply}</p><div class="scan-stamp" aria-hidden="true">{esc(r["title"])}</div></div>
+<ol class="scan-flags" aria-label="What the detector found">{flags}</ol></div></div>
 <div class="scan-verdict"><b>{esc(r["title"])}</b><span>Scam risk {r["score"]}/100 from {n} signals.</span>
 <p>{esc(r["advice"])} {cta_html}</p></div></div>
 </div></section>"""
@@ -1154,31 +1133,28 @@ def desk(title: str, tabs: list[tuple[str, str, int | None, bool]]) -> str:
             f'<nav class="qtabs" aria-label="Review queues">{cells}</nav></section>')
 
 
-RISK_ZONES = ("Clear", "Caution", "Review", "Scam")
-_RISK_BANDS = ((0, 14), (15, 34), (35, 64), (65, 100))       # the detector's bands (scam_detector.scorer._band)
+RISK_BANDS = ((0, 25), (26, 50), (51, 75), (76, 100))       # green, yellow, orange, red on the reviewer's gauge
 
 
-def risk_position(score: int, status: str = "", aggregator: bool = False) -> tuple[int, float]:
-    """Where a listing sits on the reviewer's gauge: (zone 0-3, percent along the track). Four equal zones; inside its
-    zone the marker is placed by score but kept off the edges, so 0 still reads as inside Clear and 100 inside Scam.
-    An aggregator's scam score is 0 by design; it sits mid-Review, which is how the public check treats one."""
+def risk_position(score: int, status: str = "", aggregator: bool = False) -> tuple[int, float, float]:
+    """Where a listing sits on the reviewer's 0-100 gauge: (zone 0-3, percent along the track, how far into its zone
+    0-1). The marker sits at the scam score itself. An aggregator's scam score is 0 by design, so it sits at 60."""
     sc = max(0, min(100, int(score)))
     if aggregator and sc < 15:
-        return 2, 62.5
-    zone = next(i for i, (lo, hi) in enumerate(_RISK_BANDS) if sc <= hi)
-    if status == "held":
-        zone = 3                      # a critical finding blocks whatever the total
-    lo, hi = _RISK_BANDS[zone]
-    frac = (min(max(sc, lo), hi) - lo) / (hi - lo)
-    return zone, round(zone * 25 + 7 + frac * 11, 1)
+        sc = 60
+    zone = next(i for i, (lo, hi) in enumerate(RISK_BANDS) if sc <= hi)
+    lo, hi = RISK_BANDS[zone]
+    return zone, float(sc), round((sc - lo) / (hi - lo), 2)
 
 
 def risk_meter(score: int, status: str, aggregator: bool = False) -> str:
-    zone, pos = risk_position(score, status, aggregator)
-    label = "Aggregator" if aggregator and int(score) < 15 else RISK_ZONES[zone]
+    zone, pos, frac = risk_position(score, status, aggregator)
+    agg = aggregator and int(score) < 15
+    real = max(0, min(100, int(score)))
+    label = "Aggregator" if agg else f"{real}"
     cells = "".join(f'<i class="z{i}{" on" if i == zone else ""}"></i>' for i in range(4))
-    return (f'<div class="risk z{zone}" style="--pos:{pos}%"><span class="gauge" role="img" '
-            f'aria-label="{esc(label)}: scam risk {max(0, min(100, int(score)))} of 100">{cells}<b></b></span>'
+    return (f'<div class="risk z{zone}" style="--pos:{pos}%;--f:{int(frac * 100)}%"><span class="end">0</span><span class="gauge" role="img" '
+            f'aria-label="Scam risk {real} of 100{", aggregator" if agg else ""}">{cells}<b></b></span><span class="end">100</span>'
             f'<span class="rl">{esc(label)}</span></div>')
 
 

@@ -1,6 +1,6 @@
 /* NoleCareerShield visual effects. Decoration only: every page works and reads the same without it.
- *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing and lights each flag beside
- *      its line, then the card breaks apart line by line (each piece keeps its labels) and the verdict lands.
+ *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing and lights each flagged
+ *      phrase; its flag joins a stack below, the stack breaks apart into separate flags, and the verdict lands.
  *   1. Scroll-scrubbed footage: section[data-cine] pins while you scroll and plays a camera move frame by
  *      frame on a canvas (Apple-style image sequence). Sets --p (0 to 1) and data-cap for the captions.
  *   2. Cursor parallax: [data-pan] layers drift a few pixels against the pointer (fine pointers only).
@@ -122,7 +122,8 @@
     var marks = [].slice.call(card.querySelectorAll("mark")), sups = [].slice.call(card.querySelectorAll("sup"));
     var items = {}, h = 1, done = false, mode = "", played = false, broke = 0;
     var side = sec.querySelector(".scan-side") || board, extra = 0;
-    [].slice.call(sec.querySelectorAll(".scan-card .flag")).forEach(function (el) { items[el.getAttribute("data-f")] = el; });
+    var list = sec.querySelector(".scan-flags");
+    [].slice.call(list.querySelectorAll("li")).forEach(function (el) { items[el.getAttribute("data-f")] = el; });
     var verdict = sec.querySelector(".scan-verdict"), stamp = sec.querySelector(".scan-stamp");
     var self = { sec: sec, tick: tick, measure: measure };
 
@@ -137,18 +138,17 @@
       sec.style.setProperty("--bh", board.offsetHeight + extra + "px");
       if (mode === "timed") playOnce();
     }
-    function breakTo(b) {                   // 0 = one card, 1 = in pieces (see .scan-card in ui.py)
+    function breakTo(b) {                   // 0 = the flags joined in one stack, 1 = broken apart (.scan-flags in ui.py)
       b = Math.max(0, Math.min(1, b));
       if (Math.abs(b - broke) < 0.001) return;
       broke = b;
-      card.style.setProperty("--b", b.toFixed(3));
-      line.style.opacity = b > 0 ? String(Math.max(0, 1 - b * 3)) : "";
+      list.style.setProperty("--b", b.toFixed(3));
     }
     function measure() {
       sec.style.setProperty("--hdr", hdr() + "px");
-      var was = broke; breakTo(1);           // how much taller the card is in pieces...
-      var tall = card.offsetHeight;
-      breakTo(0); extra = tall - card.offsetHeight;   // ...then measure the whole card, and put it back after
+      var was = broke; breakTo(1);           // how much taller the flags are once apart...
+      var tall = list.offsetHeight;
+      breakTo(0); extra = tall - list.offsetHeight;   // ...then measure them joined, and put it back after
       var top = card.getBoundingClientRect().top;
       h = card.offsetHeight;
       marks.forEach(function (m) { var r = m.getBoundingClientRect(); m.__y = (r.top + r.bottom) / 2 - top; });
@@ -190,8 +190,8 @@
     function tick() {
       if (mode === "timed") return false;
       var p = Math.min(1, Math.max(0, progress()));
-      at((p - 0.04) / 0.54);                 // the line reads the listing...
-      breakTo((p - 0.6) / 0.16);             // ...the card breaks apart line by line...
+      at((p - 0.04) / 0.56);                 // the line reads the listing...
+      breakTo((p - 0.62) / 0.14);            // ...the flags break apart...
       finish(p > 0.8);                       // ...then the verdict lands
       return false;
     }

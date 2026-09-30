@@ -125,14 +125,12 @@ def test_signed_in_pages_carry_the_new_pieces(net):
     assert 'class="desk"' in queue and "<kbd>J</kbd>" in queue and 'class="qtabs"' in queue
 
 
-def test_risk_gauge_keeps_the_real_score_but_not_the_edges():
+def test_risk_gauge_follows_the_score():
     import ui
-    zone, pos = ui.risk_position(0, "clear")
-    assert zone == 0 and 0 < pos < 25                       # inside Clear, not pinned to the left edge
-    zone, pos = ui.risk_position(100, "held")
-    assert zone == 3 and 75 < pos < 100                     # inside Scam, not pinned to the right edge
-    zone, pos = ui.risk_position(0, "flagged", aggregator=True)
-    assert zone == 2 and 40 < pos < 75                      # aggregators sit mid-gauge
-    assert ui.risk_position(30, "held")[0] == 3             # a critical finding is Scam whatever the total
+    assert [ui.risk_position(x)[0] for x in (0, 25, 26, 50, 51, 75, 76, 100)] == [0, 0, 1, 1, 2, 2, 3, 3]
+    assert ui.risk_position(37)[1] == 37 and ui.risk_position(100, "held")[1] == 100     # the marker sits at the score
+    zone, pos, _ = ui.risk_position(0, "flagged", aggregator=True)
+    assert zone == 2 and pos == 60                                                       # aggregators sit at 60
     html = ui.risk_meter(0, "flagged", aggregator=True)
-    assert "Aggregator" in html and "scam risk 0 of 100" in html      # the number stays the real one
+    assert "Aggregator" in html and "Scam risk 0 of 100" in html                        # the real score is still stated
+    assert '<span class="rl">93</span>' in ui.risk_meter(93, "held")
