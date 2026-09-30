@@ -221,7 +221,7 @@ def test_messaging_between_student_and_approved_employer(net):
     job = add_job(net, eid)
     # The listing offers "Message the employer" and "Tailor my resume" to students.
     page = s.get(f"/job/{job}").text
-    assert f"/messages/new?to={eid}&amp;job={job}" in page and "Your fit for this job" in page and "Tailor your resume to this job" in page
+    assert f"/messages/new?to={eid}&amp;job={job}" in page and "Job match is" in page and "Tailor your resume to this job" in page
     t = ucsrf(s)
     r = s.post("/messages/new", data={"csrf": t, "to": eid, "job": job, "body": "Hi! Is the data internship still open for summer?"})
     assert r.status_code == 303

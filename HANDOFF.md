@@ -10,7 +10,7 @@ stand, what was decided and why, and what's next.
   published as the Claude artifact "NoleCareerShield Demo (Copy)"). Rebuild after any site change. Both embed the
   footage (about 7 MB), so they are not kept in git. The demo runs the real
   scam rules and a JS port of the engines; `tests/test_demo_engine.py` fails if the port disagrees with the Python.
-  The demo also has easy apply (Garnet's Social Media Intern takes applications) and the network (five sample students,
+  The demo also has quick apply (Garnet's Social Media Intern takes applications) and the network (five sample students,
   one incoming request for Jordan), mirrored from `easyapply.py` and `network.py`; change both sides together.
 - **Installer:** `setup_jobboard.py` holds every tracked file. Regenerate it with `python make_installer.py` before each
   commit; `tests/test_installer.py` fails if it's out of date.
@@ -31,7 +31,7 @@ stand, what was decided and why, and what's next.
 - **Employers:** own entrance at `/employers` with separate log-in and sign-up. Reviewer approval required. Detailed company
   pages with a trust score (0-100, **higher is safer**). Hiring tools per listing: ranked student matches, one-click
   invite, candidate tracker with stages and private notes, views / Apply clicks / messages.
-- **Easy apply (`easyapply.py`):** an employer ticks "Collect applications on NoleCareerShield" on the post form and writes up
+- **Quick apply (`easyapply.py`):** an employer ticks "Collect applications on NoleCareerShield" on the post form and writes up
   to 5 questions (short / long / yes-no, optional or required). Questions can't ask for SSN, bank or card details,
   passwords or ID numbers (regex in `easyapply._BANNED`), and the question text is added to what the scam scanner reads.
   Students get a form filled from their profile (`/job/{id}/easy`), see what the employer will get before sending (name,
@@ -120,7 +120,7 @@ stand, what was decided and why, and what's next.
 - **Trust score 100 = good; listing number is labelled "scam risk":** two opposite scales must never share a label.
 - **Employer view counts are totals only:** employers never see which students viewed or clicked Apply. Students appear in
   a tracker only when they message, are invited, or are saved from matches.
-- **Easy apply shares only what the student sees on the form,** and only with the employer they apply to; withdrawing
+- **Quick apply shares only what the student sees on the form,** and only with the employer they apply to; withdrawing
   deletes the answers. Nothing changes for students who keep using external Apply links.
 - **Connections without messages:** the site's safety pitch is that strangers can't reach students freely, so connecting
   is a mutual link plus counts, not an inbox. Add student messaging only with the same scan-and-report rules as employer

@@ -1,4 +1,4 @@
-"""Easy apply (employer questions, student form, application in the tracker) and the connections / follows network."""
+"""Quick apply (employer questions, student form, application in the tracker) and the connections / follows network."""
 import json
 import re
 import sys
@@ -28,15 +28,15 @@ def apply_form(job, csrf, **over):
     return d
 
 
-# ---------- easy apply ----------
+# ---------- quick apply ----------
 
 def test_easy_apply_end_to_end(net):
     emp, eid = employer(net)
     job = easy_job(net, eid)
     stu, sid = student(net)
     page = stu.get(f"/job/{job}").text
-    assert "Easy apply →" in page and f"/job/{job}/easy" in page and "/apply" not in page.split("Easy apply")[1][:200]
-    assert "Easy apply" in stu.get("/jobs").text                                    # badge on the card
+    assert "Quick apply →" in page and f"/job/{job}/easy" in page and "/apply" not in page.split("Quick apply")[1][:200]
+    assert "Quick apply" in stu.get("/jobs").text                                    # badge on the card
     form = stu.get(f"/job/{job}/easy").text
     assert "Why this role?" in form and "Jordan R." in form and "Include my resume" in form and "never your email" in form
     t = ucsrf(stu)
@@ -88,12 +88,12 @@ def test_easy_apply_rules(net):
     pending, pid = employer(net, "new@acme.example", approve=False, company="Pending Co")
     stu, sid = student(net)
     t = ucsrf(stu)
-    # not easy apply -> no form
+    # not quick apply -> no form
     plain = add_job(net, eid)
     assert stu.get(f"/job/{plain}/easy").status_code == 404
     # an unapproved employer can't take applications
     j2 = easy_job(net, pid)
-    assert stu.get(f"/job/{j2}/easy").status_code == 404 and "Easy apply →" not in stu.get(f"/job/{j2}").text
+    assert stu.get(f"/job/{j2}/easy").status_code == 404 and "Quick apply →" not in stu.get(f"/job/{j2}").text
     # employers can't apply, visitors are sent to log in
     job = easy_job(net, eid)
     assert emp.get(f"/job/{job}/easy").status_code in (303, 403)

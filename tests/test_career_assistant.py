@@ -57,7 +57,7 @@ def test_cards_only_real_approved_listings_with_match_and_quals(net):
     url, html = ask(s, "Find jobs matching my skills")
     assert f'href="/job/{good}"' in html and "Data Analyst Intern" in html and "Secret SQL" not in html
     assert re.search(r"\d+% match", html)
-    assert "Easy apply" in html and ">New<" in html
+    assert "Quick apply" in html and ">New<" in html
     assert "Scam check passed" in html                                     # the same verified/warning status the board uses
     assert "What they’re looking for" in html and "Update profile" in html and "/profile/setup" in html
     assert "You match" in html or "You don't match" in html

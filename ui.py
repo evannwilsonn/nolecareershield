@@ -722,7 +722,7 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 .risk.z0{--mk:var(--g)}.risk.z1{--mk:var(--y)}.risk.z2{--mk:var(--o)}.risk.z3{--mk:var(--r)}
 .risk .rl{color:color-mix(in oklab,var(--mk) 80%,var(--ink));margin-left:4px;font-family:var(--display);font-weight:750;font-stretch:80%;font-size:15px;font-variant-numeric:tabular-nums;min-width:3ch}
 .risk.in .gauge b{transition:left 1s var(--ease)}
-/* easy apply, connections and follows */
+/* quick apply, connections and follows */
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .chip.easy{background:var(--accent-tint);color:var(--accent-ink);font-weight:600}
 .appl{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}

@@ -431,7 +431,7 @@ def _pill(job: dict) -> str:
 def job_card(job: dict, profile: dict | None, ready: bool) -> str:
     tags = ""
     if easyapply.is_easy(job):
-        tags += '<span class="cs-tag ea">Easy apply</span>'
+        tags += '<span class="cs-tag ea">Quick apply</span>'
     if is_new(job):
         tags += '<span class="cs-tag nw">New</span>'
     match = f'<span class="pill accent">{int(fit.fit_score(job, profile)["score"])}% match</span>' if ready else ""

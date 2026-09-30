@@ -62,7 +62,7 @@ const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [], dismissed: {}, suggs: {},
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], connLog: [], easyDraft: null, chats: [], chatId: null};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -224,7 +224,7 @@ const pageHead = (t, lede, num) => `<div class="page-head">${num ? `<div class="
 const takeFlash = () => { const f = S.flash; S.flash = null; return f ? banner(f.kind, f.text, f.raw) : ""; };
 const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
 
-// ---------------- easy apply + network helpers (twins of easyapply.py and network.py) ----------------
+// ---------------- quick apply + network helpers (twins of easyapply.py and network.py) ----------------
 const MAX_QUESTIONS = 5, Q_LEN = 160, ANSWER_LEN = {short: 300, long: 1500, yesno: 3}, NOTE_LEN = 1000, DAILY_CAP = 40;
 const Q_KINDS = [["short", "Short answer"], ["long", "Long answer"], ["yesno", "Yes / no"]];
 // Things a real employer never needs to ask for on an application form (same list as easyapply._BANNED).
@@ -234,8 +234,8 @@ function cleanQuestions(raw) {
   const out = [];
   for (const it of (raw || []).slice(0, MAX_QUESTIONS)) {
     const q = String(it.q || "").replace(CTRL, "").trim(); if (!q) continue;
-    if (q.length > Q_LEN) throw `Keep each easy apply question under ${Q_LEN} characters.`;
-    if (BANNED_Q.test(q)) throw "Easy apply questions can't ask for SSNs, bank or card details, passwords or ID numbers. Real employers collect those only after a hire, through their own paperwork.";
+    if (q.length > Q_LEN) throw `Keep each quick apply question under ${Q_LEN} characters.`;
+    if (BANNED_Q.test(q)) throw "Quick apply questions can't ask for SSNs, bank or card details, passwords or ID numbers. Real employers collect those only after a hire, through their own paperwork.";
     out.push({q, kind: Q_KINDS.some(k => k[0] === it.kind) ? it.kind : "short", required: !!it.required});
   }
   return out;
@@ -347,15 +347,6 @@ function scorePill(j) {
   return `Scam risk ${shownScore(j.score, lg)} · ${j.scam_status}`;
 }
 
-// ---------------- job cards ----------------
-function jobCard(j, match) {
-  const badge = j.scam_status === "clear" ? '<span class="badge verified">✓ Verified</span>' : '<span class="badge warning">⚠ Check carefully</span>';
-  const pill = match ? (match.fit ? fitBadge(match.fit.score, match.fit.label) : `<span class="pill accent">${match.score}% match</span>`) : "";
-  const why = match && match.reasons.length ? `<div class="why">${esc(match.reasons[0])}</div>` : "";
-  return `<a class="job" href="#" data-go="job?id=${j.id}"><div class="job-top"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><div class="row" style="gap:6px">${pill}${badge}</div></div>
-<div class="job-meta"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}${j.easy_apply ? '<span class="chip easy">Easy apply</span>' : ""}</div>${why}</a>`;
-}
-
 // ---------------- layout ----------------
 const STUDENT_NAV = [["", [["home", "home", "Home"], ["jobs", "jobs", "Jobs"], ["spark", "assistant", "Career assistant"], ["feed", "feed", "Feed"], ["chat", "messages", "Messages"], ["people", "network", "Network"]]],
   ["Career tools", [["send", "applications", "Applications"], ["file", "resume", "Resume studio"], ["shield", "scam", "Scam check"]]], ["You", [["user", "profile", "Profile"]]]];
@@ -432,52 +423,168 @@ function completion(p) {
   return [Math.round(100 * checks.filter(c => c[0]).length / checks.length), checks.filter(c => !c[0]).map(c => c[1])];
 }
 
+// ---------------- the job board (twin of jobboard.py): tabs, search, chips, list, detail ----------------
+const JB_KINDS = [["full-time", "Full-time"], ["internship", "Internship"], ["part-time", "Part-time"]], JB_KIND_LABEL = {"full-time": "Full-time", internship: "Internship", "part-time": "Part-time", "on-campus": "On-campus"};
+const JB_WHEN = [[0, "Any time"], [1, "Past 24 hours"], [7, "Past week"], [30, "Past month"]], JB_SORTS = [["relevant", "Most relevant"], ["recent", "Most recent"]];
+const JB_LEVEL = {high: "High", medium: "Medium", low: "Low"}, JB_MAX_SAVED = 200, JB_MAX_LIST = 60;
+const JB_CONF = {low: "Your profile is thin, so this is a rough estimate. Add experience, projects and a resume to sharpen it.", medium: "Based on part of your profile. Adding more sections makes it more accurate.",
+  high: "Based on your whole profile: skills, resume, experience, projects, education and what you're looking for."};
+const jbKinds = j => { const low = " " + (j.title + "\n" + j.description).toLowerCase() + " "; return Object.keys(N.KIND_WORDS).filter(k => N.KIND_WORDS[k].some(w => low.includes(w))); };
+const jbWhere = j => j.location || (j.work_type === "remote" ? "Remote" : "");
+const jbPosted = j => { const d = Math.floor(j.age_days || 0); return d < 1 ? "Posted today" : d < 2 ? "Posted yesterday" : d < 14 ? `Posted ${d} days ago` : `Posted ${Math.floor(d / 7)} weeks ago`; };
+const jbLevel = pct => pct >= 75 ? "high" : pct >= 50 ? "medium" : "low";
+const jbHasProfile = p => !!(p && ((p.skills || []).length || p.resume_text || (p.items || []).length));
+const jbSaved = uid => S.savedJobs.filter(x => x.user === uid).sort((a, b) => b.at - a.at).map(x => x.job);
+function jbParams(q, student) {
+  const pick = (v, allowed, def) => allowed.includes((v || "").trim()) ? v.trim() : (def || "");
+  return {search: (q.search || "").trim().slice(0, 200), category: pick(q.category, N.CATEGORIES), work_type: pick(q.work_type, N.WORK_TYPES), kind: pick(q.kind, JB_KINDS.map(k => k[0])),
+    loc: (q.loc || "").trim().slice(0, 60), when: ["1", "7", "30"].includes(String(q.when)) ? Number(q.when) : 0, quick: String(q.quick) === "1" ? 1 : 0,
+    following: student && String(q.following) === "1" ? 1 : 0, sort: pick(q.sort, JB_SORTS.map(s => s[0]), "relevant"), tab: student && q.tab === "saved" ? "saved" : "jobs", job: Number(q.job) || 0};
+}
+function jbUrl(p, over) {
+  const cur = Object.assign({}, p, over || {}), qs = new URLSearchParams();
+  for (const k of ["tab", "search", "category", "work_type", "kind", "loc", "when", "quick", "following", "sort", "job"]) {
+    const v = cur[k]; if (v === null || v === undefined || v === "" || v === 0 || (k === "tab" && v === "jobs") || (k === "sort" && v === "relevant")) continue; qs.set(k, v);
+  }
+  return "jobs" + (qs.toString() ? "?" + qs : "");
+}
+function jbFilter(jobs, p, followed) {
+  return jobs.filter(j => (!p.category || j.category === p.category) && (!p.work_type || j.work_type === p.work_type) && (!p.kind || jbKinds(j).includes(p.kind))
+    && (!p.when || (j.age_days || 0) <= p.when) && (!p.quick || j.easy_apply) && (!p.loc || (j.location || "").toLowerCase() === p.loc.toLowerCase()) && (!followed || followed.has(j.employer_id)));
+}
+function jbRank(jobs, p, profile) {
+  const ranked = N.rankJobs(jobs, profile, p.search, 999), seen = new Set(ranked.map(r => r.job.id));
+  if (p.search) { const t = p.search.toLowerCase(); jobs.forEach(j => { if (!seen.has(j.id) && ["title", "company", "description"].some(f => (j[f] || "").toLowerCase().includes(t))) ranked.push({job: j, score: 0}); }); }
+  if (p.sort === "recent") ranked.sort((a, b) => (a.job.age_days || 0) - (b.job.age_days || 0));
+  return ranked.map(r => ({job: r.job, fit: r.fit ? r.fit.score : null}));
+}
+const jbSaveBtn = (jid, saved, next, label) => { const t = saved ? "Remove from saved jobs" : "Save job";
+  return `<span class="jc-sv"><button type="button" class="${label ? "sv-l" : "sv-i"}${saved ? " on" : ""}" data-do="${saved ? "job-unsave" : "job-save"}" data-id="${jid}" data-next="${esc(next)}" aria-label="${t}" title="${t}" aria-pressed="${saved}">${bookmark(saved, 18)}${label ? `<span>${saved ? "Saved" : "Save"}</span>` : ""}</button></span>`; };
+function jbCard(j, p, sel, fitpct, saved) {
+  const match = fitpct !== null && fitpct !== undefined ? `<span class="jc-match ${jbLevel(fitpct)}">${fitpct}% match</span>` : "";
+  const tags = `<span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span>` + match + (j.easy_apply ? '<span class="jc-tag q">Quick apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="jc-tag n">New</span>' : "");
+  const facts = [jbWhere(j), cap(j.work_type), j.category].filter(Boolean).join(" · ");
+  return `<article class="jc${sel ? " sel" : ""}"${sel ? " aria-current=true" : ""}><span class="jc-logo" aria-hidden="true">${initials(j.company)}</span><div class="jc-body"><h3 class="jc-title"><a class="jc-link jc-d" href="#" data-go="${esc(jbUrl(p, {job: j.id}))}">${esc(j.title)}</a><a class="jc-link jc-m" href="#" data-go="job?id=${j.id}">${esc(j.title)}</a></h3>`
+    + `<div class="jc-co">${esc(j.company)}</div><div class="jc-facts">${esc(facts)}</div><div class="jc-tags">${tags}</div></div>${saved === null ? "" : jbSaveBtn(j.id, saved, jbUrl(p, {job: sel ? j.id : null}))}</article>`;
+}
+const jbMenu = (label, items, active, cls) => `<details class="jb-dd ${cls || ""}"><summary class="jb-chip${active ? " on" : ""}">${esc(label)}<i class="car"></i></summary><div class="jb-menu">${items.map(([t, h, on]) => `<a href="#" data-go="${esc(h)}"${on ? " class=on aria-current=true" : ""}>${esc(t)}</a>`).join("")}</div></details>`;
+const jbToggle = (label, href, on) => `<a class="jb-chip${on ? " on" : ""}" href="#" data-go="${esc(href)}"${on ? " aria-pressed=true" : ""}>${esc(label)}</a>`;
+function jbControls(p, all, student) {
+  const search = `<form class="jb-search" id="jbSearch" role="search"><label class="sr" for="jb-q">Describe a job you want</label><input id="jb-q" name="search" value="${esc(p.search)}" placeholder="Describe a job you want" maxlength="200" autocomplete="off"><button type="submit">Search</button></form>`;
+  const locs = {}; all.forEach(j => { if (j.location) locs[j.location] = (locs[j.location] || 0) + 1; });
+  const top = Object.keys(locs).sort((a, b) => locs[b] - locs[a] || a.toLowerCase().localeCompare(b.toLowerCase())).slice(0, 8);
+  const locItems = [["Any location", jbUrl(p, {loc: null}), !p.loc]].concat(top.map(l => [l, jbUrl(p, {loc: l}), p.loc.toLowerCase() === l.toLowerCase()]), [["Remote only", jbUrl(p, {work_type: p.work_type !== "remote" ? "remote" : null}), p.work_type === "remote"]]);
+  const chips = [jbMenu("Location" + (p.loc ? ": " + p.loc : ""), locItems, !!p.loc)];
+  JB_KINDS.forEach(([k, label]) => chips.push(jbToggle(label, jbUrl(p, {kind: p.kind === k ? null : k}), p.kind === k)));
+  chips.push(jbMenu("Date posted", JB_WHEN.map(([d, t]) => [t, jbUrl(p, {when: d}), p.when === d]), !!p.when));
+  chips.push(jbToggle("Quick apply", jbUrl(p, {quick: p.quick ? 0 : 1}), !!p.quick));
+  if (student) chips.push(jbToggle("From companies I follow", jbUrl(p, {following: p.following ? 0 : 1}), !!p.following));
+  const cats = [...new Set(all.map(j => j.category))].sort();
+  const fl = [["All categories", jbUrl(p, {category: null}), !p.category]].concat(cats.map(c => [c, jbUrl(p, {category: p.category === c ? null : c}), p.category === c]),
+    [["Any work setting", jbUrl(p, {work_type: null}), !p.work_type]], N.WORK_TYPES.map(w => [cap(w), jbUrl(p, {work_type: p.work_type === w ? null : w}), p.work_type === w]));
+  chips.push(jbMenu("Filters", fl, !!(p.category || (p.work_type && p.work_type !== "remote")), "wide"));
+  const clear = ["search", "category", "work_type", "kind", "loc", "when", "quick", "following"].some(k => p[k]) ? '<a class="jb-clear" href="#" data-go="jobs">Clear all</a>' : "";
+  return `<div class="jb-controls">${search}<div class="jb-chips" role="group" aria-label="Filters">${chips.join("")}${clear}</div></div>`;
+}
+function jbTabs(p, student, nSaved) {
+  const items = [["Jobs", "jobs", p.tab === "jobs"]]; if (student) items.push([`Saved${nSaved ? ` (${nSaved})` : ""}`, "jobs?tab=saved", p.tab === "saved"], ["Resume optimizer", "resume", false]);
+  return `<nav class="jb-tabs" aria-label="Jobs">${items.map(([t, h, on]) => `<a href="#" data-go="${h}"${on ? " class=on aria-current=page" : ""}>${esc(t)}</a>`).join("")}</nav>`;
+}
+function jbBoard() {
+  const student = isStudent(), p = jbParams(S.route.q, student), all = approvedJobs().slice().reverse();
+  const prof = student ? SP(me().id) : null, rich = jbHasProfile(prof), saved = student ? jbSaved(me().id) : [];
+  const followed = student && p.following ? new Set(followedIds(me().id)) : null;
+  let ranked;
+  if (p.tab === "saved") { const pool = saved.map(i => all.find(j => j.id === i)).filter(Boolean); const fm = rich ? Object.fromEntries(jbRank(pool, {search: "", sort: "relevant"}, prof).map(r => [r.job.id, r.fit])) : {}; ranked = pool.map(j => ({job: j, fit: rich ? (fm[j.id] === undefined ? null : fm[j.id]) : null})); }
+  else ranked = jbRank(jbFilter(all, p, followed), p, rich ? prof : null);
+  ranked = ranked.slice(0, JB_MAX_LIST);
+  const ids = ranked.map(r => r.job.id), selId = ids.includes(p.job) ? p.job : (ids[0] || 0), explicit = !!(p.job && p.job === selId), savedSet = new Set(saved);
+  const cards = ranked.map(r => jbCard(r.job, p, r.job.id === selId, rich ? r.fit : null, student ? savedSet.has(r.job.id) : null)).join(""), n = ranked.length;
+  let head, empty;
+  if (p.tab === "saved") {
+    head = `<div class="jb-count">${plural(n, "saved job")}</div>`;
+    empty = `<div class="empty">${bookmark(false, 36)}<p style="margin:10px 0 12px">No saved jobs yet. Tap the bookmark on any job to keep it here.</p><a class="b sec" href="#" data-go="jobs">Browse jobs</a></div>`;
+  } else {
+    const sort = jbMenu("Sort by " + JB_SORTS.find(s => s[0] === p.sort)[1], JB_SORTS.map(([s, t]) => [t, jbUrl(p, {sort: s}), p.sort === s]), false, "sort");
+    head = `<div class="jb-count"><span>${plural(n, "job")}${p.search ? ` for “${esc(p.search)}”` : ""}</span>${sort}</div>`;
+    empty = p.following ? '<div class="empty">Nothing from companies you follow right now. <a href="#" data-go="network?tab=following">Who you follow</a></div>' : '<div class="empty">No listings match. Try clearing filters or describing the job differently.</div>';
+  }
+  const pane = selId ? jbDetail(all.find(j => j.id === selId), prof, jbUrl(p, {job: selId}), explicit, student ? savedSet.has(selId) : null, false) : '<div class="jd-empty">Select a job to see the details.</div>';
+  return `<div class="jb">${jbTabs(p, student, saved.length)}${p.tab === "jobs" ? jbControls(p, all, student) : ""}<div class="jb-grid"><div class="jb-list" id="jb-list">${head}${cards || empty}</div><aside class="jb-pane" aria-label="Job details">${pane}</aside></div></div>`;
+}
+function jbMarker(c, chosen) {
+  const t = c.text.toLowerCase().replace(" (preferred)", "");
+  for (const k of [t, t.split(":").slice(-1)[0].trim()]) if (k in chosen) return chosen[k] ? "Required" : "Preferred";
+  for (const k of Object.keys(chosen)) if (new RegExp("(?<![a-z0-9])" + k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "s?(?![a-z0-9])").test(t)) return chosen[k] ? "Required" : "Preferred";
+  return c.text.toLowerCase().includes("(preferred)") ? "Preferred" : "Required";
+}
+function jbQuals(job, f, personal) {
+  const chosen = {}; N.qualsOf(job).forEach(q => { chosen[q.label.toLowerCase()] = !!q.must; });
+  const items = (f || N.fitScore(job, {})).checklist;
+  if (!items.length) return '<section class="jq"><h3>What they’re looking for</h3><p class="jq-sum muted">The employer hasn’t listed specific qualifications, and the description doesn’t name any.</p></section>';
+  const marks = {met: ["✓", "met", "You have this"], missing: ["⊘", "missing", "Not on your profile yet"], unknown: ["?", "unknown", "Not enough on your profile to tell"]};
+  const rows = items.map(c => { const [st, cls, tip] = personal ? marks[c.status] : ["•", "plain", ""], m = jbMarker(c, chosen);
+    return `<li class="${cls}"><span class="mk" aria-hidden="true">${st}</span><div><span class="sr">${esc(tip)}: </span>${esc(c.text.replace(/\s*\(preferred\)$/, ""))}<em class="rq ${m.toLowerCase()}">${m}</em></div></li>`; }).join("");
+  const met = items.filter(c => c.status === "met").length;
+  const summ = personal ? `<p class="jq-sum"><b>You match ${met} of ${items.length} qualifications</b></p>` : `<p class="jq-sum muted">${plural(items.length, "qualification")} from the employer and the description.</p>`;
+  const note = personal ? '<p class="jq-note">Matching is based on your profile. <a href="#" data-go="setup?step=1">Update profile</a></p>' : "";
+  return `<section class="jq"><h3>What they’re looking for</h3>${summ}<ul class="jq-list">${rows}</ul>${note}</section>`;
+}
+function jbMatch(job, f) {
+  if (!f) return '<section class="jm"><h3>Job match</h3><p class="muted small">Add your skills, experience or resume and every listing shows how well you match, built from your whole profile.</p><div class="row" style="margin-top:10px"><a class="b sm" href="#" data-go="profile">Build my profile</a><a class="b sm sec" href="#" data-go="resume">Add my resume</a></div></section>';
+  const pct = f.percent, lvl = f.level;
+  const parts = f.parts.map(x => `<div class="cat"><span>${esc(x.name)}</span><div class="meter${x.score >= 75 ? " ok" : x.score < 40 ? " warn" : ""}"><i style="width:${x.score}%"></i></div><span>${x.score}%</span><div class="why2">${esc(x.detail)}</div></div>`).join("");
+  const found = f.matched.slice(0, 6).map(m => `<li><b>${esc(m.skill)}</b><span class="ev">Found in ${esc(m.where.slice(0, 2).map(w => w.replace(/^Your /, "your ")).join(", "))}</span></li>`).join("");
+  const more = `<details class="jm-more"><summary>Show match details</summary><div class="fitparts">${parts}</div>${found ? `<h4 class="small" style="margin:12px 0 6px">Where your profile backs it up</h4><ul class="jm-found">${found}</ul>` : ""}</details>`;
+  return `<section class="jm" id="fit"><div class="jm-head"><h3>Job match is <span class="jm-lvl ${lvl}">${JB_LEVEL[lvl]}</span></h3><span class="jm-pct">${pct}%</span></div>`
+    + `<div class="jm-meter ${lvl}" style="--pos:${pct}%" role="img" aria-label="Job match ${pct} percent, ${JB_LEVEL[lvl].toLowerCase()}"><i></i><i></i><i></i><b></b></div><div class="jm-scale" aria-hidden="true"><span>Low</span><span>Medium</span><span>High</span></div><p class="jm-conf">${esc(JB_CONF[f.confidence])}</p>${more}`
+    + `<div class="row jm-acts"><a class="b" href="#" data-go="resume?tab=tailor&amp;job=${job.id}">${icon("file", 16)} Tailor my resume</a><a class="b ghost" href="#" data-go="resume?src=main#rs-stand">${icon("spark", 16)} Help me stand out</a></div></section>`;
+}
+function jbGlance(j) {
+  const kinds = jbKinds(j).map(k => JB_KIND_LABEL[k]).join(", ") || "Not stated", how = j.easy_apply ? "Quick apply on NoleCareerShield" : (j.apply_url ? "Employer’s site" : "Contact the employer");
+  const rows = [["Posted", cap(jbPosted(j).replace("Posted ", ""))], ["Job type", kinds], ["Work setting", cap(j.work_type)], ["Location", jbWhere(j) || "Not stated"], ["Category", j.category], ["How to apply", how]];
+  return `<section class="jg"><h3>At a glance</h3><dl>${rows.map(([a, b]) => `<div><dt>${esc(a)}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl></section>`;
+}
+function jbScam(j) {
+  const ban = j.scam_status === "clear" ? banner("verified", "✓ This listing passed the scam check and was approved by a reviewer. Still verify the employer through their own website before sharing personal information.")
+    : banner("warning", "⚠ This listing was approved but tripped some scam signals. Read the notes below and verify the employer independently before responding.");
+  const fs = j.scam_status !== "clear" ? j.findings.filter(f => f.severity === "critical" || f.severity === "warning").map(f => `<div class="finding ${esc(f.severity)}"><b>${esc(f.title)}</b><br>${esc(f.why)}</div>`).join("") : "";
+  return `<section class="js"><div class="js-top"><h3>Scam check</h3><span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span></div>${riskMeter(j.score, j.scam_status, j.findings.some(f => f.rule_id === "lead_gen"))}${ban}${fs ? `<div class="jd-find"><b style="font-size:14px">Signals to be aware of:</b>${fs}</div>` : ""}</section>`;
+}
+function jbDetail(j, prof, next, record, saved, full) {
+  const student = isStudent(), empOk = !!j.employer_id && approvedEmp(j.employer_id);
+  let co = esc(j.company), trust = "", apply = "", banr = "", following = false;
+  if (empOk) { trust = trustPill(trustOf(j.employer_id), "company?id=" + j.employer_id + "#trust"); co = `<a href="#" data-go="company?id=${j.employer_id}">${co}</a>`; }
+  if (student) {
+    if (record) recordView(j.id, me().id);
+    following = empOk && isFollowing(me().id, j.employer_id);
+    const done = j.easy_apply ? myApp(j.id, me().id) : null;
+    if (j.easy_apply) {
+      if (done) banr = `<div class="banner verified">✓ You applied ${ago(done.at)}. <a href="#" data-go="applications">Your applications</a></div>`;
+      else if (empOk) apply = `<a class="apply-btn" href="#" data-go="easy?id=${j.id}">Quick apply →</a>`;
+      else if (j.contact) banr = `<p style="font-size:14px;color:var(--muted)">Contact: ${esc(j.contact)}</p>`;
+    } else if (j.apply_url) apply = `<a class="apply-btn" href="${esc(j.apply_url)}" data-apply="${j.id}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a>`;
+    else if (j.contact) banr = `<p style="font-size:14px;color:var(--muted)">Contact: ${esc(j.contact)}</p>`;
+  } else apply = `<a class="apply-btn" href="#" data-go="start?next=job-${j.id}">Log in as an FSU student to apply</a>`;
+  let acts = apply;
+  if (saved !== null) acts += jbSaveBtn(j.id, saved, next, true);
+  if (student && empOk) acts += `<a class="b ghost" href="#" data-go="newmsg?to=${j.employer_id}&amp;job=${j.id}">${icon("chat", 16)} Message</a>` + followButton(j.employer_id, following, "job?id=" + j.id, false);
+  const own = isEmployer() && j.employer_id === me().id ? `<div class="banner info">This is your listing. <a href="#" data-go="hjob?id=${j.id}">See ranked student matches, candidates and stats →</a></div>` : "";
+  const f = student && jbHasProfile(prof) ? N.fitScore(j, prof) : null;
+  const sub = [jbWhere(j), cap(j.work_type), jbPosted(j)].filter(Boolean).join(" · "), H = full ? "h1" : "h2";
+  return `${full ? '<a class="back jd-back" href="#" data-go="jobs">← All jobs</a>' : ""}<article class="jd"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">${initials(j.company)}</span><div class="jd-h"><${H} class="jd-title">${esc(j.title)}</${H}><div class="jd-co">${co}</div><div class="jd-sub">${esc(sub)}</div>${trust ? `<div class="jd-trust">${trust}</div>` : ""}</div></div>`
+    + `${own}<div class="jd-acts">${acts}</div>${banr}${jbScam(j)}${student ? jbMatch(j, f) : ""}${jbQuals(j, f, !!f)}${jbGlance(j)}<section class="jd-desc"><h3>About the job</h3><div class="detail-desc">${esc(j.description)}</div></section></article>`;
+}
 P.jobs = () => {
   if (!me()) { go("start?next=jobs"); return null; }
-  const q = S.route.q, search = (q.search || "").trim().slice(0, 200), category = N.CATEGORIES.includes(q.category) ? q.category : "", wt = N.WORK_TYPES.includes(q.work_type) ? q.work_type : "";
-  const term = search.toLowerCase(), following = isStudent() && !!q.following;
-  const followed = following ? new Set(followedIds(me().id)) : null;
-  const list = approvedJobs().slice().reverse().filter(j => (!followed || followed.has(j.employer_id)) && (!term || [j.title, j.company, j.description].some(t => t.toLowerCase().includes(term))) && (!category || j.category === category) && (!wt || j.work_type === wt));
-  const cats = [...new Set(approvedJobs().map(j => j.category))].sort();
-  const chip = (name, val, cur, param) => { const qs = new URLSearchParams(); if (search) qs.set("search", search);
-    if (param !== "category" && category) qs.set("category", category); if (param !== "work_type" && wt) qs.set("work_type", wt); if (val) qs.set(param, val);
-    if (following) qs.set("following", "1");
-    const s = qs.toString(); return `<a class="chipf${cur === val ? " active" : ""}" href="#" data-go="jobs${s ? "?" + esc(s) : ""}">${esc(name)}</a>`; };
-  const base = new URLSearchParams(); if (search) base.set("search", search); if (category) base.set("category", category); if (wt) base.set("work_type", wt);
-  const followRow = isStudent() ? `<div class="filter-row"><span class="label">From</span><a class="chipf${following ? "" : " active"}" href="#" data-go="jobs${base.toString() ? "?" + esc(base) : ""}">All companies</a><a class="chipf${following ? " active" : ""}" href="#" data-go="jobs?${esc(new URLSearchParams([...base, ["following", "1"]]))}">Companies I follow</a></div>` : "";
-  const p = isStudent() ? SP(me().id) : null;
-  const matches = p && (p.skills || []).length ? Object.fromEntries(N.rankJobs(list, p, "", 99).map(r => [r.job.id, r])) : {};
-  return (me() ? pageHead("Jobs", "Every listing here was scam-scanned and approved by a person.", "Jobs") : "") +
-    `<div class="controls"><form class="searchbar" id="searchForm"><input id="search" name="search" value="${esc(search)}" placeholder="Search title, company, or keyword" aria-label="Search jobs"><button type="submit">Search</button></form>
-<div class="filter-row"><span class="label">Category</span>${chip("All", "", category, "category")}${cats.map(c => chip(c, c, category, "category")).join("")}</div>
-<div class="filter-row"><span class="label">Type</span>${chip("Any", "", wt, "work_type")}${N.WORK_TYPES.map(w => chip(cap(w), w, wt, "work_type")).join("")}</div>${followRow}</div>` +
-    (list.length ? `<div class="results-head">${plural(list.length, "listing")}${search ? ` for "${esc(search)}"` : ""}</div>${list.map(j => jobCard(j, matches[j.id])).join("")}` : following ? '<div class="empty">Nothing from companies you follow right now. <a href="#" data-go="network?tab=following">Who you follow</a></div>' : '<div class="empty">No listings match. Try clearing filters or a different search.</div>');
+  return jbBoard();
 };
 P.job = () => {
   if (!me()) { go("start?next=job-" + S.route.q.id); return null; }
   const j = S.jobs.find(x => x.id === S.route.q.id);
   if (!j || j.review_status !== "approved") return '<p class="empty" style="margin:40px 0">That listing isn\'t available.</p>';
-  const ban = j.scam_status === "clear" ? banner("verified", "✓ This listing passed the scam check and was approved by a reviewer. Still verify the employer through their own website before sharing personal information.")
-    : banner("warning", "⚠ This listing was approved but tripped some scam signals. Read the notes below and verify the employer independently before responding.");
-  const fh = j.scam_status !== "clear" ? `<div style="margin:20px 0"><b style="font-size:14px">Signals to be aware of:</b>${j.findings.filter(f => f.severity !== "note").map(f => `<div class="finding ${esc(f.severity)}"><b>${esc(f.title)}</b><br>${esc(f.why)}</div>`).join("")}</div>` : "";
-  let extras = "", apply, after = "";
-  if (isStudent()) {
-    recordView(j.id, me().id);
-    const p = SP(me().id), btns = [`<a class="b sec" href="#" data-do="to-tailor">${icon("file", 16)} Tailor my resume</a>`];
-    if (j.employer_id && approvedEmp(j.employer_id)) { btns.unshift(`<a class="b ghost" href="#" data-go="newmsg?to=${j.employer_id}&amp;job=${j.id}">${icon("chat", 16)} Message the employer</a>`); btns.push(`<a class="b sec" href="#" data-go="company?id=${j.employer_id}">Company profile</a>`); btns.push(followButton(j.employer_id, isFollowing(me().id, j.employer_id), "job?id=" + j.id, false)); }
-    extras = fitPanel(j, p) + `<div class="row" style="margin:14px 0">${btns.join("")}</div>`;
-    after = tailorPanel(j, p);
-    apply = `<a class="apply-btn" href="${esc(j.apply_url)}" data-apply="${j.id}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a><p class="fine" style="text-align:left">Demo links go to example addresses.</p>`;
-    if (j.easy_apply) {   // collected here instead of an outside link
-      const done = myApp(j.id, me().id);
-      if (done) apply = `<div class="banner verified">✓ You applied ${ago(done.at)}. <a href="#" data-go="applications">Your applications</a></div>`;
-      else if (approvedEmp(j.employer_id)) apply = `<a class="apply-btn" href="#" data-go="easy?id=${j.id}">Easy apply →</a><p class="fine" style="text-align:left">Applies from your profile without leaving the site. You choose what the employer sees.</p>`;
-      else apply = j.contact ? `<p style="font-size:14px;color:var(--muted)">Contact: ${esc(j.contact)}</p>` : "";
-    }
-  } else if (isEmployer() && j.employer_id === me().id) { extras = `<div class="banner info">This is your listing. <a href="#" data-go="hjob?id=${j.id}">See ranked student matches, candidates and stats →</a></div>`; apply = ""; }
-  else apply = `<div class="card" style="background:var(--info-tint);color:var(--info);border:none"><b>Log in to apply.</b> Apply links are shown to signed-in FSU students only, which keeps scrapers and scammers away from them.<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="start?next=job-${j.id}">Log in or sign up</a></div></div>`;
-  return `<a class="back" href="#" data-go="jobs">← All jobs</a>${ban}<h2 class="page" style="margin-top:8px">${esc(j.title)}</h2><p class="job-co" style="font-size:16px">${esc(j.company)}</p>${me() && j.employer_id && approvedEmp(j.employer_id) ? `<div style="margin-top:8px">${trustPill(trustOf(j.employer_id), "company?id=" + j.employer_id + "#trust")}</div>` : ""}
-<div class="job-meta" style="margin:14px 0"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>${fh}${extras}<div class="detail-desc">${esc(j.description)}</div>${apply}${after}`;
+  const student = isStudent(), p = student ? SP(me().id) : null;
+  return `<div class="jb jb-one">${jbDetail(j, p, "job?id=" + j.id, true, student ? jbSaved(me().id).includes(j.id) : null, true)}</div>` + (student ? `<div class="jb jb-one">${tailorPanel(j, p)}</div>` : "");
 };
 P.post = () => {
   const v = S.draft || {}, val = n => esc(v[n] || "");
@@ -494,14 +601,14 @@ P.post = () => {
 <div class="form-field"><label for="f-location">Location</label><p class="hint">City/state, or leave blank if fully remote.</p><input id="f-location" name="location" maxlength="120" placeholder="e.g. Tallahassee, FL" value="${val("location")}"></div>
 <div class="form-field"><label for="f-description">Description</label><p class="hint">The full posting: responsibilities, requirements, and pay if you can share it.</p><textarea id="f-description" name="description" required maxlength="8000">${val("description")}</textarea></div>
 <div class="form-field"><label for="f-apply_url">Apply URL</label><p class="hint">Where applicants should go. The scanner checks this link too.</p><input id="f-apply_url" name="apply_url" maxlength="2000" placeholder="https://..." value="${val("apply_url")}"></div>
-<fieldset class="form-field easyset"><legend>Easy apply</legend>
+<fieldset class="form-field easyset"><legend>Quick apply</legend>
 <label class="toggle" for="f-easy"><input id="f-easy" type="checkbox" name="easy_apply" value="1"${v.easy_apply ? " checked" : ""}><span><b>Collect applications on NoleCareerShield.</b> Students apply from their profile in one step, and you get their answers in your candidate tracker. Leave it off to send them to your Apply URL.</span></label>
 <p class="hint" style="margin-top:10px">Optional questions for applicants (up to ${MAX_QUESTIONS}). Nothing that asks for an SSN, bank or card details or a password.</p>${qRows}</fieldset>
 <button class="submit-btn" type="submit">Submit for review</button><p class="fine" style="text-align:left">${isEmployer() ? "Sending as " + esc(me().email) + "." : "You'll log in or sign up before it sends."}</p></form>`;
 };
 P.posted = () => `${pageHead("Submitted for review")}${banner("info", "Thanks, your listing was scanned and is now waiting for a person to approve it. Nothing is published automatically. Open the reviewer view to see its score and approve it, and check the demo inbox for the receipt.")}<div class="row"><a class="b" href="#" data-go="admin">Open the reviewer view</a><a class="b sec" href="#" data-go="home">Home</a></div>`;
 
-// ---- easy apply (twin of easyapply.py) ----
+// ---- quick apply (twin of easyapply.py) ----
 function easyField(i, q, value) {
   const req = q.required ? " required" : "", label = `${esc(q.q)}${q.required ? "" : " <span class=faint>(optional)</span>"}`, fid = "a" + i;
   if (q.kind === "yesno") return `<fieldset class="form-field"><legend>${label}</legend><div class="row">${["Yes", "No"].map(v => `<label class="pick"><input type="radio" name="${fid}" value="${v}"${req}${value === v ? " checked" : ""}> ${v}</label>`).join("")}</div></fieldset>`;
@@ -509,8 +616,8 @@ function easyField(i, q, value) {
   return `<div class="form-field"><label for="${fid}">${label}</label><input id="${fid}" name="${fid}" maxlength="${ANSWER_LEN.short}"${req} value="${esc(value)}"></div>`;
 }
 P.easy = () => {
-  if (!isStudent()) return needStudent("easy apply");
-  const j = S.jobs.find(x => x.id === S.route.q.id), unavailable = msg => pageHead("Easy apply") + `<div class="empty">${esc(msg)} <a href="#" data-go="jobs">Back to jobs</a></div>`;
+  if (!isStudent()) return needStudent("quick apply");
+  const j = S.jobs.find(x => x.id === S.route.q.id), unavailable = msg => pageHead("Quick apply") + `<div class="empty">${esc(msg)} <a href="#" data-go="jobs">Back to jobs</a></div>`;
   if (!j || !canApply(j)) return unavailable("That listing isn't taking applications here.");
   const p = SP(me().id); if (!studentReady(p)) { go("setup?step=1"); return null; }
   if (myApp(j.id, me().id)) { flash("info", "You already applied to that listing."); go("applications"); return null; }
@@ -519,7 +626,7 @@ P.easy = () => {
   const sub = [p.major, p.grad_term && "Graduating " + p.grad_term].filter(Boolean).join(" · ");
   const resume = p.resume_text ? `<label class="toggle"><input type="checkbox" name="share_resume" value="1"${!dr || v.share_resume === "1" ? " checked" : ""}><span><b>Include my resume.</b> The employer sees the resume saved on your profile.</span></label>`
     : '<p class="small faint">You haven\'t added a resume yet, so none will be sent. <a href="#" data-go="resume">Resume studio</a></p>';
-  return `<a class="back" href="#" data-go="job?id=${j.id}">← ${esc(j.title)}</a>` + pageHead("Easy apply", `${esc(j.title)} at ${esc(j.company)}. Your profile fills in the basics; answer the questions and send.`, "Apply")
+  return `<a class="back" href="#" data-go="job?id=${j.id}">← ${esc(j.title)}</a>` + pageHead("Quick apply", `${esc(j.title)} at ${esc(j.company)}. Your profile fills in the basics; answer the questions and send.`, "Apply")
     + (dr && dr.error ? banner("warning", dr.error) : "")
     + `<form id="easyForm" data-job="${j.id}" class="card easy"><div class="row" style="gap:12px;align-items:center;margin-bottom:14px"><div class="person"><span class="avatar">${initials(p.display_name)}</span><div style="min-width:0"><div class="nm">${esc(p.display_name)}</div><div class="sub">${esc(sub)}</div></div></div></div>`
     + fields
@@ -553,9 +660,9 @@ function sendApplication(f, fd) {
 }
 P.applications = () => {
   if (!isStudent()) return needStudent("applications");
-  const head = pageHead("Your applications", "Everything you sent with easy apply. Employers see it only while it's here.", "Apply") + takeFlash();
+  const head = pageHead("Your applications", "Everything you sent with quick apply. Employers see it only while it's here.", "Apply") + takeFlash();
   const apps = S.apps.filter(a => a.student === me().id).sort((x, y) => y.at - x.at);
-  if (!apps.length) return head + '<div class="empty">No applications yet. Listings with an <b>Easy apply</b> button let you apply without leaving the site. <a href="#" data-go="jobs">Browse jobs</a></div>';
+  if (!apps.length) return head + '<div class="empty">No applications yet. Listings with an <b>Quick apply</b> button let you apply without leaving the site. <a href="#" data-go="jobs">Browse jobs</a></div>';
   return head + apps.map(a => { const j = S.jobs.find(x => x.id === a.job) || {title: "Listing", company: ""};
     return `<div class="card app"><div class="row between" style="align-items:flex-start;gap:12px"><div style="min-width:0"><a class="job-title" href="#" data-go="job?id=${a.job}">${esc(j.title)}</a><div class="job-co">${esc(j.company)} · sent ${ago(a.at)}</div></div><button class="b sm ghost" type="button" data-do="withdraw" data-id="${a.job}">Withdraw</button></div></div>`; }).join("");
 };
@@ -692,7 +799,7 @@ function csFollow(out, hasJobs) {
   return ["Find jobs matching my skills", "Remote jobs", "Part-time jobs near campus"];
 }
 function csCard(j, p, ready) {
-  const tags = (j.easy_apply ? '<span class="cs-tag ea">Easy apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="cs-tag nw">New</span>' : "");
+  const tags = (j.easy_apply ? '<span class="cs-tag ea">Quick apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="cs-tag nw">New</span>' : "");
   const match = ready ? `<span class="pill accent">${N.fitScore(j, p).score}% match</span>` : "";
   const loc = j.location || (j.work_type === "remote" ? "Remote" : "");
   const pill = j.scam_status === "clear" ? '<span class="badge verified">✓ Scam check passed</span>' : '<span class="badge warning">⚠ Check carefully</span>';
@@ -1563,6 +1670,7 @@ function exportData() {
     connections: S.conns.filter(c => c.a === u.id || c.b === u.id).map(c => ({user_a: c.a, user_b: c.b, requested_by: c.by, status: c.status, created_at: new Date(c.at).toISOString()})),
     saved_posts: S.saves.filter(x => x.user === u.id).map(x => ({post_id: x.post, created_at: new Date(x.at).toISOString()})),
     assistant_chats: csChats().map(c => ({id: c.id, title: c.title, messages: c.msgs.map(m => ({role: m.role, text: m.text, feedback: m.feedback || 0}))})),
+    saved_jobs: S.savedJobs.filter(x => x.user === u.id).map(x => ({job_id: x.job, created_at: new Date(x.at).toISOString()})),
     follows: S.follows.filter(f => f.student === u.id).map(f => ({employer_id: f.employer, created_at: new Date(f.at).toISOString()}))};
   return JSON.stringify(d, (k, v) => v instanceof Set ? [...v] : v, 2);
 }
@@ -1620,12 +1728,12 @@ P.employers = () => {
 };
 P.about = () => `${pageHead("About NoleCareerShield")}<div class="prose"><p>Students get targeted by fake job offers constantly: check-cashing schemes, money-mule "recruiters", and pay-to-work training programs. NoleCareerShield is a job board built around one question: <b>is this safe to respond to?</b></p>
 <h3>How a listing gets on the board</h3><ul><li>Every submission is scored by an open, rule-based scam detector. Each rule that fires is explained in plain language, so the score is never a black box.</li><li>Every submission then waits for a human reviewer. Nothing is published automatically, no matter how clean the score.</li><li>Approved listings show their verdict. Listings that tripped signals are labeled and explain why.</li></ul>
-<h3>Beyond the board</h3><ul><li><b>Profiles</b> that students control, including whether approved employers can find them.</li><li><b>Messaging</b> between students and reviewed employers, with every message scanned for scam signs.</li><li><b>Easy apply</b> on listings that choose it: a short form filled from your profile, sent only to that employer.</li><li><b>A network</b> where students connect with each other and follow the companies they like, with no student-to-student inbox.</li><li><b>A job assistant</b> that answers in plain words and only suggests listings that passed review.</li><li><b>A resume studio</b> that scores a resume, rewrites weak lines without inventing anything, and tailors it to a job.</li><li><b>A scam checker</b> for any message a student receives, here or anywhere else.</li><li><b>An FSU-only feed</b> where employer posts must be opportunities or advice for FSU students.</li></ul>
+<h3>Beyond the board</h3><ul><li><b>Profiles</b> that students control, including whether approved employers can find them.</li><li><b>Messaging</b> between students and reviewed employers, with every message scanned for scam signs.</li><li><b>Quick apply</b> on listings that choose it: a short form filled from your profile, sent only to that employer.</li><li><b>A network</b> where students connect with each other and follow the companies they like, with no student-to-student inbox.</li><li><b>A job assistant</b> that answers in plain words and only suggests listings that passed review.</li><li><b>A resume studio</b> that scores a resume, rewrites weak lines without inventing anything, and tailors it to a job.</li><li><b>A scam checker</b> for any message a student receives, here or anywhere else.</li><li><b>An FSU-only feed</b> where employer posts must be opportunities or advice for FSU students.</li></ul>
 <h3>What this is not</h3><p>A verified badge is not a guarantee. Always confirm an employer through their own website before sharing personal information. This is an independent student project and is not affiliated with Florida State University.</p></div>`;
 P.privacy = () => `${pageHead("Privacy")}<div class="prose"><p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, and you can download or delete everything at any time.</p>
 <h3>Anyone browsing</h3><ul><li>Job listings are for signed-in FSU students and employers. Visitors see only a few titles on the home page.</li><li>Anyone can use the scam checker without an account, up to 10 checks a day. Visitors see the verdict and the main reasons; signed-in FSU students see every signal and the exact words it caught.</li><li>If you tell us which school you'd like NoleCareerShield at, we store only the school name.</li></ul>
 <h3>Students</h3><ul><li>A student account needs a confirmed @fsu.edu address and a password, stored as a salted hash. No student ID, date of birth or SSN.</li><li>Your profile holds only what you type in. Your resume is private unless you share it with approved employers.</li><li>Employers see your profile only if a reviewer approved them and you chose to be visible or are already talking with them. They see your experience, education and projects; other students see only your name, school, headline and skills.</li><li>If you upload a resume, we can fill your profile sections from it. Nothing is added that isn't in your resume, and you can edit or delete every entry.</li><li>Your fit score for a job is worked out when you open it. If you're visible to approved employers, they can see how well you fit their listings: the same score and evidence you see.</li><li>We count which listings students open and whether they press Apply, so employers see totals. They never see who viewed or clicked.</li><li>If you message an employer about a listing, or they invite you or save you from their matches, you appear in that employer's candidate list for it, where they can add a stage and a private note.</li>
-<li><b>Easy apply.</b> When you apply on a listing that collects applications here, that employer (and only that employer) sees your name, major, graduation term, profile links, your answers and note, and your resume only if you tick it. Never your email. Applying also lets that employer open your profile and message you. You can withdraw an application any time, which deletes the answers.</li>
+<li><b>Quick apply.</b> When you apply on a listing that collects applications here, that employer (and only that employer) sees your name, major, graduation term, profile links, your answers and note, and your resume only if you tick it. Never your email. Applying also lets that employer open your profile and message you. You can withdraw an application any time, which deletes the answers.</li>
 <li><b>Connections and follows.</b> A connection is a mutual link between two students that shows as a count and as mutual connections on profiles. It doesn't let anyone message you. You can switch off connection requests and "People you may know" in your profile settings. Following a company adds its listings to a filter for you; the company sees how many students follow it, never who.</li></ul>
 <h3>Messages and the feed</h3><ul><li>Messages are only between students and approved employers, and every one is scanned when sent. Messages that match scam-only patterns are held for a reviewer.</li><li>Email notifications never include message text.</li><li>Only signed-in FSU students and approved employers can read or post on the feed.</li></ul>
 <h3>AI features</h3><ul><li>On the live site the assistant, resume tools and scam checker's second opinion can use Claude. Text is sent only when you use one of those features. This demo runs everything in your browser and sends nothing.</li></ul></div>`;
@@ -1765,11 +1873,12 @@ function render(keepScroll) {
   let out = fn(); if (out === null) return;
   const hero = out && out.hero ? out.hero : "", body = out && out.body !== undefined ? out.body : out;
   const inApp = me() && name in APP_PAGES && !(name === "home" && !me());
-  const main = $("#app");
+  const main = $("#app"), jl0 = $("#jb-list"), pn0 = $(".jb-pane"), jst = keepScroll && jl0 ? jl0.scrollTop : 0, pst = keepScroll && pn0 ? pn0.scrollTop : 0;
   if (inApp) main.innerHTML = `<div class="app">${sidebar(APP_PAGES[name])}<main class="main" id="main"><div class="wrap">${body}</div>${FOOTER}</main></div>`;
   else if (out && out.wide) main.innerHTML = `<main id="main">${hero}${body}</main>${FOOTER}`;
   else main.innerHTML = `${hero}<div class="wrap"><main id="main">${body}</main></div>${FOOTER}`;
   if (!keepScroll) window.scrollTo(0, 0);
+  if (jst && $("#jb-list")) $("#jb-list").scrollTop = jst; if (pst && $(".jb-pane")) $(".jb-pane").scrollTop = pst;
   if (S.scrollTo) { const el = document.getElementById(S.scrollTo); S.scrollTo = null; if (el) el.scrollIntoView({block: "start"}); }
   const th = $("#thread"); if (th) th.scrollTop = th.scrollHeight;
   const lg = $("#log"); if (lg) lg.scrollTop = lg.scrollHeight;
@@ -1863,6 +1972,10 @@ document.addEventListener("click", e => {
     "report-post": () => { const p = S.posts.find(x => x.id === id); if (!p.reports.has(me().id)) { p.reports.add(me().id); S.reports.push({what: "Feed post reported", by: me().id, text: p.body, at: NOW()}); if (p.reports.size >= 3) p.status = "held"; } render(true); },
     save: () => { const p = S.posts.find(x => x.id === id); if (p && p.status === "published" && !isSaved(me().id, id) && S.saves.filter(x => x.user === me().id).length < MAX_SAVES) S.saves.push({user: me().id, post: id, at: NOW()}); render(true); },
     unsave: () => { S.saves = S.saves.filter(x => !(x.user === me().id && x.post === id)); render(true); },
+    "job-save": () => { const j = S.jobs.find(x => x.id === id);
+      if (isStudent() && j && j.review_status === "approved" && !S.savedJobs.some(x => x.user === me().id && x.job === id) && S.savedJobs.filter(x => x.user === me().id).length < JB_MAX_SAVED) S.savedJobs.push({user: me().id, job: id, at: NOW()});
+      render(true); },
+    "job-unsave": () => { S.savedJobs = S.savedJobs.filter(x => !(x.user === me().id && x.job === id)); render(true); },
     "del-post": () => { S.posts = S.posts.filter(x => x.id !== id); S.saves = S.saves.filter(x => x.post !== id); render(true); },
     export: () => { S.showExport = !S.showExport; render(true); },
     "emp-approve": () => { EP(id).status = "approved"; EP(id).approved_at = NOW(); mail(U(id).email, "Your organization was approved", "A reviewer approved your organization. You can now message students, browse the directory and post to the FSU feed.", null); render(true); },
@@ -1893,7 +2006,7 @@ document.addEventListener("submit", e => {
   e.preventDefault();
   const f = e.target, fd = new FormData(f), g = k => String(fd.get(k) || "").trim(), many = k => fd.getAll(k).map(String);
   const id = f.id;
-  if (id === "searchForm") { const qs = new URLSearchParams(); if (g("search")) qs.set("search", g("search")); if (S.route.q.category) qs.set("category", S.route.q.category); if (S.route.q.work_type) qs.set("work_type", S.route.q.work_type); if (S.route.q.following) qs.set("following", "1"); return go("jobs" + (qs.toString() ? "?" + qs : "")); }
+  if (id === "jbSearch") { const rq = S.route.q, keep = {}; ["category", "work_type", "kind", "loc", "when", "quick", "following", "sort"].forEach(k => { if (rq[k]) keep[k] = rq[k]; }); return go(jbUrl(jbParams(Object.assign(keep, {search: g("search")}), isStudent()), {job: null})); }
   if (id === "talentForm") return go("talent" + (g("q") ? "?q=" + encodeURIComponent(g("q")) : ""));
   if (id === "adminLogin") { S.admin = true; return go("admin"); }
   if (id === "scamForm") { if (!g("text")) return;
@@ -2021,7 +2134,7 @@ document.addEventListener("submit", e => {
     S.posts = S.posts.filter(p => p.author !== uid); S.posts.forEach(p => { p.comments = p.comments.filter(c => c.author !== uid); });
     S.convos.forEach(c => { c.messages.forEach(m => { if (m.from === uid) { m.body = ""; m.status = "removed"; } }); if (c.student === uid || c.employer === uid) c.blocked_by = uid; });
     S.versions = S.versions.filter(v => v.user !== uid); S.apps = S.apps.filter(a => a.student !== uid && a.employer !== uid);
-    S.conns = S.conns.filter(c => c.a !== uid && c.b !== uid); S.follows = S.follows.filter(x => x.student !== uid && x.employer !== uid); S.session = null;
+    S.conns = S.conns.filter(c => c.a !== uid && c.b !== uid); S.follows = S.follows.filter(x => x.student !== uid && x.employer !== uid); S.savedJobs = S.savedJobs.filter(x => x.user !== uid); S.session = null;
     flash("verified", "Your account is deleted. Your profile, resume, posts and comments are gone, and the messages you sent were blanked."); S.route = {name: "about", q: {}}; return render();
   }
   // messaging

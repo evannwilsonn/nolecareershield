@@ -1,5 +1,5 @@
 """
-Easy apply: an employer can choose, per listing, to collect applications here instead of sending students to an
+Quick apply: an employer can choose, per listing, to collect applications here instead of sending students to an
 outside link. They write up to five questions; a student fills the form from their profile, and the application
 lands in the employer's candidate tracker with the answers attached.
 
@@ -54,9 +54,9 @@ def clean_questions(raw) -> list[dict]:
         if not q:
             continue
         if len(q) > Q_LEN:
-            raise QuestionError(f"Keep each easy apply question under {Q_LEN} characters.")
+            raise QuestionError(f"Keep each quick apply question under {Q_LEN} characters.")
         if _BANNED.search(q):
-            raise QuestionError("Easy apply questions can't ask for SSNs, bank or card details, passwords or ID numbers. "
+            raise QuestionError("Quick apply questions can't ask for SSNs, bank or card details, passwords or ID numbers. "
                                 "Real employers collect those only after a hire, through their own paperwork.")
         kind = item.get("kind") if item.get("kind") in KIND_NAME else "short"
         out.append({"q": q, "kind": kind, "required": bool(item.get("required"))})
@@ -123,7 +123,7 @@ def _job_or_none(conn, job_id: int) -> dict | None:
 
 
 def _unavailable(msg: str = "That listing isn't taking applications here.") -> HTMLResponse:
-    return web.page(ui.page_head("Easy apply") + f'<div class="empty">{esc(msg)} <a href="/jobs">Back to jobs</a></div>', "Easy apply", active="/jobs", status=404)
+    return web.page(ui.page_head("Quick apply") + f'<div class="empty">{esc(msg)} <a href="/jobs">Back to jobs</a></div>', "Quick apply", active="/jobs", status=404)
 
 
 def _field(i: int, q: dict, value: str = "") -> str:
@@ -149,7 +149,7 @@ def _form_page(job: dict, p: dict, values: dict | None = None, error: str = "", 
               if has_resume else '<p class="small faint">You haven\'t added a resume yet, so none will be sent. <a href="/resume">Resume studio</a></p>')
     err = ui.banner("warning", error) if error else ""
     body = (f'<a class="back" href="/job/{int(job["id"])}">← {esc(job["title"])}</a>'
-            + ui.page_head("Easy apply", f'{esc(job["title"])} at {esc(job["company"])}. Your profile fills in the basics; answer the questions and send.', num="Apply")
+            + ui.page_head("Quick apply", f'{esc(job["title"])} at {esc(job["company"])}. Your profile fills in the basics; answer the questions and send.', num="Apply")
             + err
             + f'<form method="post" action="/job/{int(job["id"])}/easy" class="card easy">{ui.user_csrf_input()}'
               f'<div class="row" style="gap:12px;align-items:center;margin-bottom:14px">{web.person(p["display_name"], sub, "stu")}</div>'
@@ -160,7 +160,7 @@ def _form_page(job: dict, p: dict, values: dict | None = None, error: str = "", 
               f'<p class="small muted" style="margin:14px 0">The employer will see your name, major, graduation term, profile links, these answers and the resume if ticked. '
               'Nothing else from your account, and never your email. You can withdraw the application any time.</p>'
               f'<button class="b" type="submit">{ui.icon("send", 16)} Send application</button> <a class="b ghost" href="/job/{int(job["id"])}">Cancel</a></form>')
-    return web.page(body, "Easy apply", active="/jobs", status=status)
+    return web.page(body, "Quick apply", active="/jobs", status=status)
 
 
 def _gate(request: Request, job_id: int):
@@ -246,9 +246,9 @@ def my_applications(request: Request, sent: int = 0, already: int = 0, withdrawn
         note = ui.banner("info", "You already applied to that listing.")
     elif withdrawn:
         note = ui.banner("info", "Application withdrawn.")
-    head = ui.page_head("Your applications", "Everything you sent with easy apply. Employers see it only while it's here.", num="Apply")
+    head = ui.page_head("Your applications", "Everything you sent with quick apply. Employers see it only while it's here.", num="Apply")
     if not apps:
-        return web.page(head + note + '<div class="empty">No applications yet. Listings with an <b>Easy apply</b> button let you apply without leaving the site. <a href="/jobs">Browse jobs</a></div>',
+        return web.page(head + note + '<div class="empty">No applications yet. Listings with an <b>Quick apply</b> button let you apply without leaving the site. <a href="/jobs">Browse jobs</a></div>',
                         "Applications", active="/applications")
     csrf = ui.user_csrf_input()
     cards = "".join(

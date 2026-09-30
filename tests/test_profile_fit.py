@@ -152,8 +152,8 @@ def test_job_page_shows_fit_and_tailoring(net):
     emp, eid = employer(net)
     job = add_job(net, eid)
     page = s.get(f"/job/{job}").text
-    assert "Your fit for this job" in page and "Where your profile backs it up" in page and "Tailor your resume to this job" in page
-    assert "Suggested summary for this job" in page and 'href="#tailor"' in page
+    assert "Job match is" in page and "Where your profile backs it up" in page and "Tailor your resume to this job" in page
+    assert "Suggested summary for this job" in page and f'href="/resume?tab=tailor&amp;job={job}"' in page
     body = re.search(r'<textarea class="resume" name="body"[^>]*>(.*?)</textarea>', page, re.S).group(1)
     r = s.post("/resume/versions", data={"csrf": ucsrf(s), "name": "For Data Analyst Intern", "body": body.replace("&amp;", "&"), "job_id": job})
     assert r.status_code == 303 and "For Data Analyst Intern" in s.get("/resume?tab=versions").text
@@ -161,8 +161,8 @@ def test_job_page_shows_fit_and_tailoring(net):
     home = s.get("/").text
     assert re.search(r">Fit \d+<", home)
     # Visitors and employers don't get the panels.
-    assert "Your fit for this job" not in net.client().get(f"/job/{job}").text
-    assert "Your fit for this job" not in emp.get(f"/job/{job}").text
+    assert "Job match is" not in net.client().get(f"/job/{job}").text
+    assert "Job match is" not in emp.get(f"/job/{job}").text
 
 
 # ---------- uploads ----------
