@@ -1,5 +1,6 @@
 /* NoleCareerShield visual effects. Decoration only: every page works and reads the same without it.
- *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing and lights each flag.
+ *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing, lights each flag, then
+ *      breaks the card apart line by line before the verdict lands.
  *   1. Scroll-scrubbed footage: section[data-cine] pins while you scroll and plays a camera move frame by
  *      frame on a canvas (Apple-style image sequence). Sets --p (0 to 1) and data-cap for the captions.
  *   2. Cursor parallax: [data-pan] layers drift a few pixels against the pointer (fine pointers only).
@@ -119,7 +120,8 @@
     var card = sec.querySelector(".scan-card"), line = sec.querySelector(".scan-line"), stick = sec.querySelector(".scan-stick");
     var track = sec.querySelector(".scan-track"), board = sec.querySelector(".scan-board");
     var marks = [].slice.call(card.querySelectorAll("mark")), sups = [].slice.call(card.querySelectorAll("sup"));
-    var items = {}, h = 1, done = false, mode = "", played = false;
+    var items = {}, h = 1, done = false, mode = "", played = false, broke = 0;
+    var side = sec.querySelector(".scan-side") || board, extra = 0;
     [].slice.call(sec.querySelectorAll(".scan-flags li")).forEach(function (li) { items[li.getAttribute("data-f")] = li; });
     var verdict = sec.querySelector(".scan-verdict"), stamp = sec.querySelector(".scan-stamp");
     var self = { sec: sec, tick: tick, measure: measure };
@@ -127,25 +129,37 @@
     function hdr() { var el = document.querySelector("header"); return el ? el.offsetHeight : 0; }
     function decide() {
       var vh = window.innerHeight, next;
-      if (window.innerWidth >= 901) next = stick.offsetHeight <= vh ? "section" : "timed";
-      else next = board.offsetHeight <= vh - hdr() - 24 ? "card" : "timed";
+      if (window.innerWidth >= 901) next = side.offsetHeight + extra <= vh - 60 ? "section" : "timed";
+      else next = board.offsetHeight + extra <= vh - hdr() - 24 ? "card" : "timed";
       if (next === mode) return;
       mode = next;
       sec.classList.toggle("pinned", mode !== "timed");
-      sec.style.setProperty("--bh", board.offsetHeight + "px");
+      sec.style.setProperty("--bh", board.offsetHeight + extra + "px");
       if (mode === "timed") playOnce();
+    }
+    function breakTo(b) {                   // 0 = one card, 1 = in pieces (see .scan-card in ui.py)
+      b = Math.max(0, Math.min(1, b));
+      if (Math.abs(b - broke) < 0.001) return;
+      broke = b;
+      card.style.setProperty("--b", b.toFixed(3));
+      line.style.opacity = b > 0 ? String(Math.max(0, 1 - b * 3)) : "";
     }
     function measure() {
       sec.style.setProperty("--hdr", hdr() + "px");
+      var was = broke; breakTo(1);           // how much taller the card is in pieces...
+      var tall = card.offsetHeight;
+      breakTo(0); extra = tall - card.offsetHeight;   // ...then measure the whole card, and put it back after
       var top = card.getBoundingClientRect().top;
       h = card.offsetHeight;
       marks.forEach(function (m) { var r = m.getBoundingClientRect(); m.__y = (r.top + r.bottom) / 2 - top; });
       sups.forEach(function (x) { var r = x.getBoundingClientRect(); x.__y = (r.top + r.bottom) / 2 - top; });
       decide();
+      breakTo(was);
     }
     function at(q) {
       var y = Math.max(0, Math.min(1, q)) * h;
       line.style.transform = "translateY(" + y.toFixed(1) + "px)";
+      line.style.setProperty("--ly", y.toFixed(0) + "px");
       marks.forEach(function (m) {
         var on = q > 0 && m.__y <= y;
         if (on && !m.classList.contains("on")) {
@@ -176,7 +190,8 @@
     function tick() {
       if (mode === "timed") return false;
       var p = Math.min(1, Math.max(0, progress()));
-      at((p - 0.04) / 0.72);                 // the line sweeps through most of the track...
+      at((p - 0.04) / 0.54);                 // the line reads the listing...
+      breakTo((p - 0.6) / 0.16);             // ...the card breaks apart line by line...
       finish(p > 0.8);                       // ...then the verdict lands
       return false;
     }
@@ -189,13 +204,20 @@
         (function step(now) {
           var q = (now - t0) / D;
           at(q);
-          if (q < 1) requestAnimationFrame(step); else setTimeout(function () { finish(true); }, 250);
+          if (q < 1) return requestAnimationFrame(step);
+          var b0 = performance.now();
+          (function brk(now) {
+            var k = Math.min(1, (now - b0) / 700);
+            breakTo(1 - Math.pow(1 - k, 3));
+            if (k < 1) requestAnimationFrame(brk); else setTimeout(function () { finish(true); }, 150);
+          })(b0);
         })(t0);
       }, { threshold: 0.6 });
       io.observe(card);
     }
 
     sec.classList.add("armed");
+    broke = 1; breakTo(0);
     measure(); at(0);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { measure(); kick(); });
     return self;

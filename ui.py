@@ -540,19 +540,23 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .scan-cta{margin-top:22px!important}
 .scan-cta a{color:var(--gold);font-weight:600;text-decoration:none}.scan-cta a:hover{text-decoration:underline}
 .scan-board,.scan-side{position:relative;min-width:0}
-.scan-card{position:relative;overflow:hidden;background:#faf8f3;color:#1c1917;border-radius:14px;padding:20px 22px 18px;box-shadow:0 24px 60px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.06)}
+/* --b is how far the card has broken apart (0 whole, 1 in pieces). It rests at 1, so without JS it is shown broken. */
+.scan-card{--b:1;position:relative;color:#1c1917;border-radius:14px;padding:12px 12px 14px;background:rgba(250,248,243,clamp(0,1 - var(--b) * 2.5,1));box-shadow:0 24px 60px rgba(0,0,0,clamp(0,.45 - var(--b),.45)),0 0 0 1px rgba(255,255,255,clamp(0,.06 - var(--b) * .15,.06))}
+.scan-card .sl{position:relative;padding:5px 10px;border-radius:9px;background:rgba(250,248,243,clamp(0,var(--b) * 6,1));box-shadow:0 12px 26px rgba(0,0,0,calc(.42 * var(--b))),0 0 0 1px rgba(28,25,23,calc(.07 * var(--b)));transform:translateX(calc(var(--x) * var(--b))) rotate(calc(var(--r) * var(--b)))}
+.scan-card{--gap:10px}.scan-card .body .sl,.scan-card .sl.apply{margin-top:calc(var(--b) * var(--gap))}
+.scan-card .sl.head{padding-top:8px;padding-bottom:8px}
 .scan-card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .scan-card h3{font-size:16.5px;font-weight:700;line-height:1.3}
 .scan-card .tag{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b655c;border:1px solid #d9d3c7;border-radius:999px;padding:3px 9px;flex:none}
-.scan-card .co{font-size:12.5px;color:#6b655c;margin:2px 0 12px}
-.scan-card .body{font-size:14.5px;line-height:1.85;margin:0}
-.scan-card .apply{font-size:13px;color:#6b655c;margin:12px 0 0}
+.scan-card .co{font-size:12.5px;color:#6b655c;margin:2px 0 0}
+.scan-card .body{font-size:14.5px;line-height:1.75}
+.scan-card .sl.apply{font-size:13px;color:#6b655c}
 .scan-card mark{background:color-mix(in srgb,var(--sev,#c2410c) 13%,transparent);color:inherit;border-radius:2px;box-shadow:inset 0 -2px 0 var(--sev,#c2410c);transition:box-shadow .35s var(--ease),background-color .45s}
 .scan-card mark.crit{--sev:#b91c1c}.scan-card mark.warn{--sev:#b7791f}
 .scan-card sup{font-size:10px;font-weight:700;color:var(--sev,#b7791f);margin:0 2px 0 1px;transition:opacity .3s}
 .scan-card sup.crit{--sev:#b91c1c}.scan-card sup.warn{--sev:#b7791f}
 .scan-line{position:absolute;left:0;right:0;top:0;height:2px;background:var(--gold);box-shadow:0 0 14px 2px color-mix(in srgb,var(--gold) 70%,transparent);opacity:0;pointer-events:none;z-index:2}
-.scan-line::before{content:"";position:absolute;left:0;right:0;bottom:2px;height:56px;background:linear-gradient(0deg,color-mix(in srgb,var(--gold) 22%,transparent),transparent)}
+.scan-line::before{content:"";position:absolute;left:0;right:0;bottom:2px;height:min(56px,var(--ly,56px));background:linear-gradient(0deg,color-mix(in srgb,var(--gold) 22%,transparent),transparent)}
 .scan-stamp{position:absolute;right:16px;bottom:14px;z-index:3;border:2.5px solid #b91c1c;color:#b91c1c;background:rgba(250,248,243,.92);border-radius:8px;padding:5px 12px;font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:21px;letter-spacing:.01em;transform:rotate(-5deg)}
 .scan-flags{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:6px}
 .scan-flags li{display:flex;align-items:center;gap:10px;background:var(--stage-2);border:1px solid rgba(243,238,230,.1);border-radius:9px;padding:8px 12px;font-size:13.5px;font-weight:600;transition:opacity .4s var(--ease),transform .4s var(--ease)}
@@ -564,7 +568,7 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .scan-verdict b{font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:20px;letter-spacing:.01em;color:#f0a193;margin-right:8px}
 .scan-verdict span{font-size:13px}
 .scan-verdict p{font-size:13px;margin:4px 0 0;color:#e8cfc9}.scan-verdict a{color:#fff;font-weight:600}
-@media(max-width:900px){.scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}.scan-side{min-width:0}.scan-card{padding:16px 16px 52px}.scan-card .body{font-size:13.5px;line-height:1.7}.scan-card .co{margin-bottom:8px}.scan-flags{gap:4px;margin-top:10px}.scan-flags li{padding:6px 10px;font-size:12.5px}.scan-flags .n{width:18px;height:18px}.scan-stamp{font-size:18px;bottom:12px}}
+@media(max-width:900px){.scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}.scan-side{min-width:0}.scan-card{padding:10px 8px 12px;--gap:6px}.scan-card .body{font-size:13.5px;line-height:1.55}.scan-card .sl{padding:3px 9px}.scan-card .sl.head{padding-top:6px;padding-bottom:6px}.scan-flags{gap:4px;margin-top:10px}.scan-flags li{padding:6px 10px;font-size:12.5px}.scan-flags .n{width:18px;height:18px}.scan-stamp{font-size:18px;bottom:12px}}
 /* armed by fx.js: things appear as the scan line reaches them */
 .scan.armed .scan-line{opacity:1}
 .scan.armed .scan-card mark:not(.on){box-shadow:inset 0 -2px 0 transparent;background-color:transparent}
@@ -910,9 +914,10 @@ def scan_findings() -> dict:
             "findings": placed, "text": text}
 
 
-def _scan_text(text: str, findings: list) -> str:
-    """The sample text with every flagged phrase underlined and a numbered marker after each flag."""
-    cuts = {0, len(text)}
+def _scan_text(text: str, findings: list, breaks: tuple = ()) -> str:
+    """The sample text with every flagged phrase underlined and a numbered marker after each flag. A NUL is left at
+    each position in `breaks`, so the caller can split the result into pieces (the card breaks along them)."""
+    cuts = {0, len(text)} | set(breaks)
     for f in findings:
         for a, b in f["spans"]:
             cuts |= {a, b}
@@ -924,6 +929,8 @@ def _scan_text(text: str, findings: list) -> str:
     sev = lambda f: "crit" if f["severity"] == "critical" else "warn"
     out = []
     for a, b in zip(cuts, cuts[1:]):
+        if a in breaks:
+            out.append("\x00")
         seg = esc(text[a:b])
         cover = [(i, f) for i, f in enumerate(findings, 1) if any(x <= a and b <= y for x, y in f["spans"])]
         if cover:
@@ -939,8 +946,18 @@ def _scan_text(text: str, findings: list) -> str:
 def scan_block(cta_html: str) -> str:
     """Rendered finished (every flag underlined, listed and stamped), so it reads without JS or with reduced motion.
     static/fx.js arms it and replays the scan as you scroll."""
+    import re
     s, r = SCAN_SAMPLE, scan_findings()
-    body, _, apply = _scan_text(r["text"], r["findings"]).rpartition("\n")
+    # The card breaks line by line: one piece per sentence, plus the header and the apply line.
+    breaks = tuple(m.end() for m in re.finditer(r"[.!?](?=\s)", r["text"]) if m.end() < len(r["text"]))
+    pieces = [x.strip() for x in _scan_text(r["text"], r["findings"], breaks).split("\x00")]
+    tilt = ("-1.1deg", ".9deg", "-.5deg", "1.2deg", "-.8deg", ".6deg", "-.4deg", ".7deg")
+    drift = ("-7px", "9px", "-4px", "6px", "-9px", "5px", "-3px", "7px")
+    sl = lambda i, cls, inner: f'<div class="sl{cls}" style="--r:{tilt[i % 8]};--x:{drift[i % 8]}">{inner}</div>'
+    body = "".join(sl(i + 1, "", x) for i, x in enumerate(pieces[:-1]))
+    apply = sl(len(pieces), " apply", "Apply: " + pieces[-1])
+    head = sl(0, " head", f'<div class="top"><h3>{esc(s["title"])}</h3><span class="tag">Sample</span></div>'
+                          f'<p class="co">{esc(s["company"])} · {esc(s["meta"])}</p>')
     flags = "".join(
         f'<li class="{"crit" if f["severity"] == "critical" else "warn"}" data-f="{i}"><span class="n">{i}</span>{esc(f["title"])}'
         f'<span class="sev">{"Critical" if f["severity"] == "critical" else "Warning"}</span></li>'
@@ -949,11 +966,10 @@ def scan_block(cta_html: str) -> str:
     return f"""<section class="scan" data-scan aria-labelledby="scan-h"><div class="scan-stick">
 <div class="scan-copy"><div class="eyebrow">A fake listing, read by the real detector</div>
 <h2 class="display" id="scan-h">Know it's real<br><em>before you apply.</em></h2>
-<p>This listing is made up. <span class="live-only">Scroll and watch the scam check read it.</span><span class="static-only">Here's what the scam check found in it.</span> Every underline is something the detector caught on its own, not something we wrote in.</p>
+<p>This listing is made up. <span class="live-only">Scroll and watch the scam check read it, then take it apart.</span><span class="static-only">Here's the scam check taking it apart.</span> Every underline is something the detector caught on its own, not something we wrote in.</p>
 <p class="scan-cta">{cta_html}</p></div>
 <div class="scan-side"><div class="scan-track"><div class="scan-board"><div class="scan-card"><div class="scan-line" aria-hidden="true"></div>
-<div class="top"><h3>{esc(s["title"])}</h3><span class="tag">Sample</span></div><p class="co">{esc(s["company"])} · {esc(s["meta"])}</p>
-<p class="body">{body}</p><p class="apply">Apply: {apply}</p><div class="scan-stamp" aria-hidden="true">{esc(r["title"])}</div></div>
+{head}<div class="body">{body}</div>{apply}<div class="scan-stamp" aria-hidden="true">{esc(r["title"])}</div></div>
 <ol class="scan-flags" aria-label="What the detector found">{flags}</ol></div></div>
 <div class="scan-verdict"><b>{esc(r["title"])}</b><span>Scam risk {r["score"]}/100 from {n} signals.</span>
 <p>{esc(r["advice"])} {cta_html}</p></div></div>
