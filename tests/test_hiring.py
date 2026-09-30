@@ -78,10 +78,10 @@ def test_hiring_pages_are_the_employers_own(net):
     t = ucsrf(other)
     other.post(f"/hiring/{job}/stage", data={"csrf": t, "student": 1, "stage": "hired"})
     s, _ = student(net, "z@fsu.edu", "Zed Z.")
-    import pytest
-    with pytest.raises(Exception) as e:                                  # the app renders this as a 403 page
-        s.get("/hiring")
-    assert type(e.value).__name__ == "Forbidden"
+    try:                                                                 # the app renders Forbidden as a 403 page
+        assert s.get("/hiring").status_code == 403
+    except Exception as e:                                               # (or the test client re-raises it, depending on load order)
+        assert type(e).__name__ == "Forbidden"
     # An unapproved employer sees stats but not student profiles.
     pjob = add_job(net, pid, title="Front Desk Assistant")
     page = pend.get(f"/hiring/{pjob}").text

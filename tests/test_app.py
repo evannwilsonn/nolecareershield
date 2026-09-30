@@ -10,7 +10,8 @@ sys.path.insert(0, str(ROOT))
 
 # Everything that reads settings at import time, so each test gets a fresh copy.
 LOCAL_MODULES = ("security", "app", "ui", "web", "store", "accounts", "mailer", "ai", "matching", "resume_engine",
-                 "profiles", "messaging", "msgcheck", "assistant", "resume_tools", "feed", "admin_extra")
+                 "profiles", "messaging", "msgcheck", "assistant", "resume_tools", "feed", "admin_extra", "profile_page", "hiring",
+                 "employer_page", "sso", "fit", "jobfit")
 
 
 @pytest.fixture()
@@ -738,10 +739,18 @@ def test_unknown_role_is_404(client):
         assert client.get(path).status_code == 404
 
 
-def test_login_button_and_chooser(client):
+def test_login_button_and_email_first_start(client):
     assert 'href="/login">Log in</a>' in client.get("/").text
     page = client.get("/login").text
-    assert 'href="/login/student"' in page and 'href="/signup/employer"' in page
+    assert "Log in or sign up" in page and "Continue with email" in page and 'href="/signup/employer"' in page
+    tok = csrf_from(page)
+    r = client.post("/login", data={"csrf": tok, "email": "Jane@FSU.edu"})         # no SSO configured: straight to the student password page
+    assert r.status_code == 200 and 'action="/login/student"' in r.text and 'value="jane@fsu.edu"' in r.text
+    r = client.post("/login", data={"csrf": tok, "email": "hr@acme.example"})
+    assert 'action="/login/employer"' in r.text and "isn't an @fsu.edu address" in r.text
+    assert client.post("/login", data={"csrf": tok, "email": "nope"}).status_code == 400
+    assert client.post("/login", data={"csrf": "bad", "email": "jane@fsu.edu"}).status_code == 400
+    assert "jane@fsu.edu" not in r.headers.get("location", "")
 
 
 def test_unconfirmed_accounts_are_purged_after_a_week(client):

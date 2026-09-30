@@ -205,6 +205,9 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--accent)}
 /* ---------- auth ---------- */
 .auth{max-width:440px;margin:36px auto 12px;background:var(--surface);border:1px solid var(--whisper);border-radius:16px;padding:30px 28px;box-shadow:var(--shadow)}
 .auth-title{font-family:var(--serif);font-weight:500;font-size:28px;text-align:center;color:var(--ink);margin-bottom:6px}
+.auth.start{text-align:center;padding-top:34px}.auth.start .form-field{text-align:left}
+.startmark{width:56px;height:56px;margin:0 auto 14px;display:grid;place-items:center;border-radius:14px;background:var(--accent-tint)}
+.startmark svg{width:34px;height:34px}.start-foot{margin-top:18px;font-size:14px;color:var(--muted)}.start-foot a{color:var(--accent-ink);font-weight:600}
 .auth-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:18px}
 .tabs{display:flex;gap:4px;background:var(--sunk);border-radius:10px;padding:4px;margin:16px 0 22px;box-shadow:0 0 0 1px var(--whisper) inset}
 .tabs a{flex:1;text-align:center;text-decoration:none;color:var(--muted);font-size:14px;font-weight:600;padding:8px 10px;border-radius:7px}
@@ -421,8 +424,8 @@ a[href="#"]{cursor:pointer}
 .verdict.ok .ic,.verdict.caution .ic,.verdict.warn .ic,.verdict.bad .ic{flex:none}
 @media(max-width:620px){.demo .lbl{font-size:12px}}
 </style>
-<div class="demo" id="demo" role="region" aria-label="Demo controls"><span class="lbl">Interactive demo with sample data. The scam checks, matches and resume scores run the real detector and rules in your browser; nothing is saved or sent.</span>
-<span class="grp"><span>Explore as:</span><button type="button" data-do="as-student">Student</button><button type="button" data-do="as-employer">Employer</button><button type="button" data-do="as-reviewer">Reviewer</button></span>
+<div class="demo" id="demo" role="region" aria-label="Demo controls"><span class="lbl">Interactive demo with sample data. The scam checks, matches and resume scores run the real detector and rules in your browser; nothing is saved or sent. Students: log in with jordan@fsu.edu.</span>
+<span class="grp"><span>Explore as:</span><button type="button" data-do="as-employer">Employer</button><button type="button" data-do="as-reviewer">Reviewer</button></span>
 <span class="grp"><button type="button" data-go="inbox" id="inboxBtn">Demo inbox</button><button type="button" data-do="reset">Reset demo</button></span></div>
 <header><div class="nav"><a class="brand" href="#" data-go="home" aria-label="NoleCareerShield home"><svg viewBox="0 0 40 40" width="30" height="30" aria-hidden="true">
 <path d="M20 3 L34 8 V19 C34 28 28 34 20 37 C12 34 6 28 6 19 V8 Z" fill="var(--accent)"/>
@@ -1774,7 +1777,7 @@ function nav() {
   $("#inboxBtn").textContent = "Demo inbox" + (S.inbox.length ? ` (${S.inbox.length})` : "");
   const extra = S.admin ? '<a class="ghost" href="#" data-go="admin">Review queue</a>' : "";
   if (me()) $("#navActions").innerHTML = extra + `<span class="who">${esc(me().email)}</span><button class="ghostbtn" type="button" data-do="logout">Log out</button>` + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "");
-  else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="jobs">Browse jobs</a><a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="login">Log in</a><a class="btn" href="#" data-go="post">Post a job</a>';
+  else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="jobs">Browse jobs</a><a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="post">Post a job</a>';
 }
 const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages",
   resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", u: "", company: "", about: "", privacy: "", report: ""};
@@ -1788,13 +1791,13 @@ P.home = () => {
 <div class="eyebrow">For FSU students · Scam-checked</div>
 <h1>Student jobs, <em>checked for scams</em> before you see them.</h1>
 <p>Every listing is scanned and approved by a person. Build a profile, message verified employers, get matched by the job assistant and sharpen your resume, all in one place.</p>
-<div class="cta"><a class="primary" href="#" data-go="signup?role=student">Join with your @fsu.edu email</a><a class="secondary" href="#" data-go="jobs">Browse jobs</a></div>
+<div class="cta"><a class="primary" href="#" data-go="start">Join with your @fsu.edu email</a><a class="secondary" href="#" data-go="jobs">Browse jobs</a></div>
 <div class="count">${n ? `${n} approved listing${n !== 1 ? "s" : ""} live right now` : "Approved listings will appear here"}</div></div>
 <div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
 <b style="font-family:var(--serif);font-weight:500;font-size:19px">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</b>
 <div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
 <div class="mini"><b>${icon("spark", 15)} Job assistant</b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
-<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="scam">Try the scam check</a><a class="b sm sec" href="#" data-do="as-student">Explore as a student</a></div>
+<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="scam">Try the scam check</a><a class="b sm sec" href="#" data-go="start">Log in or sign up</a></div>
 </div></div></section>
 <section class="how"><div class="how-inner">
 <div class="how-item"><b>Only vetted listings</b><p>Every posting is scam-scanned, then a person approves it. Employers are reviewed before they can message you.</p></div>
@@ -1876,7 +1879,7 @@ P.job = () => {
     after = tailorPanel(j, p);
     apply = `<a class="apply-btn" href="${esc(j.apply_url)}" data-apply="${j.id}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a><p class="fine" style="text-align:left">Demo links go to example addresses.</p>`;
   } else if (isEmployer() && j.employer_id === me().id) { extras = `<div class="banner info">This is your listing. <a href="#" data-go="hjob?id=${j.id}">See ranked student matches, candidates and stats →</a></div>`; apply = ""; }
-  else apply = `<div class="card" style="background:var(--info-tint);color:var(--info);border:none"><b>Log in to apply.</b> Apply links are shown to signed-in FSU students only, which keeps scrapers and scammers away from them.<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="login?role=student&amp;next=job-${j.id}">Student log in</a><a class="b sm sec" href="#" data-go="signup?role=student&amp;next=job-${j.id}">Create student account</a></div></div>`;
+  else apply = `<div class="card" style="background:var(--info-tint);color:var(--info);border:none"><b>Log in to apply.</b> Apply links are shown to signed-in FSU students only, which keeps scrapers and scammers away from them.<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="start?next=job-${j.id}">Log in or sign up</a></div></div>`;
   return `<a class="back" href="#" data-go="jobs">← All jobs</a>${ban}<h2 class="page" style="margin-top:8px">${esc(j.title)}</h2><p class="job-co" style="font-size:16px">${esc(j.company)}</p>${me() && j.employer_id && approvedEmp(j.employer_id) ? `<div style="margin-top:8px">${trustPill(trustOf(j.employer_id), "company?id=" + j.employer_id + "#trust")}</div>` : ""}
 <div class="job-meta" style="margin:14px 0"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>${fh}${extras}<div class="detail-desc">${esc(j.description)}</div>${apply}${after}`;
 };
@@ -2061,7 +2064,7 @@ const FILTERS = {question: "Questions", advice: "Advice", opportunity: "Opportun
 const KIND_PILL = {question: "info", advice: "gold", opportunity: "accent", event: "gold", win: "ok", info_session: "gold"};
 P.feed = () => {
   if (!me()) return pageHead("The FSU feed", "Questions, advice and opportunities from verified FSU students and employers our reviewers approved.", "Community") +
-    `<div class="bento"><div class="tile w3"><h3>Students</h3><p>Sign in with your @fsu.edu account to read and post.</p><div class="foot"><a class="b" href="#" data-do="as-student">Explore as a sample student</a></div></div><div class="tile w3"><h3>Employers</h3><p>Approved employers can share internships, info sessions and advice for FSU students.</p><div class="foot"><a class="b sec" href="#" data-do="as-employer">Explore as a sample employer</a></div></div></div>`;
+    `<div class="bento"><div class="tile w3"><h3>Students</h3><p>Sign in with your @fsu.edu account to read and post.</p><div class="foot"><a class="b" href="#" data-go="start">Log in or sign up</a></div></div><div class="tile w3"><h3>Employers</h3><p>Approved employers can share internships, info sessions and advice for FSU students.</p><div class="foot"><a class="b sec" href="#" data-do="as-employer">Explore as a sample employer</a></div></div></div>`;
   const head = pageHead("The FSU feed", "Only verified FSU students and approved employers can post here. Employer posts must be opportunities or advice for FSU students.", "Community");
   if (isEmployer() && !approvedEmp(me().id)) return head + banner("info", "The feed opens to employers once a reviewer approves your organization.");
   const kind = KINDS[S.route.q.kind] ? S.route.q.kind : "all";
@@ -2597,11 +2600,11 @@ P.talent = () => {
     return `<div class="card lift"><div class="row between" style="align-items:flex-start">${person(id)}${p.allow_messages ? `<a class="b sm" href="#" data-go="newmsg?to=${id}">Message</a>` : ""}</div>${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<div class="skills" style="margin-top:10px">${(p.skills || []).slice(0, 8).map(s => `<span class="pill">${esc(s)}</span>`).join("")}</div></div>`; }).join("") || '<div class="empty">No students match yet.</div>');
 };
 function needLogin(what, role) {
-  return pageHead("Log in to use " + what) + `<div class="row"><a class="b" href="#" data-do="${role === "employer" ? "as-employer" : "as-student"}">Explore as a sample ${role === "employer" ? "employer" : "student"}</a><a class="b sec" href="#" data-go="login?role=${role || "student"}">Log in</a></div>`;
+  return pageHead("Log in to use " + what) + `<div class="row"><a class="b" href="#" data-go="${role === "employer" ? "login?role=employer" : "start"}">Log in or sign up</a>${role === "employer" ? '<a class="b sec" href="#" data-do="as-employer">Explore as a sample employer</a>' : ""}</div>`;
 }
 function needStudent(what) {
   if (!me()) return needLogin(what);
-  return pageHead("That page is for FSU students") + banner("info", `Students use ${what}. Switch to the sample student from the demo bar to try it.`) + '<a class="b" href="#" data-do="as-student">Switch to the sample student</a>';
+  return pageHead("That page is for FSU students") + banner("info", `Students use ${what}. Log out and sign in with an @fsu.edu address (the sample student is jordan@fsu.edu) to try it.`) + '<button class="b" type="button" data-do="logout">Log out</button>';
 }
 
 // ---- trust pages ----
@@ -2614,6 +2617,31 @@ P.privacy = () => `${pageHead("Privacy")}<div class="prose"><p>Short version: br
 <h3>Messages and the feed</h3><ul><li>Messages are only between students and approved employers, and every one is scanned when sent. Messages that match scam-only patterns are held for a reviewer.</li><li>Email notifications never include message text.</li><li>Only signed-in FSU students and approved employers can read or post on the feed.</li></ul>
 <h3>AI features</h3><ul><li>On the live site the assistant, resume tools and scam checker's second opinion can use Claude. Text is sent only when you use one of those features. This demo runs everything in your browser and sends nothing.</li></ul></div>`;
 P.report = () => `${pageHead("Report a listing")}<div class="prose"><p>See something that looks like a scam? Use the Report button on any message or feed post, or email the site operator with the listing title and company. Reports are reviewed by a person.</p><p>If you already sent money or personal information, contact your bank and report it to the FTC at reportfraud.ftc.gov.</p></div>`;
+
+
+// ---- sign in: one email box first, like Handshake (same as app.login_start) ----
+const startShell = inner => `<div class="auth start"><div class="startmark" aria-hidden="true">${document.querySelector(".brand svg") ? document.querySelector(".brand svg").outerHTML : ""}</div>${inner}</div>`;
+P.start = () => {
+  const nx = okNext(S.route.q.next);
+  return startShell(`<h2 class="auth-title">Log in or sign up</h2><p class="auth-sub">Students use their @fsu.edu address.</p>${nx.startsWith("job-") ? banner("info", "Log in with your FSU student account to see how to apply.") : ""}${takeFlash()}
+<form id="startForm" data-next="${nx}"><div class="form-field"><input id="s-email" type="email" name="email" required maxlength="254" autocomplete="username" aria-label="Email" placeholder="Email" value="${esc(S.startEmail || "")}"></div>
+<button class="submit-btn wide" type="submit">Continue with email</button></form><p class="start-foot">Hiring? <a href="#" data-go="signup?role=employer">Sign up as an employer</a></p>
+<p class="fine" style="margin-top:14px">Demo accounts: <b>jordan@fsu.edu</b> (student) and <b>pat@garnetanalytics.example</b> (employer). Any new @fsu.edu address works too.</p>`);
+};
+P.welcome = () => {
+  const email = S.startEmail; if (!email) { go("start"); return null; }
+  const nx = okNext(S.route.q.next);
+  return startShell(`<h2 class="auth-title">Welcome to NoleCareerShield</h2><p class="auth-sub">Use your FSU account to log in as<br><b>${esc(email)}</b> <a href="#" data-go="start${nx ? "?next=" + nx : ""}">Edit</a></p>
+<a class="submit-btn wide" href="#" data-go="ssodemo${nx ? "?next=" + nx : ""}">Continue to FSU single sign-on →</a>
+<p style="margin-top:12px"><a href="#" class="linkbtn" data-go="login?role=student${nx ? "&amp;next=" + nx : ""}">Log in another way</a></p>
+<p class="fine" style="margin-top:16px">You'll sign in on FSU's own page, with Duo if your account uses it. NoleCareerShield never sees your FSU password.</p>`);
+};
+// The demo can't send anyone to FSU, and it never imitates FSU's sign-in page. It says what would happen instead.
+P.ssodemo = () => {
+  const email = S.startEmail; if (!email) { go("start"); return null; }
+  return startShell(`<h2 class="auth-title">Demo: FSU sign-in</h2><div class="banner info" style="text-align:left">On the live site, this step opens <b>FSU's own sign-in page</b> in this tab. You sign in there (and approve Duo), and FSU sends you back here already logged in. NoleCareerShield never sees your FSU password, and this demo never asks for it.</div>
+<button class="submit-btn wide" type="button" data-do="sso-finish">Finish demo sign-in as ${esc(email)}</button><p style="margin-top:12px"><a href="#" class="linkbtn" data-go="welcome">Back</a></p>`);
+};
 
 // ---- accounts ----
 const COMMON = ["password", "passw", "passwd", "letmein", "welcome", "qwerty", "qwertyuiop", "admin", "administrator", "iloveyou", "monkey", "dragon", "football", "baseball", "seminoles", "seminole", "noles", "gonoles", "floridastate", "tallahassee", "fsu", "changeme", "abcdef", "abcdefgh", "trustno", "sunshine", "princess"];
@@ -2639,7 +2667,7 @@ P.login = () => {
   const q = S.route.q, role = q.role === "employer" ? "employer" : "student", next = okNext(q.next) || (role === "employer" && S.pendingDraft ? "post" : ""), nx = next ? "&amp;next=" + next : "";
   const note = S.flash ? takeFlash() : role === "employer" && S.pendingDraft ? banner("info", "Log in or create an employer account to send your listing. It's saved and sent for review automatically once you're in.") : "";
   return auth("Log in", `${authTabs(role, "login", nx)}${note}<form id="loginForm" data-role="${role}" data-next="${next}">
-<div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required autocomplete="username" placeholder="${role === "student" ? "you@fsu.edu" : "you@company.com"}"></div>${pwField("f-password", "password", "Password", false, role)}
+<div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required autocomplete="username" placeholder="${role === "student" ? "you@fsu.edu" : "you@company.com"}" value="${esc(S.startEmail || "")}"></div>${pwField("f-password", "password", "Password", false, role)}
 <button class="submit-btn wide" type="submit">Log in</button></form><div class="or"><span>Or</span></div><a class="outline-btn" href="#" data-go="signup?role=${role}${nx}">Create ${role === "student" ? "a student" : "an employer"} account</a>
 <p class="fine">Demo accounts: <b>jordan@fsu.edu</b> (student) and <b>pat@garnetanalytics.example</b> (employer), password <b>${PW}</b>.</p>`);
 };
@@ -2769,7 +2797,10 @@ document.addEventListener("click", e => {
   const k = d.dataset.do, id = Number(d.dataset.id);
   const c = S.route.q.c ? S.convos.find(x => x.id === S.route.q.c) : null;
   const acts = {
-    "as-student": () => { signIn("jordan@fsu.edu", "student"); go("home"); },
+    "sso-finish": () => { // what FSU sign-in hands back: a confirmed @fsu.edu address. First time? The account is created, like the live site.
+      const email = S.startEmail; let u = findUser(email, "student");
+      if (!u) { u = {id: S.nextId++, email, role: "student", pw: null, verified: true}; S.users.push(u); }
+      u.verified = true; S.session = u; S.chat = null; const nx = okNext(S.route.q.next); S.startEmail = ""; afterLogin(nx); },
     "as-employer": () => { signIn("pat@garnetanalytics.example", "employer"); go("home"); },
     "as-reviewer": () => { S.admin = true; go("admin"); },
     logout: () => { S.session = null; go("home"); },
@@ -2825,6 +2856,14 @@ document.addEventListener("submit", e => {
   if (id === "adminLogin") { S.admin = true; return go("admin"); }
   if (id === "scamForm") { if (!g("text")) return; return go(`scam?run=1&text=${encodeURIComponent(g("text").slice(0, 8000))}&sender=${encodeURIComponent(g("sender"))}`); }
   if (id === "askForm") { ask(g("q")); return; }
+  if (id === "startForm") {
+    const email = g("email").toLowerCase(), nx = f.dataset.next;
+    if (!EMAIL_RE.test(email)) { flash("warning", "Enter a valid email address."); S.startEmail = email; return go("start"); }
+    S.startEmail = email;
+    if (email.split("@").pop() === "fsu.edu") return go("welcome" + (nx ? "?next=" + nx : ""));
+    flash("info", "That isn't an @fsu.edu address, so this is an employer login. Students: go back and use your FSU email.");
+    return go("login?role=employer" + (nx ? "&next=" + nx : ""));
+  }
   if (id === "loginForm") {
     const role = f.dataset.role, u = findUser(g("email").toLowerCase(), role);
     if (!u || u.pw !== fd.get("password")) { flash("warning", "The email or password is incorrect."); return go(`login?role=${role}&next=${f.dataset.next}`); }
