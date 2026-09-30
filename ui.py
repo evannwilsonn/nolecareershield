@@ -757,7 +757,7 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 .mailbox .mi{display:block;padding:12px 16px;border-bottom:1px solid var(--line);color:inherit;text-decoration:none}
 .mailbox .mi:hover{background:var(--sunk)}.mailbox .mi.on{background:var(--sunk);box-shadow:inset 3px 0 0 var(--garnet)}
 .mailbox .mi b{display:block;font-size:14px}.mailbox .mi.unread b::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--garnet);margin-right:7px;vertical-align:1px}
-.mailbox .mi small{color:var(--muted);font-size:12px}
+.mailbox .mi small{color:var(--muted);font-size:12px}.mailbox .mi .snip{display:block;font-size:13px;color:var(--ink-2);margin:2px 0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mailbox .mv{padding:20px 24px;min-width:0}.mailbox .mv h2{margin:0 0 4px;font-size:20px}
 .mailbox .mv pre{white-space:pre-wrap;font:14px/1.6 var(--sans,inherit);margin:16px 0 0;overflow-wrap:anywhere}
 @media (max-width:760px){.mailbox{grid-template-columns:1fr}.mailbox .ml{border-right:0;max-height:none}.mailbox.open .ml{display:none}.mailbox:not(.open) .mv{display:none}}

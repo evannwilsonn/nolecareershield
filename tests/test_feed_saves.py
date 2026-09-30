@@ -36,26 +36,25 @@ def publish_employer_post(n, emp, needle):
 
 
 def show_menu(page):
-    return re.search(r'<details class="fd-show">.*?</details>', page, re.S).group(0)
+    return re.search(r'<nav class="fd-views".*?</nav>', page, re.S).group(0)
 
 
 def test_layout_has_showing_menu_composer_and_circle(net):
     s, sid = student(net)
     page = s.get("/feed").text
     menu = show_menu(page)
-    assert "Showing:</span> <b>Everyone</b>" in menu
     for label, href in (("Everyone", "/feed"), ("For you", "/feed?tab=foryou"), ("My major", "/feed?f=major"),
                         ("Employers", "/feed?f=employers"), ("Saved", "/feed?tab=saved")):
-        assert f'href="{href}"' in menu and f"<b>{label}</b>" in menu
+        assert f'href="{href}"' in menu and f">{label}</a>" in menu
     assert menu.count('aria-current="true"') == 1 and 'href="/feed" aria-current="true"' in menu
     assert "fd-tabs" not in page and "fd-pill" not in page                            # the old tabs and pills are gone
     assert "<h1>Feed</h1>" in page and "Write a post" in page and 'class="fd-comp"' in page
     assert 'name="body"' in page and "Community guidelines" in page and "Your circle" in page
     assert ".fd-grid" in page                                                         # feed css is appended to the shared stylesheet
     assert "<script>" not in page.split("</head>", 1)[1]                              # no inline scripts (strict CSP)
-    assert "Showing:</span> <b>Saved</b>" in show_menu(s.get("/feed?tab=saved").text)
-    assert "Showing:</span> <b>For you</b>" in show_menu(s.get("/feed?tab=foryou").text)
-    assert "Showing:</span> <b>My major</b>" in show_menu(s.get("/feed?f=major").text)
+    assert re.search(r'aria-current="true"[^>]*>Saved</a>', show_menu(s.get("/feed?tab=saved").text))
+    assert re.search(r'aria-current="true"[^>]*>For you</a>', show_menu(s.get("/feed?tab=foryou").text))
+    assert re.search(r'aria-current="true"[^>]*>My major</a>', show_menu(s.get("/feed?f=major").text))
 
 
 def test_timeline_post_markup(net):
@@ -184,7 +183,7 @@ def test_your_major_and_employers_pills(net):
     assert "stats electives" not in s.get("/feed?tab=foryou&f=employers").text
     # Employers have no My major option and a bogus filter falls back to Everyone.
     ep = emp.get("/feed?f=major").text
-    assert "My major" not in ep and "ceramics" in ep and "Showing:</span> <b>Everyone</b>" in ep
+    assert "My major" not in ep and "ceramics" in ep and re.search(r'aria-current="true"[^>]*>Everyone</a>', show_menu(ep))
 
 
 def test_for_you_ranks_by_major_skills_and_recency(net):

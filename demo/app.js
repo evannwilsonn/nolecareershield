@@ -145,6 +145,9 @@ function reset() {
   addMsg(c1, 4, "Hi Jordan, yes it is! Could you do a 20-minute video call Thursday afternoon? You can also apply on our careers page so HR has your resume.", t - 3000e3);
   const c2 = convo(j.id, 5, 0); addMsg(c2, 5, "Hello! We have a remote assistant opening. Text me on WhatsApp at 850-555-0142 so we can move faster, HR is swamped this week.", t - 1800e3);
   c1.messages.forEach(x => x.read = true); c2.messages.forEach(x => x.read = false);
+  // Each new message also sent Jordan an email; the in-site Emails page keeps a copy of both.
+  const noteMail = (eid, at, read) => { mail(j.email, "You have a new message on NoleCareerShield", `${(EP(eid) || {}).company || "An employer"} sent you a message on NoleCareerShield.\n\nRead it on the site. We never put message text in emails, so an email that includes a "message" and asks you to reply is not from us.`, null); Object.assign(S.inbox[0], {at, read}); };
+  noteMail(4, t - 3600e3, true); noteMail(5, t - 1800e3, false);
   const jc = S.candidates.find(x => x.job === 1 && x.student === j.id); if (jc) { jc.stage = "interviewing"; jc.note = "SQL reports for the county. Video call Thursday."; }
   // Listing stats: students who opened the Garnet Analytics listing and pressed Apply (totals only).
   for (let k = 0; k < 23; k++) recordView(1, 1000 + k);
@@ -1731,13 +1734,12 @@ function feedCircle() {   // twin of feed._circle: "Your circle"
   return `<aside class="fd-rail" aria-labelledby="fd-circle-h"><h2 id="fd-circle-h" class="fd-rail-h">Your circle</h2>${secs}</aside>`;
 }
 function feedShowMenu(cur, q) {   // twin of feed._show_menu
-  let items = "", label = "Everyone";
+  let items = "";
   for (const [key, lab, hint, tab, f] of FEED_SHOWS) {
     if (!isStudent() && (key === "foryou" || key === "major")) continue;
-    const on = key === cur; if (on) label = lab;
-    items += `<a href="#" data-go="${feedUrl(tab, f, key === "saved" ? "" : q)}"${on ? ' aria-current="true"' : ""}><span class="fd-chk">${on ? icon("check", 15) : ""}</span><span><b>${esc(lab)}</b><small>${esc(hint)}</small></span></a>`;
+    items += `<a href="#" data-go="${feedUrl(tab, f, key === "saved" ? "" : q)}"${key === cur ? ' aria-current="true"' : ""} title="${esc(hint)}">${esc(lab)}</a>`;
   }
-  return `<details class="fd-show"><summary><span class="fd-show-l">Showing:</span> <b>${esc(label)}</b><svg class="ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><nav class="fd-menu" aria-label="Show posts from">${items}</nav></details>`;
+  return `<nav class="fd-views" aria-label="Show posts from">${items}</nav>`;
 }
 P.feed = () => {
   if (!me()) return pageHead("The FSU feed", "Questions, advice and opportunities from verified FSU students and employers our reviewers approved.", "Community") +
@@ -1775,7 +1777,7 @@ P.feed = () => {
 <label for="f-link" class="hp">Link</label><input id="f-link" name="link" maxlength="300" placeholder="Link (optional)" value="${esc(d.link || "")}"><button class="b" type="submit">Post</button></div>${isEmployer() ? `<p class="small faint" style="margin-top:6px">${esc(rule)}</p>` : ""}</form></details>` : banner("info", "Set up your profile (name and major) before posting.");
   const cur = tab === "saved" || tab === "foryou" ? tab : (f === "major" || f === "employers" ? f : "everyone");
   const topic = q && tab !== "saved" ? `<p class="fd-topic">Topic: ${esc(q)} <a href="#" data-go="${feedUrl(tab, f)}" aria-label="Clear topic">✕ Clear</a></p>` : "";
-  const top = `<div class="fd-top"><div class="fd-bar"><h1>Feed</h1>${feedShowMenu(cur, q)}</div>${composer}${flashed}${topic}${note}</div>`;
+  const top = `<div class="fd-top"><div class="fd-bar"><h1>Feed</h1></div>${feedShowMenu(cur, q)}${composer}${flashed}${topic}${note}</div>`;
   const here = tab === "saved" ? "feed?tab=saved" : feedUrl(tab, f, q);
   const items = posts.map(p => {
     const st = p.status !== "published" ? `<span class="pill ${p.status === "rejected" ? "bad" : "warn"}">${{pending: "Waiting for review", held: "Held for a safety check", rejected: "Not approved"}[p.status]}</span>` : "";
@@ -2404,7 +2406,7 @@ P.emails = () => {
   if (cur) cur.read = true;
   const head = pageHead("Emails", `A copy of every email we send to ${esc(me().email)}. One-time sign-in links stay in your real inbox only.`, "Inbox");
   if (!rows.length) return head + '<div class="card empty" style="padding:40px;text-align:center"><b>No emails yet</b><p class="small muted">When we email you about your account, listings or messages, a copy shows up here.</p></div>';
-  const items = rows.map(m => `<a class="mi${cur && m.id === cur.id ? " on" : ""}${m.read ? "" : " unread"}" href="#" data-go="emails?id=${m.id}"><b>${esc(m.subject)}</b><small>${ago(m.at)}</small></a>`).join("");
+  const items = rows.map(m => `<a class="mi${cur && m.id === cur.id ? " on" : ""}${m.read ? "" : " unread"}" href="#" data-go="emails?id=${m.id}"><b>${esc(m.subject)}</b><span class="snip">${esc((m.body.trim().split("\n")[0] || "").slice(0, 90))}</span><small>${ago(m.at)}</small></a>`).join("");
   const view = cur ? `<a class="back" href="#" data-go="emails">← All emails</a><h2>${esc(cur.subject)}</h2><p class="small muted" style="margin:0">From NoleCareerShield · to ${esc(me().email)} · ${ago(cur.at)}</p>`
       + `<pre>${esc(emailBody(cur))}</pre><div style="margin-top:18px"><button class="b sm sec" type="button" data-do="email-delete" data-id="${cur.id}">Delete</button></div>`
     : '<p class="muted" style="margin:40px 0;text-align:center">Pick an email to read it.</p>';

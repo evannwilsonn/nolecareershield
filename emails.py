@@ -53,7 +53,8 @@ def inbox(request: Request, id: int = 0):
                         "Emails", active="/emails")
     items = "".join(
         f'<a class="mi{" on" if cur and r["id"] == cur["id"] else ""}{"" if r["read_at"] else " unread"}" href="/emails?id={r["id"]}">'
-        f'<b>{esc(r["subject"])}</b><small>{esc(web.ago(r["sent_at"]))}</small></a>' for r in rows)
+        f'<b>{esc(r["subject"])}</b><span class="snip">{esc(r["body"].strip().splitlines()[0][:90] if r["body"].strip() else "")}</span>'
+        f'<small>{esc(web.ago(r["sent_at"]))}</small></a>' for r in rows)
     if cur:
         view = (f'<a class="back" href="/emails">← All emails</a><h2>{esc(cur["subject"])}</h2>'
                 f'<p class="small muted" style="margin:0">From NoleCareerShield · to {esc(user["email"])} · {esc(web.ago(cur["sent_at"]))}</p>'

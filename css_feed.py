@@ -12,6 +12,11 @@ CSS = """
 .fd-top{position:relative;margin:24px 0 0;padding-bottom:14px;border-bottom:1px solid var(--line)}
 .fd-bar{display:flex;align-items:center;gap:14px;min-height:40px;padding-right:150px;flex-wrap:wrap}
 .fd-bar h1{font-family:var(--display);font-weight:700;font-stretch:80%;font-size:30px;line-height:1;letter-spacing:-.005em;margin:0;color:var(--ink)}
+.fd-views{display:flex;gap:4px;width:100%;max-width:100%;min-width:0;align-self:stretch;margin-top:14px;overflow-x:auto;scrollbar-width:none;border-bottom:0}
+.fd-views::-webkit-scrollbar{display:none}
+.fd-views a{flex:none;display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;font-size:14px;font-weight:550;color:var(--muted);text-decoration:none;white-space:nowrap}
+.fd-views a:hover{color:var(--ink);background:var(--sunk)}
+.fd-views a[aria-current]{color:var(--accent-ink);background:var(--accent-tint);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent-ink) 35%,transparent) inset}
 .fd-show{position:relative}
 .fd-show>summary,.fd-comp>summary{list-style:none;cursor:pointer}
 .fd-show>summary::-webkit-details-marker,.fd-comp>summary::-webkit-details-marker{display:none}

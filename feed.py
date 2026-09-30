@@ -235,7 +235,7 @@ def _composer(conn, user: dict, values: dict | None = None, error: str = "") -> 
 
 def _bar(show_menu: str, composer: str, extra: str = "") -> str:
     """The slim header row: title, the Showing menu, and the Write a post button (the composer's summary)."""
-    return f'<div class="fd-top"><div class="fd-bar"><h1>Feed</h1>{show_menu}</div>{composer}{extra}</div>'
+    return f'<div class="fd-top"><div class="fd-bar"><h1>Feed</h1></div>{show_menu}{composer}{extra}</div>'
 
 
 def _teaser() -> HTMLResponse:
@@ -402,22 +402,16 @@ def _show_key(tab: str, f: str) -> str:
 
 
 def _show_menu(user: dict, cur: str, q: str) -> str:
-    """ "Showing: Everyone" — a no-JS <details> menu of links that replaces the old tabs and pills."""
-    items, label = "", "Everyone"
+    """The feed's views as a visible tab strip: Everyone, For you, My major, Employers, Saved."""
+    items = ""
     for key, lab, hint, tab, f in SHOWS:
         if user["role"] != "student" and key in ("foryou", "major"):
             continue
-        on = key == cur
-        if on:
-            label = lab
         href = _url(tab, f, "" if key == "saved" else q)
-        cur_attr = ' aria-current="true"' if on else ""
-        items += (f'<a href="{esc(href)}"{cur_attr}>'
-                  f'<span class="fd-chk">{ui.icon("check", 15) if on else ""}</span><span><b>{esc(lab)}</b><small>{esc(hint)}</small></span></a>')
-    chev = ('<svg class="ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" '
-            'stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>')
-    return (f'<details class="fd-show"><summary><span class="fd-show-l">Showing:</span> <b>{esc(label)}</b>{chev}</summary>'
-            f'<nav class="fd-menu" aria-label="Show posts from">{items}</nav></details>')
+        cur_attr = ' aria-current="true"' if key == cur else ""
+        icon = ui.icon("bookmark", 14) if key == "saved" and "bookmark" in ui._ICON_PATHS else ""
+        items += f'<a href="{esc(href)}"{cur_attr} title="{esc(hint)}">{icon}{esc(lab)}</a>'
+    return f'<nav class="fd-views" aria-label="Show posts from">{items}</nav>'
 
 
 # ---------- routes ----------
