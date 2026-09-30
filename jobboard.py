@@ -29,6 +29,7 @@ import matching
 import network
 import quals
 import security
+import defense
 import store
 import ui
 import web
@@ -202,7 +203,7 @@ def verdict_class(j: dict) -> str:
     lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
     zone = ui.risk_position(int(j.get("score") or 0), j.get("scam_status", ""), aggregator=lead_gen)[0]
     status = j.get("scam_status") if j.get("scam_status") in ("clear", "flagged", "held") else "flagged"
-    return f"v-{status} z{zone}"
+    return f"v-{status} z{zone}" + (" v-agg" if lead_gen else "")
 
 
 def card(j: dict, p: dict, *, fitpct, saved: bool | None, pill: str) -> str:
@@ -523,6 +524,6 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
     own_listing = viewer["role"] == "employer" and j.get("employer_id") == store.org_id(viewer)
     report = f"/job/{jid}/report" if (is_student or own_listing) else ""
     side = f'<aside class="jd-side" aria-label="Scam check and fit">{scam_block(j, pill(j), risk(j), report)}{match}{q}{poster_block(conn, viewer, j, emp_ok)}</aside>'
-    body = (f'<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">{esc(j["description"])}</div></section>'
+    body = (f'<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">{esc(defense.with_fingerprint(j["description"], j["id"]))}</div></section>'
             f'{glance(j)}{extra}</div>')
     return (f'<a class="back jd-back" href="/jobs">← All jobs</a><article class="jd {verdict_class(j)}">{top}{side}{body}</article>')

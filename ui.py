@@ -177,7 +177,10 @@ header{background:rgba(5,10,20,.86);-webkit-backdrop-filter:saturate(1.2) blur(1
 .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
 .crest{flex:none;display:block;filter:drop-shadow(0 0 10px rgba(226,190,106,.22))}
 .brand-name{font-family:var(--display);font-weight:700;font-size:19.5px;color:var(--ivory);letter-spacing:-.005em;line-height:1.05}
-.brand-name b{font-weight:700;color:var(--ivory)}
+.brand-name b{font-weight:700;color:var(--gold)}
+/* "Shield" in gold foil (solid gold where text clipping isn't supported, plain text colour in forced-colours mode) */
+@supports ((-webkit-background-clip:text) or (background-clip:text)){.brand-name b{background:var(--foil);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}}
+@media(forced-colors:active){.brand-name b{background:none;-webkit-text-fill-color:currentColor;color:CanvasText}}
 .brand-name small{display:block;font:500 9.5px/1.4 var(--mono);letter-spacing:.26em;text-transform:uppercase;margin-top:3px;background:var(--foil);-webkit-background-clip:text;background-clip:text;color:transparent}
 .nav-actions{display:flex;gap:2px 4px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .nav a.ghost,.nav .ghostbtn{text-decoration:none;color:#AEB9C9;font-size:14px;font-weight:500;padding:8px 11px;border-radius:8px;background:none;border:none;font-family:inherit;cursor:pointer}
@@ -229,7 +232,7 @@ body.inapp{background:var(--navy)}
 .led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);margin-right:6px;vertical-align:1px}
 .main{padding:8px 32px 40px;min-width:0}
 .main .wrap{max-width:none;padding:0}
-.app .main{position:relative;isolation:isolate;padding:10px 46px 40px;min-height:calc(100vh - 60px);
+.app .main{position:relative;isolation:isolate;overflow-x:clip;padding:10px 46px 40px;min-height:calc(100vh - 60px);
   background:radial-gradient(900px 500px at 85% -10%,rgba(226,190,106,.08),transparent 60%),radial-gradient(700px 500px at 0% 110%,rgba(140,47,69,.12),transparent 60%),var(--navy)}
 .app .main::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:linear-gradient(rgba(226,190,106,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(226,190,106,.035) 1px,transparent 1px);background-size:48px 48px}
 .app .main>.wrap{max-width:1240px;margin:0 auto}
@@ -649,7 +652,6 @@ main>.cine:first-child,main>.chapter.top:first-child{margin-top:calc(-1 * var(--
 html.over header{transition:background .35s,border-color .35s}
 html.over header:not(.solid){background:transparent;border-bottom-color:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
 html.over header:not(.solid) .brand-name{color:#fff}
-html.over header:not(.solid) .brand-name b{color:var(--gold)}
 html.over header:not(.solid) .nav a.ghost,html.over header:not(.solid) .nav .ghostbtn,html.over header:not(.solid) .who{color:rgba(255,255,255,.88)}
 html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .nav .ghostbtn:hover{color:#fff;background:rgba(255,255,255,.14)}
 /* marquee (one per page) */
@@ -845,6 +847,7 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
    sits at the score (ui.risk_position) */
 .risk{--g:#5f9a7b;--y:#d3b04f;--o:#d98e57;--r:#c1554b;
   display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11.5px;font-weight:600;color:var(--muted)}
+.risk .agg-tag,.rev-score .agg-tag{margin-left:8px;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--sunk);color:var(--muted);border:1px solid var(--line)}
 .risk .end{font-size:10.5px;color:var(--faint);font-weight:500;font-variant-numeric:tabular-nums}
 .risk .gauge{position:relative;flex:1;max-width:360px;height:6px;display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:0 8px}
 .risk .gauge i{border-radius:2px}.risk .gauge i:first-child{border-radius:999px 2px 2px 999px}.risk .gauge i:last-child{border-radius:2px 999px 999px 2px}
@@ -1205,7 +1208,7 @@ def _sidebar(active: str) -> str:
                      f'<span class="count" aria-label="{reqs} connection requests">{reqs}</span>' if href == "/network" and reqs else
                      f'<span class="count" aria-label="{mails} unread emails">{mails}</span>' if href == "/emails" and mails else "")
             out.append(f'<a href="{href}"{on}>{icon(ic)}<span>{esc(label)}</span>{count}</a>')
-    brand = f'<a class="brand side-brand" href="/">{crest(40, key="side")}{BRAND_NAME_SIDE}</a>'
+    brand = f'<a class="brand side-brand" href="/">{crest(40, key="side")}{brand_mark("Members only")}</a>'
     return f'<aside class="side">{brand}<nav aria-label="Main">{"".join(out)}</nav>{shield_status(user["role"])}</aside>'
 
 
@@ -1224,8 +1227,15 @@ def shield_status(role: str, check_href: str = 'href="/check?kind=message"', pro
             f'<p><b>Tip:</b> listings with pay, hours and a named contact get more applicants. <a {profile_href}>Your company page</a>.</p></div>')
 
 
-BRAND_NAME = '<span class="brand-name">NoleCareerShield</span>'
-BRAND_NAME_SIDE = '<span class="brand-name">NoleCareerShield<small>Members only</small></span>'
+def brand_mark(sub: str = "") -> str:
+    """The wordmark everywhere it appears: "NoleCareer" in ivory and "Shield" in gold foil, with an optional mono
+    small-caps line under it (the sidebar's "Members only"). Page titles, sentences and emails stay plain text."""
+    small = f"<small>{esc(sub)}</small>" if sub else ""
+    return f'<span class="brand-name">NoleCareer<b>Shield</b>{small}</span>'
+
+
+BRAND_NAME = brand_mark()
+BRAND_NAME_SIDE = brand_mark("Members only")
 
 
 def me_pill(user: dict, href: str = 'href="/profile"') -> str:
@@ -1267,7 +1277,7 @@ def shell(body: str, title: str = "NoleCareerShield", hero: str = "", admin: boo
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>{csrf_meta}
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#050A14"><link rel="icon" href="{FAVICON}">{FONT_PRELOADS}<style>{CSS}{THEME_CSS}</style></head><body{body_cls}>
 <header><div class="nav">
-<a class="brand" href="/" aria-label="NoleCareerShield home">{crest(30, key="hdr")}{BRAND_NAME}</a>
+<a class="brand" href="/" aria-label="NoleCareerShield home">{crest(30, key="hdr")}{brand_mark()}</a>
 <div class="nav-actions">{_nav_links(admin)}</div>
 </div></header>"""
     if in_app:
@@ -1547,11 +1557,12 @@ RISK_MIN, RISK_MAX = 4, 96      # a check is never a perfect 0 or 100, so the ga
 
 
 def shown_score(score: int, aggregator: bool = False) -> int:
-    """The number the reviewer sees: never 0 or 100, and an aggregator (scam score 0 by design) reads 60, orange."""
-    sc = int(score)
-    if aggregator and sc < 15:
-        return 60
-    return max(RISK_MIN, min(RISK_MAX, sc))
+    """The number the reviewer sees: never 0 or 100. Only scam evidence moves it; being an aggregator or lead-generation
+    listing is a separate label (AGG_TAG), never a risk number. `aggregator` is accepted for old callers and ignored."""
+    return max(RISK_MIN, min(RISK_MAX, int(score)))
+
+
+AGG_TAG = '<span class="agg-tag" title="Not a scam signal: this looks like a job aggregator or lead-generation listing">Aggregator</span>'
 
 
 def risk_position(score: int, status: str = "", aggregator: bool = False) -> tuple[int, float, float]:
@@ -1568,7 +1579,7 @@ def risk_meter(score: int, status: str, aggregator: bool = False) -> str:
     cells = "".join(f'<i class="z{i}"></i>' for i in range(4))
     return (f'<div class="risk z{zone}" style="--pos:{pos}%"><span class="end">0</span><span class="gauge" role="img" '
             f'aria-label="Scam risk {int(pos)} of 100">{cells}<b></b></span><span class="end">100</span>'
-            f'<span class="rl">{int(pos)}</span></div>')
+            f'<span class="rl">{int(pos)}</span>{AGG_TAG if aggregator else ""}</div>')
 
 
 # ---------- static script ----------

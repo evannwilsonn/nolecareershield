@@ -79,6 +79,9 @@ import jobfit
 import messaging
 import msgcheck
 import learning
+import defense
+import defense_web
+import cases
 import assistant
 import resume_tools
 import feed
@@ -125,6 +128,12 @@ def daily_maintenance():
     except Exception:                      # noqa: BLE001 - a failed backup must never take the site down
         log.exception("database backup failed")
     learning.maybe_retrain()               # retrains the scam model in the background when a month and enough labels have passed
+    defense.daily_jobs()                   # certificate-log watch, peer school feeds, scam archives (each only when configured)
+    try:
+        with store.db() as conn:
+            cases.sync(conn)                   # every drift alert becomes an investigation case
+    except Exception:                      # noqa: BLE001
+        log.exception("case sync failed")
 
 
 async def _maintenance_loop():
@@ -153,7 +162,7 @@ WORK_TYPES = matching.WORK_TYPES
 # ---------- database ----------
 
 # Added after the first release; existing databases are migrated in place.
-_EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_at": "TEXT", "employer_id": "INTEGER",
+_EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_at": "TEXT", "reviewer": "TEXT NOT NULL DEFAULT ''", "employer_id": "INTEGER",
                   "easy_apply": "INTEGER NOT NULL DEFAULT 0", "questions": "TEXT NOT NULL DEFAULT '[]'",
                   "requirements": "TEXT NOT NULL DEFAULT '[]'",
                   "poster_name": "TEXT NOT NULL DEFAULT ''", "poster_title": "TEXT NOT NULL DEFAULT ''",
@@ -176,6 +185,11 @@ def _ensure_columns(db):
 
 def init_db():
     learning.configure()                   # the detector uses the model retrained on this board, when there is one
+    with store.db() as conn:
+        defense.ensure_schema(conn)            # hashed identifiers, intel cache, drift counters, campus calendar
+        cases.ensure_schema(conn)              # investigation cases opened from drift alerts
+        import release
+        release.ensure_schema(conn)            # staged model releases, background comparisons, rollback
     with closing(sqlite3.connect(DB_PATH)) as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
@@ -222,7 +236,7 @@ def purge_old():
 visible_listing = store.visible_listing       # the one rule for what students can see (store.live_where is the SQL twin)
 
 
-def _scan(data: dict) -> tuple:
+def _scan(data: dict, job_id: int | None = None) -> tuple:
     """Scam-scan a listing. Returns (result, scam_status, findings)."""
     result = score_posting(
         title=data["title"], description=data["description"] + ("\n" + easyapply.questions_text(data.get("questions") or [])
@@ -253,7 +267,20 @@ def _scan(data: dict) -> tuple:
         findings.append(second)
         if scam_status == "clear":
             scam_status = "flagged"
+
+    # Identifiers from confirmed scams, copies of approved listings, look-alike domains and outside intel: only ever stricter.
+    for f in defense.extra_findings(data["description"], sender=data.get("contact", ""), title=data["title"], company=data["company"],
+                                    url=data.get("apply_url", ""), exclude_job=job_id):
+        if f["weight"] <= 0 and f["severity"] == "note":
+            continue
+        findings.append(f)
+        if f["severity"] == "critical" and scam_status != "held":
+            scam_status = "held" if f["weight"] >= 35 else "flagged"
+        elif scam_status == "clear" and f["weight"] >= 10:
+            scam_status = "flagged"
     return result, scam_status, findings
+
+defense.set_job_scanner(_scan)          # so revoking or confirming a contact detail re-scores the listings that contain it
 
 
 def add_job(data: dict, employer_id: int | None = None, posted_by: int | None = None) -> dict:
@@ -281,6 +308,8 @@ def add_job(data: dict, employer_id: int | None = None, posted_by: int | None = 
         ))
         db.commit()
         job_id = cur.lastrowid
+    with store.db() as conn:
+        defense.index_job(conn, job_id, "\n".join(data.get(k, "") or "" for k in ("title", "company", "description", "apply_url", "contact")))
     return {"id": job_id, "scam_status": scam_status, "score": result.score,
             "band": result.band, "findings": findings}
 
@@ -394,8 +423,8 @@ def _score_pill(j: dict) -> str:
     """The reviewer's verdict pill. The scam score only counts scam rules; a listing flagged by the separate
     aggregator/lead-gen check says so instead of showing "Score 0 · flagged"."""
     lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
-    text = f"Scam risk {ui.shown_score(j['score'], lead_gen)} · {j['scam_status']}"
-    return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
+    text = f"Scam risk {ui.shown_score(j['score'])} · {j['scam_status']}"
+    return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}{" · Aggregator" if lead_gen else ""}</span>'
 
 
 def _scan_chip(j: dict) -> str:
@@ -952,7 +981,9 @@ async def listing_edit_save(job_id: int, request: Request):
              "poster_name": clean["poster_name"], "poster_title": clean["poster_title"], "show_email": clean["show_email"]}
     with closing(sqlite3.connect(DB_PATH)) as db:
         if review:
-            result, scam_status, findings = _scan(clean)
+            result, scam_status, findings = _scan(clean, int(j["id"]))
+            with store.db() as conn:
+                defense.index_job(conn, int(j["id"]), "\n".join(clean.get(k, "") or "" for k in ("title", "company", "description", "apply_url", "contact")))
             full = dict(minor, title=clean["title"], company=clean["company"], description=clean["description"], apply_url=clean["apply_url"],
                         contact=clean["contact"], questions=json.dumps(clean["questions"]), score=result.score, band=result.band,
                         scam_status=scam_status, findings_json=json.dumps(findings), ruleset_version=result.ruleset_version,
@@ -1022,7 +1053,7 @@ mailer.copy_hook = emails.keep
 # ---------- student network ----------
 
 for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, learning.router, assistant.router, resume_tools.router,
-           feed.router, admin_extra.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router,
+           feed.router, admin_extra.router, defense_web.router, cases.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router,
            events.router, teams.router, guardian.router):
     app.include_router(_r)
 
@@ -1117,7 +1148,13 @@ def privacy():
 <ul><li>Only signed-in FSU students and approved employers can read or post. Employer posts are reviewed before they appear and must be relevant to FSU students.</li>
 <li>Anyone can report a post; reported posts are checked by a reviewer. Rejected and removed posts are deleted after 30 days.</li></ul>
 <h3>Scam checker</h3>
-<ul><li>Messages and listings you paste into the scam checker are not saved, unless you press "Send this to our reviewers" to help improve the detector. Those are kept for up to a year, without your name. When a reviewer confirms whether one was a scam, that text (with email addresses and phone numbers masked) can be used to retrain the detector.</li></ul>
+<ul><li>Messages and listings you paste into the scam checker are not saved, unless you press "Send this to our reviewers" to help improve the detector.</li>
+<li>The exception: a small random share (about 3%) of checks that come out "no known scam signs" or "be careful" is kept so a reviewer can double-check that the detector didn't miss a scam. It's kept without your name, with email addresses and phone numbers masked, for up to a year.</li>
+<li>Checks you send to reviewers are kept for up to a year, without your name. When a reviewer confirms whether one was a scam, that text (with email addresses and phone numbers masked) can be used to retrain the detector.</li>
+<li>Files you attach to a check (an offer letter, a photo of a check, a screenshot) are read once to check them and never stored.</li>
+<li>If you forward an email to our check address, we reply to you with the verdict. We keep the forwarded message for our reviewers, but not your email address.</li>
+<li>Contact details in scam reports and listings (phone numbers, emails, web domains, chat handles, crypto wallets) are kept as one-way keyed codes, so we can spot a scammer who comes back with new wording. When a reviewer confirms a scam, those codes may be shared with partner schools; the codes can't be turned back into the details.</li>
+<li>When outside checks are on, the web addresses and phone numbers in what you check are looked up with reputation services (for example domain registration dates and malware-link lists). The rest of your text is not sent.</li></ul>
 {ai_block}
 <h3>People who post a job</h3>
 <ul><li>You need an employer account: an email address (confirmed by a link) and a password, stored the same way as above, plus a company profile that a reviewer approves before you can message students or post to the feed.</li>
@@ -1892,7 +1929,12 @@ def _review_action(job_id: int, request: Request, session, csrf, status: str, re
     enforce_rate_limit(request, general_limiter, "admin_action")
     label = "legit" if status == "approved" else clean_choice(reason, REVIEW_REASONS, "reason", default="other")
     # Approve/reject only act on waiting submissions; remove only acts on live ones.
-    set_review(job_id, status, label, only_from=("approved",) if status == "removed" else ("pending",))
+    if set_review(job_id, status, label, only_from=("approved",) if status == "removed" else ("pending",)):
+        who = defense.reviewer_name(session)
+        with store.db() as conn:
+            conn.execute("UPDATE jobs SET reviewer = ? WHERE id = ?", (who, job_id))
+            defense.log_label(conn, "job", job_id, label, who, reason)
+            defense.recheck(conn, defense.hashes_of(conn, "job", [job_id]))   # other listings sharing its contact details
     return RedirectResponse("/admin" if status != "removed" else "/admin/live", status_code=303)
 
 

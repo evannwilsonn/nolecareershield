@@ -108,7 +108,15 @@ class Model:
         logit, parts = self.contributions(title, description, company, url, findings, score)
         p = 1.0 / (1.0 + math.exp(-max(-40.0, min(40.0, logit))))
         top = sorted((x for x in parts if x[2] > 0), key=lambda x: -x[2])[:5]
+        conf = self.spec.get("conformal") or {}
+        if conf:
+            pset = ([] if 1 - p > conf.get("q_scam", 1) else ["scam"]) + ([] if p > conf.get("q_legit", 1) else ["legit"])
+        else:
+            pset = ["scam"] if p >= self.threshold else ["legit"]
         return {"probability": round(p, 4), "flag": p >= self.threshold, "threshold": self.threshold,
+                # Uncertain: the 90%-coverage conformal set can't settle it the way the threshold did (a scam it can't rule
+                # out while the threshold says no flag, or an empty/both set). Only used to send cases to a person first.
+                "set": pset, "uncertain": len(pset) != 1 or (("scam" in pset) != (p >= self.threshold)),
                 "version": self.version, "because": [{"kind": k, "name": n, "weight": round(w, 3)} for k, n, w in top]}
 
 
@@ -134,6 +142,17 @@ def load(path: Path | None = None) -> Model | None:
     return _load(str(p), p.stat().st_mtime)
 
 
+# ---------- staged releases (set by the site's release.py; None means: just the active model) ----------
+
+ROUTE = None      # fn(key, active_model) -> (model to serve, model to score alongside or None)
+OBSERVE = None    # fn(key, served_version, served_pred, other_version, other_pred)
+
+
+def posting_key(title: str, description: str, company: str = "", url: str = "") -> str:
+    import hashlib
+    return hashlib.sha256(" ".join(tokens(posting_text(title, description, company, url))).encode()).hexdigest()
+
+
 # ---------- the one thing the rest of the site calls ----------
 
 def second_look(title: str, description: str, company: str = "", url: str = "",
@@ -145,6 +164,19 @@ def second_look(title: str, description: str, company: str = "", url: str = "",
     if m is None:
         return None
     pred = m.predict(title, description, company, url, findings, score)
+    if model is None and ROUTE is not None:
+        # During a staged release the site serves the candidate for a stable slice of listings and scores the rest with
+        # it in the background (learning's release.py). The hook never raises into a scam check.
+        try:
+            key = posting_key(title, description, company, url)
+            served, other = ROUTE(key, m)
+            if served is not m:
+                m, pred = served, served.predict(title, description, company, url, findings, score)
+            if OBSERVE is not None:
+                other_pred = other.predict(title, description, company, url, findings, score) if other is not None else None
+                OBSERVE(key, m.version, pred, other.version if other is not None else None, other_pred)
+        except Exception:                                   # noqa: BLE001
+            pass
     if not pred["flag"]:
         return None
     titles = rule_titles or {f["rule_id"]: f["title"] for f in (findings or [])}

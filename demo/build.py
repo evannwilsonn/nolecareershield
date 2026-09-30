@@ -121,7 +121,7 @@ def build() -> tuple[Path, Path]:
     if "/static/fonts/" in css:
         raise SystemExit("a font link in ui.CSS was not embedded")
     body = SHELL
-    for key, val in {"title": TITLE, "css": css + DEMO_CSS, "emblem": ui.crest(30, key="hdr"), "brandName": ui.BRAND_NAME, "rules": safe(rules), "seed": safe(seed),
+    for key, val in {"title": TITLE, "css": css + DEMO_CSS, "emblem": ui.crest(30, key="hdr"), "brandName": ui.brand_mark(), "rules": safe(rules), "seed": safe(seed),
                      "blocks": safe(blocks), "frames": safe(frames), "media": safe(extra_media), "engine": (HERE / "engine.js").read_text(), "app": (HERE / "app.js").read_text(),
                      "fx": (ROOT / "static" / "fx.js").read_text()}.items():
         body = body.replace("{" + key + "}", val)

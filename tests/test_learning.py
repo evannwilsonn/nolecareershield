@@ -151,15 +151,19 @@ def test_retrain_runs_the_gate_and_records_the_run(client, monkeypatch):
         db.commit()
     before = ml.active_path()
     out = learning.run_retrain(trigger="test", force=True)
-    assert out["status"] in ("shipped", "refused"), out
+    assert out["status"] in ("candidate", "refused"), out
     with store.db() as conn:
         run = store.row(conn, "SELECT * FROM model_runs ORDER BY id DESC LIMIT 1")
     assert run["trigger"] == "test" and run["status"] == out["status"] and "Holdout, rules alone" in run["report"] and run["finished_at"]
     assert (learning.learn_dir() / "live_train.jsonl").exists()
-    if out["status"] == "shipped":
-        assert learning.model_path().exists() and ml.active_path() == learning.model_path() and run["version"]
+    import release
+    assert not learning.model_path().exists() and ml.active_path() == before         # the active model never changes at training time
+    with store.db() as conn:
+        stage = release.state(conn)["stage"]
+    if out["status"] == "candidate":
+        assert release.candidate_path().exists() and stage == "shadow" and "Release gate" in run["report"]
     else:
-        assert not learning.model_path().exists() and ml.active_path() == before     # a refused model changes nothing
+        assert not release.candidate_path().exists() and stage == "none"
     page = _admin(client).get("/admin/model").text
     assert "Training runs" in page and out["status"] in page and "Retrain now" in page
 
@@ -171,7 +175,7 @@ def test_retrain_button_and_schedule_run_in_the_background(client, monkeypatch):
     a = _admin(client)
     r = a.post("/admin/model/retrain", data={"csrf": csrf_from(a.get("/admin/model").text)})
     assert r.status_code == 303 and "started=1" in r.headers["location"]
-    monkeypatch.setattr(learning, "due", lambda conn: (True, "test"))
+    monkeypatch.setattr(learning, "due_detail", lambda conn: (True, "test", "schedule"))
     learning.maybe_retrain()
     for _ in range(50):
         if len(calls) == 2:

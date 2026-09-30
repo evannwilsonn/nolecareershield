@@ -502,7 +502,8 @@ _CAND_EXTRA = {"rating": "INTEGER NOT NULL DEFAULT 0", "archived": "INTEGER NOT 
 # whether it trains the model or sits in the frozen live holdout.
 _CHECK_EXTRA = {"kind": "TEXT NOT NULL DEFAULT 'message'", "title": "TEXT NOT NULL DEFAULT ''", "company": "TEXT NOT NULL DEFAULT ''",
                 "url": "TEXT NOT NULL DEFAULT ''", "source": "TEXT NOT NULL DEFAULT 'student'", "review_label": "TEXT",
-                "reviewed_at": "REAL", "campaign": "INTEGER", "learn_split": "TEXT"}
+                "reviewed_at": "REAL", "campaign": "INTEGER", "learn_split": "TEXT",
+                "reviewer": "TEXT NOT NULL DEFAULT ''", "review_reason": "TEXT NOT NULL DEFAULT ''"}
 ITEM_KINDS = ["experience", "education", "project", "certification", "organization", "course", "language"]
 
 

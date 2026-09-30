@@ -162,6 +162,21 @@ def line(name, t) -> str:
             if t["scam_total"] or t["legit_total"] else f"| {name} | - | - | - |")
 
 
+def conformal_quantiles(oof, y, alpha: float = 0.1) -> dict:
+    """Class-conditional (Mondrian) split conformal from out-of-fold probabilities: each class keeps its own 1-alpha
+    coverage, so the rare scam class isn't under-covered. The site calls a case 'uncertain' when the prediction set
+    isn't exactly one class, and routes it to a person first."""
+    out = {"alpha": alpha}
+    for name, scores in (("q_scam", [1 - p for p, t in zip(oof, y) if t == 1]), ("q_legit", [p for p, t in zip(oof, y) if t == 0])):
+        n = len(scores)
+        if n < 5:
+            out[name] = 1.0
+            continue
+        k = min(n, int(np.ceil((n + 1) * (1 - alpha))))
+        out[name] = round(float(sorted(scores)[k - 1]), 6)
+    return out
+
+
 def gate(rules_h: dict, new_h: dict, rules_s: dict, new_s: dict, cur_h: dict | None = None) -> list[str]:
     """Why a candidate may not ship (empty list = it may)."""
     problems = []
@@ -226,6 +241,7 @@ def main(argv=None) -> int:
             threshold = float(t)
             break
     cv = tally(train, system_flags(train, oof, threshold))
+    conformal = conformal_quantiles(oof, y)
 
     model = Trained(train, rule_ids)
     rules_h, rules_s = tally(holdout, [rules_for(r)["flag"] for r in holdout]), tally(hard, [rules_for(r)["flag"] for r in hard])
@@ -251,7 +267,7 @@ def main(argv=None) -> int:
     ok = not problems
 
     counts = {k: int(sum(r["label"] == k for r in train)) for k in ("scam", "legit", "lead_gen")}
-    meta = {"trained_at": dt.datetime.utcnow().strftime("%Y-%m-%d"),
+    meta = {"conformal": conformal, "trained_at": dt.datetime.utcnow().strftime("%Y-%m-%d"),
             "trained_on": {"rows": len(train), **counts, "files": sorted({r["_src"] for r in train}),
                            "dropped_near_copies_of_holdout": len(leak), "template_groups": len(size)},
             "holdout": {"rules": [rules_h["scam"], rules_h["scam_total"], len(rules_h["legit_flagged"])],
