@@ -117,7 +117,16 @@ def _post_hire(text: str, m: re.Match) -> bool:
     return bool(_POST_HIRE.search(text[max(0, m.start() - 120):m.end() + 120]))
 
 
-_GUARDS = {"negation": _negated, "post_hire": _post_hire}
+# An employer's own safety promise ("At no time will a conversation be moved to an alternative email", "We will
+# never ask you to text us") describes the scam in order to rule it out. Added from the Oct 2026 job-board batch.
+_DISCLAIMER = re.compile(r"\b(?:at\s+no\s+time|will\s+never|would\s+never|we\s+never|never\s+(?:ask|request|contact|move)|will\s+not\s+ever|won't\s+ever)\b", re.IGNORECASE)
+
+
+def _disclaimer(text: str, m: re.Match) -> bool:
+    return bool(_DISCLAIMER.search(_sentence_before(text, m.start())))
+
+
+_GUARDS = {"negation": _negated, "post_hire": _post_hire, "disclaimer": _disclaimer}
 
 
 # ---------- rulepack ----------

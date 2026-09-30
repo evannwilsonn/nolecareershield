@@ -33,6 +33,7 @@ import ui
 import web
 from scam_detector.rules import FREE_MAIL
 from scam_detector.scorer import score_posting
+from scam_detector import ml
 
 router = APIRouter()
 
@@ -233,6 +234,10 @@ def check_listing(title: str, description: str, company: str = "", url: str = ""
     lead_gen = result.lead_gen or {}
     if lead_gen.get("flag") and level < 1:
         level = 1
+    second = ml.second_look(title, description, company, url, result.findings, result.score) if band in ("clear", "caution") else None
+    if second:                                  # the learned model can raise "no signs" to "be careful", never more
+        findings.append(second)
+        level = max(level, 1)
     key, ttl, advice = LISTING_LEVELS[level]
     steps = ([LEADGEN_STEP] if lead_gen.get("flag") else []) + LISTING_STEPS[level]
     return {"kind": "listing", "level": level, "key": key, "title": ttl, "advice": advice, "score": score, "band": band,

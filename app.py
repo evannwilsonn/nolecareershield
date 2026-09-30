@@ -60,6 +60,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse,
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from scam_detector.scorer import score_posting
+from scam_detector import ml
 import accounts
 import backup
 import mailer
@@ -220,6 +221,14 @@ def add_job(data: dict, employer_id: int | None = None) -> dict:
             "why": lg.get("verdict", ""),
             "matched": [r["reason"] for r in lg.get("reasons", [])][:4],
         })
+
+    # The learned model (scam_detector/ml.py) can only send a quiet listing to the reviewer with a note.
+    second = ml.second_look(data["title"], data["description"], data["company"], data.get("apply_url", ""),
+                            result.findings, result.score) if result.band in ("clear", "caution") else None
+    if second:
+        findings.append(second)
+        if scam_status == "clear":
+            scam_status = "flagged"
 
     with closing(sqlite3.connect(DB_PATH)) as db:
         cur = db.execute("""
