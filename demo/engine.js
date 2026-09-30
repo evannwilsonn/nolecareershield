@@ -1064,8 +1064,52 @@ majoring major majors minor degree hold holds certified certification certificat
             keywords_hit: kwHit, keywords_missing: req.keywords.filter(k => !kwHit.includes(k)).slice(0, 8), checklist: checklist.slice(0, 16), requirements: req};
   }
 
+  // ---------- employer trust score (port of employer_page.trust_from_signals) ----------
+  const T_WEIGHTS = {verification: 30, listings: 25, conduct: 20, responsiveness: 15, profile: 10};
+  const T_NAMES = {verification: "Verification", listings: "Listing record", conduct: "Conduct with students", responsiveness: "Responsiveness", profile: "Profile"};
+  const T_LABELS = [[85, "Highly trusted", "ok"], [70, "Trusted", "ok"], [50, "Building trust", ""], [0, "Use caution", "bad"]];
+  const PROFILE_FIELDS = [["website", "a website"], ["about", "an About section"], ["industry", "your industry"], ["size", "company size"], ["location", "a location"],
+    ["contact_name", "a contact name"], ["fsu_connection", "how you work with FSU students"], ["tagline", "a tagline"], ["linkedin", "your LinkedIn page"],
+    ["founded", "the year you were founded"], ["hires_for", "the kinds of roles you hire for"], ["perks", "your perks"]];
+  const tPct = x => Math.max(0, Math.min(100, pyRound(100 * x)));
+  const median = a => !a.length ? null : a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2;
+  function replyTime(h) { if (h === null || h === undefined) return ""; if (h < 1) return "an hour"; if (h < 24) return `${Math.floor(h) + 1} hours`; const d = Math.floor(h / 24) + (h % 24 ? 1 : 0); return `${d} day${d !== 1 ? "s" : ""}`; }
+  function trustFromSignals(s) {
+    const parts = {}, tips = [];
+    const approval = {approved: 1, pending: 0.35}[s.status] || 0, dom = {match: 1, other: 0.6, free: 0.2}[s.domain];
+    const age = s.days_approved >= 180 ? 1 : s.days_approved >= 30 ? 0.8 : approval === 1 ? 0.6 : 0.3;
+    parts.verification = [tPct(0.6 * approval + 0.25 * dom + 0.15 * age), [{approved: "Approved by a NoleCareerShield reviewer", pending: "Waiting for a reviewer"}[s.status] || "Not approved",
+      {match: "email matches their website", other: "email domain differs from their website", free: "uses a personal email address"}[s.domain]].join("; ")];
+    if (s.domain === "free") tips.push("Sign up with an email on your company's domain instead of a personal address.");
+    if (s.listings) {
+      let base = 0.6 * s.approved / s.listings + 0.4 * s.clear / s.listings;
+      if (s.leadgen_rejections) base -= 0.25; if (s.scam_rejections) base = Math.min(base, 0.1);
+      parts.listings = [tPct(base), `${s.approved} of ${s.listings} listings approved` + (s.scam_rejections ? `; ${s.scam_rejections} rejected as a scam` : "") + (s.leadgen_rejections ? `; ${s.leadgen_rejections} rejected as an aggregator` : "")];
+    } else { parts.listings = [60, "No listings reviewed yet"]; tips.push("Post a listing. Each approved listing builds your record."); }
+    const bad = [s.held && `${s.held} message${s.held !== 1 ? "s" : ""} held by the scam scanner`, s.flagged && `${s.flagged} flagged`, s.cautioned && `${s.cautioned} with warning signs`,
+      s.reports && `${s.reports} open report${s.reports !== 1 ? "s" : ""} from students`, s.blocks && `blocked by ${s.blocks} student${s.blocks !== 1 ? "s" : ""}`].filter(Boolean);
+    parts.conduct = [tPct(1 - 0.35 * s.held - 0.2 * s.flagged - 0.1 * s.cautioned - 0.3 * s.reports - 0.15 * s.blocks), bad.length ? bad.join("; ") : s.sent ? "No scanner flags, reports or blocks" : "No messages sent yet"];
+    if (s.threads) {
+      const rate = s.replied / s.threads, med = median(s.reply_hours), speed = med === null ? 0 : med <= 24 ? 1 : med <= 72 ? 0.7 : med <= 168 ? 0.4 : 0.1;
+      parts.responsiveness = [tPct(0.6 * rate + 0.4 * speed), `Answered ${s.replied} of ${s.threads} student messages` + (med !== null ? `; usually within ${replyTime(med)}` : "")];
+      if (rate < 0.8) tips.push("Answer every student who messages you, even with a quick no.");
+    } else parts.responsiveness = [60, "No student messages yet"];
+    const has = k => { const v = s.profile[k]; return Array.isArray(v) ? v.length > 0 : !!v && (k !== "about" || v.length >= 40); };
+    const have = PROFILE_FIELDS.filter(([k]) => has(k));
+    parts.profile = [tPct(have.length / PROFILE_FIELDS.length), `${have.length} of ${PROFILE_FIELDS.length} details filled in`];
+    const missing = PROFILE_FIELDS.filter(([k]) => !has(k)).map(x => x[1]);
+    if (missing.length) tips.push("Add " + missing.slice(0, 3).join(", ") + " to your company profile.");
+    let score = pyRound(Object.keys(T_WEIGHTS).reduce((a, k) => a + T_WEIGHTS[k] * parts[k][0], 0) / 100);
+    if (s.status !== "approved") score = Math.min(score, 49);
+    if (s.scam_rejections) score = Math.min(score, 30);
+  if (s.reports || s.flagged) score = Math.min(score, 69);
+  if (s.held) score = Math.min(score, 49);
+    const [, label, tone] = T_LABELS.find(([cut]) => score >= cut);
+    return {score, label, tone, new: !(s.listings || s.threads), parts: Object.keys(T_WEIGHTS).map(k => ({key: k, name: T_NAMES[k], weight: T_WEIGHTS[k], score: parts[k][0], detail: parts[k][1]})), tips: tips.slice(0, 4)};
+  }
+
   const NCS = {normalize, runTextRules, scorePosting, check, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
-    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
+    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;
   if (typeof module !== "undefined" && module.exports) module.exports = NCS;

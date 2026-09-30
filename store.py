@@ -240,6 +240,8 @@ CREATE TABLE IF NOT EXISTS notify_log (
 # Columns added after the first release; existing databases are migrated in place.
 _STUDENT_EXTRA = {"location": "TEXT NOT NULL DEFAULT ''", "looking_roles": "TEXT NOT NULL DEFAULT '[]'",
                   "pref_locations": "TEXT NOT NULL DEFAULT '[]'"}
+_EMPLOYER_EXTRA = {"tagline": "TEXT NOT NULL DEFAULT ''", "founded": "TEXT NOT NULL DEFAULT ''", "linkedin": "TEXT NOT NULL DEFAULT ''",
+                   "hires_for": "TEXT NOT NULL DEFAULT '[]'", "perks": "TEXT NOT NULL DEFAULT '[]'"}
 ITEM_KINDS = ["experience", "education", "project", "certification", "organization", "course", "language"]
 
 
@@ -249,6 +251,10 @@ def init(conn) -> None:
     for col, typ in _STUDENT_EXTRA.items():
         if col not in have:
             conn.execute(f"ALTER TABLE student_profiles ADD COLUMN {col} {typ}")
+    have = {r[1] for r in conn.execute("PRAGMA table_info(employer_profiles)")}
+    for col, typ in _EMPLOYER_EXTRA.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE employer_profiles ADD COLUMN {col} {typ}")
     conn.commit()
 
 

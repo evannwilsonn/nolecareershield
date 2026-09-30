@@ -79,6 +79,7 @@ import resume_tools
 import feed
 import admin_extra
 import hiring
+import employer_page
 import ai
 from ui import esc, EMBLEM, BASE_CSS, PAGE_SCRIPT, PAGE_SCRIPT_HASH, _viewer, shell
 from security import (
@@ -329,7 +330,7 @@ def _score_pill(j: dict) -> str:
     if lead_gen and int(j["score"]) < 15:
         text = "Aggregator · flagged"
     else:
-        text = f"Scam score {int(j['score'])} · {j['scam_status']}" + (" · aggregator" if lead_gen else "")
+        text = f"Scam risk {int(j['score'])} · {j['scam_status']}" + (" · aggregator" if lead_gen else "")
     return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
 
 
@@ -579,7 +580,11 @@ def job_detail(job_id: int, request: Request):
     elif j["contact"]:
         apply = f'<p style="font-size:14px;color:var(--soft)">Contact: {esc(j["contact"])}</p>'
 
-    extras = after = ""
+    extras = after = trust_html = ""
+    if viewer and j.get("employer_id"):
+        with store.db() as conn:
+            if store.employer_approved(conn, j["employer_id"]):
+                trust_html = ('<div style="margin-top:8px">' + employer_page.trust_pill(employer_page.trust(conn, j["employer_id"]), "/company/%d#trust" % int(j["employer_id"])) + "</div>")
     if viewer and viewer["role"] == "student":
         with store.db() as conn:
             prof = store.student_profile(conn, viewer["id"])
@@ -597,7 +602,7 @@ def job_detail(job_id: int, request: Request):
     body = f"""<a class="back" href="/jobs">← All jobs</a>
 {banner}
 <h2 class="page" style="margin-top:8px">{esc(j['title'])}</h2>
-<p class="job-co" style="font-size:16px">{esc(j['company'])}</p>
+<p class="job-co" style="font-size:16px">{esc(j['company'])}</p>{trust_html}
 <div class="job-meta" style="margin:14px 0"><span class="chip">{esc(j['category'])}</span><span class="chip">{esc(j['work_type'].title())}</span>{f'<span class="chip">{loc}</span>' if loc else ''}</div>
 {findings_html}{extras}<div class="detail-desc">{esc(j['description'])}</div>{apply}{after}"""
     return shell(body, title=esc(j["title"]) + " — NoleCareerShield", active="/jobs", js=bool(after))
@@ -795,6 +800,7 @@ def privacy():
 <h3>People who post a job</h3>
 <ul><li>You need an employer account: an email address (confirmed by a link) and a password, stored the same way as above, plus a company profile that a reviewer approves before you can message students or post to the feed.</li>
 <li>We store what you type into the listing form, the account that sent it, the automated scam score and the review decision. The contact field is shown publicly if the listing is approved.</li>
+<li>Approved employers get a trust score (0-100, higher is safer) that signed-in students see on the company page and listings. It comes only from what this site can check: reviewer approval, your email domain and website, how your listings were reviewed, scanner flags and reports on your messages, how you answer students, and how complete your profile is. You can see how yours is worked out, and how to raise it, on your company profile.</li>
 <li>Rejected and removed listings are deleted automatically after {PURGE_REJECTED_DAYS} days. Approved listings stop showing after {LISTING_TTL_DAYS} days.</li>
 <li>If you fill in the form before logging in, the listing is kept for up to 3 days so it can be sent when you finish, then deleted.</li></ul>
 <h3>Your data</h3>

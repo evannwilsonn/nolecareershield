@@ -344,6 +344,7 @@ table.t td{padding:10px;border-bottom:1px solid var(--whisper);vertical-align:to
 /* ---------- profile (LinkedIn header + sections, Handshake side column) ---------- */
 .phero{padding:0;overflow:hidden}
 .pbanner{height:118px;background:linear-gradient(120deg,var(--accent-tint),var(--gold-tint));position:relative}
+.pbanner.emp{background:linear-gradient(120deg,var(--gold-tint),var(--sunk))}
 .pbanner::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(135deg,transparent 0 22px,var(--whisper) 22px 23px);opacity:.7}
 .pinfo{padding:0 24px 20px}
 .avatar.xl{width:108px;height:108px;font-size:38px;margin-top:-54px;border:4px solid var(--surface);position:relative;z-index:1}
@@ -395,6 +396,8 @@ table.t td{padding:10px;border-bottom:1px solid var(--whisper);vertical-align:to
 .stat{background:var(--surface);border-radius:12px;box-shadow:0 0 0 1px var(--whisper) inset;padding:12px 14px}
 .stat .n{font-family:var(--serif);font-size:28px;font-weight:500;line-height:1.1;font-variant-numeric:tabular-nums}
 .stat .l{font-size:13px;color:var(--ink-2)}.stat .s{font-size:12px;color:var(--faint);margin-top:2px}
+.stats.two{grid-template-columns:repeat(2,minmax(0,1fr))}.stats.two .l{font-size:12px}
+.pside .fitparts .cat{grid-template-columns:minmax(0,1fr) 64px 30px}
 .stats.sm{margin:12px 0 0}.stats.sm .stat{padding:8px 10px;background:var(--sunk)}.stats.sm .n{font-size:20px}
 a.hjob{display:block;text-decoration:none;color:inherit;margin-bottom:10px}
 .mcard{margin-bottom:10px}.mcard .chips .chip{font-size:12px}
@@ -1499,8 +1502,52 @@ majoring major majors minor degree hold holds certified certification certificat
             keywords_hit: kwHit, keywords_missing: req.keywords.filter(k => !kwHit.includes(k)).slice(0, 8), checklist: checklist.slice(0, 16), requirements: req};
   }
 
+  // ---------- employer trust score (port of employer_page.trust_from_signals) ----------
+  const T_WEIGHTS = {verification: 30, listings: 25, conduct: 20, responsiveness: 15, profile: 10};
+  const T_NAMES = {verification: "Verification", listings: "Listing record", conduct: "Conduct with students", responsiveness: "Responsiveness", profile: "Profile"};
+  const T_LABELS = [[85, "Highly trusted", "ok"], [70, "Trusted", "ok"], [50, "Building trust", ""], [0, "Use caution", "bad"]];
+  const PROFILE_FIELDS = [["website", "a website"], ["about", "an About section"], ["industry", "your industry"], ["size", "company size"], ["location", "a location"],
+    ["contact_name", "a contact name"], ["fsu_connection", "how you work with FSU students"], ["tagline", "a tagline"], ["linkedin", "your LinkedIn page"],
+    ["founded", "the year you were founded"], ["hires_for", "the kinds of roles you hire for"], ["perks", "your perks"]];
+  const tPct = x => Math.max(0, Math.min(100, pyRound(100 * x)));
+  const median = a => !a.length ? null : a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2;
+  function replyTime(h) { if (h === null || h === undefined) return ""; if (h < 1) return "an hour"; if (h < 24) return `${Math.floor(h) + 1} hours`; const d = Math.floor(h / 24) + (h % 24 ? 1 : 0); return `${d} day${d !== 1 ? "s" : ""}`; }
+  function trustFromSignals(s) {
+    const parts = {}, tips = [];
+    const approval = {approved: 1, pending: 0.35}[s.status] || 0, dom = {match: 1, other: 0.6, free: 0.2}[s.domain];
+    const age = s.days_approved >= 180 ? 1 : s.days_approved >= 30 ? 0.8 : approval === 1 ? 0.6 : 0.3;
+    parts.verification = [tPct(0.6 * approval + 0.25 * dom + 0.15 * age), [{approved: "Approved by a NoleCareerShield reviewer", pending: "Waiting for a reviewer"}[s.status] || "Not approved",
+      {match: "email matches their website", other: "email domain differs from their website", free: "uses a personal email address"}[s.domain]].join("; ")];
+    if (s.domain === "free") tips.push("Sign up with an email on your company's domain instead of a personal address.");
+    if (s.listings) {
+      let base = 0.6 * s.approved / s.listings + 0.4 * s.clear / s.listings;
+      if (s.leadgen_rejections) base -= 0.25; if (s.scam_rejections) base = Math.min(base, 0.1);
+      parts.listings = [tPct(base), `${s.approved} of ${s.listings} listings approved` + (s.scam_rejections ? `; ${s.scam_rejections} rejected as a scam` : "") + (s.leadgen_rejections ? `; ${s.leadgen_rejections} rejected as an aggregator` : "")];
+    } else { parts.listings = [60, "No listings reviewed yet"]; tips.push("Post a listing. Each approved listing builds your record."); }
+    const bad = [s.held && `${s.held} message${s.held !== 1 ? "s" : ""} held by the scam scanner`, s.flagged && `${s.flagged} flagged`, s.cautioned && `${s.cautioned} with warning signs`,
+      s.reports && `${s.reports} open report${s.reports !== 1 ? "s" : ""} from students`, s.blocks && `blocked by ${s.blocks} student${s.blocks !== 1 ? "s" : ""}`].filter(Boolean);
+    parts.conduct = [tPct(1 - 0.35 * s.held - 0.2 * s.flagged - 0.1 * s.cautioned - 0.3 * s.reports - 0.15 * s.blocks), bad.length ? bad.join("; ") : s.sent ? "No scanner flags, reports or blocks" : "No messages sent yet"];
+    if (s.threads) {
+      const rate = s.replied / s.threads, med = median(s.reply_hours), speed = med === null ? 0 : med <= 24 ? 1 : med <= 72 ? 0.7 : med <= 168 ? 0.4 : 0.1;
+      parts.responsiveness = [tPct(0.6 * rate + 0.4 * speed), `Answered ${s.replied} of ${s.threads} student messages` + (med !== null ? `; usually within ${replyTime(med)}` : "")];
+      if (rate < 0.8) tips.push("Answer every student who messages you, even with a quick no.");
+    } else parts.responsiveness = [60, "No student messages yet"];
+    const has = k => { const v = s.profile[k]; return Array.isArray(v) ? v.length > 0 : !!v && (k !== "about" || v.length >= 40); };
+    const have = PROFILE_FIELDS.filter(([k]) => has(k));
+    parts.profile = [tPct(have.length / PROFILE_FIELDS.length), `${have.length} of ${PROFILE_FIELDS.length} details filled in`];
+    const missing = PROFILE_FIELDS.filter(([k]) => !has(k)).map(x => x[1]);
+    if (missing.length) tips.push("Add " + missing.slice(0, 3).join(", ") + " to your company profile.");
+    let score = pyRound(Object.keys(T_WEIGHTS).reduce((a, k) => a + T_WEIGHTS[k] * parts[k][0], 0) / 100);
+    if (s.status !== "approved") score = Math.min(score, 49);
+    if (s.scam_rejections) score = Math.min(score, 30);
+  if (s.reports || s.flagged) score = Math.min(score, 69);
+  if (s.held) score = Math.min(score, 49);
+    const [, label, tone] = T_LABELS.find(([cut]) => score >= cut);
+    return {score, label, tone, new: !(s.listings || s.threads), parts: Object.keys(T_WEIGHTS).map(k => ({key: k, name: T_NAMES[k], weight: T_WEIGHTS[k], score: parts[k][0], detail: parts[k][1]})), tips: tips.slice(0, 4)};
+  }
+
   const NCS = {normalize, runTextRules, scorePosting, check, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
-    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
+    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;
   if (typeof module !== "undefined" && module.exports) module.exports = NCS;
@@ -1600,13 +1647,16 @@ function reset() {
   const emp = (email, p) => { const u = user(email, "employer"); S.employers[u.id] = Object.assign({status: "approved", status_note: ""}, p); return u; };
   emp("pat@garnetanalytics.example", {company: "Garnet Analytics", website: "https://garnetanalytics.example", industry: "Technology", size: "11-50", location: "Tallahassee, FL",
     about: "We build campaign and survey dashboards for Florida nonprofits and city agencies.", contact_name: "Pat Lee", contact_title: "Campus Recruiter",
-    fsu_connection: "We hire three FSU interns every summer and table at the fall career fair."});
+    fsu_connection: "We hire three FSU interns every summer and table at the fall career fair.", tagline: "Campaign and survey dashboards for Florida nonprofits", founded: "2016",
+    linkedin: "https://linkedin.com/company/garnet-analytics", hires_for: ["Data & Analytics", "Marketing"], perks: ["Paid", "Mentorship", "Return offers"], approved_at: t - 420 * 86400e3});
   emp("hr@baysidedental.example", {company: "Bayside Dental", website: "https://baysidedental.example", industry: "Healthcare", size: "11-50", location: "Tallahassee, FL",
     about: "A family dental practice with two offices in Tallahassee.", contact_name: "Renee Owens", contact_title: "Office Manager",
-    fsu_connection: "Part-time front desk and patient services roles for FSU pre-health students."});
+    fsu_connection: "Part-time front desk and patient services roles for FSU pre-health students.", tagline: "Family dentistry with two Tallahassee offices", founded: "2009",
+    hires_for: ["Healthcare", "Admin & Office"], perks: ["Paid", "Flexible hours"], approved_at: t - 200 * 86400e3});
   emp("lab@coastalpolicylab.example", {company: "Coastal Policy Lab", website: "https://coastalpolicylab.example", industry: "Research", size: "1-10", location: "Remote",
     about: "A small research group studying coastal resilience policy in the Southeast.", contact_name: "Dr. Ana Ruiz", contact_title: "Lab Director",
-    fsu_connection: "We hire FSU undergraduates as paid research assistants each semester."});
+    fsu_connection: "We hire FSU undergraduates as paid research assistants each semester.", tagline: "Coastal resilience policy research for the Southeast", founded: "2021",
+    linkedin: "https://linkedin.com/company/coastal-policy-lab", hires_for: ["Research"], perks: ["Paid", "Remote-friendly", "Mentorship"], approved_at: t - 60 * 86400e3});
   emp("quickcash.hiring@gmail.com", {company: "QuickCash Staffing", website: "https://quickcashstaffing.example", industry: "Other", size: "1-10", location: "",
     about: "We connect remote workers with flexible payment processing roles across the country.", contact_name: "Mike", contact_title: "HR",
     fsu_connection: "We hire students.", status: "pending"});
@@ -1699,7 +1749,7 @@ const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
 // The scam score only counts scam rules; a listing flagged by the separate aggregator check says so (same as app._score_pill).
 function scorePill(j) {
   const lg = j.findings.some(f => f.rule_id === "lead_gen");
-  return lg && j.score < 15 ? "Aggregator · flagged" : `Scam score ${j.score} · ${j.scam_status}` + (lg ? " · aggregator" : "");
+  return lg && j.score < 15 ? "Aggregator · flagged" : `Scam risk ${j.score} · ${j.scam_status}` + (lg ? " · aggregator" : "");
 }
 
 // ---------------- job cards ----------------
@@ -1831,7 +1881,7 @@ P.job = () => {
     apply = `<a class="apply-btn" href="${esc(j.apply_url)}" data-apply="${j.id}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a><p class="fine" style="text-align:left">Demo links go to example addresses.</p>`;
   } else if (isEmployer() && j.employer_id === me().id) { extras = `<div class="banner info">This is your listing. <a href="#" data-go="hjob?id=${j.id}">See ranked student matches, candidates and stats →</a></div>`; apply = ""; }
   else apply = `<div class="card" style="background:var(--info-tint);color:var(--info);border:none"><b>Log in to apply.</b> Apply links are shown to signed-in FSU students only, which keeps scrapers and scammers away from them.<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="login?role=student&amp;next=job-${j.id}">Student log in</a><a class="b sm sec" href="#" data-go="signup?role=student&amp;next=job-${j.id}">Create student account</a></div></div>`;
-  return `<a class="back" href="#" data-go="jobs">← All jobs</a>${ban}<h2 class="page" style="margin-top:8px">${esc(j.title)}</h2><p class="job-co" style="font-size:16px">${esc(j.company)}</p>
+  return `<a class="back" href="#" data-go="jobs">← All jobs</a>${ban}<h2 class="page" style="margin-top:8px">${esc(j.title)}</h2><p class="job-co" style="font-size:16px">${esc(j.company)}</p>${me() && j.employer_id && approvedEmp(j.employer_id) ? `<div style="margin-top:8px">${trustPill(trustOf(j.employer_id), "company?id=" + j.employer_id + "#trust")}</div>` : ""}
 <div class="job-meta" style="margin:14px 0"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>${fh}${extras}<div class="detail-desc">${esc(j.description)}</div>${apply}${after}`;
 };
 P.post = () => {
@@ -2084,21 +2134,77 @@ P.setup = () => {
 <form id="esetup1" class="card"><div class="form-field"><label for="e-co">Organization name</label><input id="e-co" name="company" required maxlength="120" value="${esc(p.company)}" placeholder="Acme Analytics"></div>
 <div class="form-field"><label for="e-web">Website</label><p class="hint">Reviewers check that it matches the email you signed up with.</p><input id="e-web" name="website" required maxlength="300" value="${esc(p.website)}" placeholder="https://acme.com"></div>
 <div class="grid2"><div class="form-field"><label for="e-ind">Industry</label><select id="e-ind" name="industry">${opts(INDUSTRIES, p.industry)}</select></div><div class="form-field"><label for="e-size">Size</label><select id="e-size" name="size">${opts(SIZES, p.size)}</select></div></div>
-<div class="form-field"><label for="e-loc">Location</label><input id="e-loc" name="location" maxlength="120" value="${esc(p.location)}" placeholder="Tallahassee, FL"></div>
+<div class="form-field"><label for="e-tag">Tagline (optional)</label><p class="hint">One line students see under your name.</p><input id="e-tag" name="tagline" maxlength="120" value="${esc(p.tagline)}" placeholder="Dashboards for Florida nonprofits and city agencies"></div>
+<div class="grid2"><div class="form-field"><label for="e-loc">Location</label><input id="e-loc" name="location" maxlength="120" value="${esc(p.location)}" placeholder="Tallahassee, FL"></div>
+<div class="form-field"><label for="e-founded">Founded (optional)</label><input id="e-founded" name="founded" maxlength="4" inputmode="numeric" value="${esc(p.founded)}" placeholder="2015"></div></div>
+<div class="form-field"><label for="e-li">LinkedIn page (optional)</label><p class="hint">Helps students and reviewers check you out, and raises your trust score.</p><input id="e-li" name="linkedin" maxlength="300" value="${esc(p.linkedin)}" placeholder="linkedin.com/company/acme"></div>
 <div class="form-field"><label for="e-about">About</label><p class="hint">What you do, in plain words. At least a couple of sentences.</p><textarea id="e-about" name="about" required maxlength="1500">${esc(p.about)}</textarea></div><button class="submit-btn" type="submit">Continue</button></form></div>`;
   return `<div style="max-width:680px">${err}${bar}${pageHead("Contact and FSU connection", "Students see who they're talking to. Reviewers use your FSU connection to approve feed access.")}
 <form id="esetup2" class="card"><div class="grid2"><div class="form-field"><label for="e-cn">Your name</label><input id="e-cn" name="contact_name" required maxlength="80" value="${esc(p.contact_name)}"></div><div class="form-field"><label for="e-ct">Your title</label><input id="e-ct" name="contact_title" required maxlength="80" value="${esc(p.contact_title)}" placeholder="Campus Recruiter"></div></div>
 <div class="form-field"><label for="e-fsu">How do you work with FSU students?</label><p class="hint">Internships, part-time roles, career fair, alumni, Tallahassee office. Your feed posts must be opportunities or advice for FSU students.</p><textarea id="e-fsu" name="fsu_connection" required maxlength="800" style="min-height:100px">${esc(p.fsu_connection)}</textarea></div>
+<div class="form-field"><label>Kinds of roles you hire students for</label>${checks("hires_for", N.CATEGORIES.slice(0, -1), p.hires_for)}</div>
+<div class="form-field"><label>Perks for student hires</label>${checks("perks", PERKS, p.perks)}</div>
 <div class="row"><a class="b sec" href="#" data-go="setup?step=1">Back</a><button class="submit-btn" type="submit">${["pending", "approved"].includes(p.status) ? "Save" : "Send for review"}</button></div></form></div>`;
 };
-function employerCard(p) {
-  const pill = {approved: '<span class="pill ok">✓ Approved employer</span>', pending: '<span class="pill warn">Waiting for review</span>', rejected: '<span class="pill bad">Not approved</span>', draft: '<span class="pill">Profile not finished</span>'}[p.status] || "";
-  return `<div class="card"><div class="row" style="gap:16px;align-items:flex-start"><span class="avatar lg emp">${initials(p.company)}</span><div style="flex:1;min-width:0">
-<h2 style="font-family:var(--serif);font-weight:500;font-size:26px;line-height:1.2">${esc(p.company || "Your organization")}</h2><p class="muted">${[p.industry, p.size && p.size + " people", p.location].filter(Boolean).map(esc).join(" · ")}</p>
-<div class="row" style="margin-top:10px">${pill}${p.website ? `<a class="b sm ghost" href="${esc(p.website)}" target="_blank" rel="noopener noreferrer nofollow">Website ↗</a>` : ""}</div></div></div>
-${p.about ? `<p style="margin-top:14px;white-space:pre-wrap">${esc(p.about)}</p>` : ""}${p.fsu_connection ? `<h3 class="sec" style="font-size:16px">Working with FSU students</h3><p style="white-space:pre-wrap">${esc(p.fsu_connection)}</p>` : ""}
-${p.contact_name ? `<p class="small muted" style="margin-top:12px">Contact: ${esc(p.contact_name)}, ${esc(p.contact_title)}</p>` : ""}</div>`;
+// ---------------- employer trust score + company page, same as employer_page.py ----------------
+const PERKS = ["Paid", "Flexible hours", "Remote-friendly", "Mentorship", "Return offers", "Housing help", "Tuition help", "Networking events"];
+const PROFILE_FIELDS = N.PROFILE_FIELDS;
+function domainMatch(email, site) {
+  const ed = (email || "").split("@").pop().toLowerCase(), host = ((/^https?:\/\/([^\/?#:]+)/i.exec(site || "") || [])[1] || "").toLowerCase().replace(/^www\./, "");
+  if (N.FREE_MAIL.has(ed)) return "free";
+  return host && (ed === host || ed.endsWith("." + host) || host.endsWith("." + ed)) ? "match" : "other";
 }
+function trustSignals(uid) {
+  const p = EP(uid) || {}, u = U(uid) || {email: ""};
+  const decided = S.jobs.filter(j => j.employer_id === uid && ["approved", "rejected", "removed"].includes(j.review_status));
+  const sent = S.convos.flatMap(c => c.messages.filter(m => m.from === uid));
+  const threads = S.convos.filter(c => c.employer === uid && c.messages.length && c.messages[0].from === c.student);
+  let replied = 0; const hours = [];
+  for (const c of threads) {
+    const ms = c.messages.filter(m => m.status === "delivered"), first = ms.find(m => m.from !== uid), rep = first && ms.find(m => m.from === uid && m.at >= first.at);
+    if (rep) { replied++; hours.push((rep.at - first.at) / 3600e3); }
+  }
+  const profile = {}; PROFILE_FIELDS.forEach(([k]) => { profile[k] = p[k]; });
+  return {status: p.status || "draft", domain: domainMatch(u.email, p.website), days_approved: p.status === "approved" && p.approved_at ? (NOW() - p.approved_at) / 86400e3 : 0,
+    listings: decided.length, approved: decided.filter(j => j.review_status === "approved").length, clear: decided.filter(j => j.scam_status === "clear").length,
+    scam_rejections: decided.filter(j => j.review_label === "scam").length, leadgen_rejections: decided.filter(j => j.review_label === "lead_gen").length,
+    sent: sent.length, held: sent.filter(m => m.status === "held" || m.band === "block").length, flagged: sent.filter(m => m.band === "review" && m.status === "delivered").length, cautioned: sent.filter(m => m.band === "caution" && m.status === "delivered").length,
+    reports: S.reports.filter(r => r.employer === uid && !r.resolved).length, blocks: S.convos.filter(c => c.employer === uid && c.blocked_by === c.student).length,
+    threads: threads.length, replied, reply_hours: hours.sort((a, b) => a - b), profile};
+}
+const trustOf = uid => N.trustFromSignals(trustSignals(uid));
+const median = N.median, replyTime = N.replyTime;
+const trustPill = (t, go) => { const pill = `<span class="pill ${t.tone}" title="Employer trust score: 100 is the most trustworthy">Trust ${t.score} · ${esc(t.label)}</span>`; return go ? `<a href="#" data-go="${go}" style="text-decoration:none">${pill}</a>` : pill; };
+function trustCard(t, owner) {
+  return `<section class="card" id="trust"><div class="phead"><h2>Trust score</h2></div><div class="fit" style="grid-template-columns:auto minmax(0,1fr)"><div class="ring sm" style="--p:${t.score}"><b>${t.score}</b></div><div><div class="fitlabel" style="font-size:19px">${esc(t.label)}</div><p class="small muted">Out of 100. Higher is safer.</p></div></div>
+${t.new ? '<p class="small muted" style="margin-top:6px">New on NoleCareerShield, so part of this score is a neutral starting point.</p>' : ""}<div class="fitparts tparts">${t.parts.map(p => `<div class="cat"><span>${esc(p.name)}</span><div class="meter${p.score >= 75 ? " ok" : p.score < 45 ? " warn" : ""}"><i style="width:${p.score}%"></i></div><span>${p.score}</span><div class="why2">${esc(p.detail)}</div></div>`).join("")}</div>
+<p class="small faint" style="margin-top:10px">Worked out from what this site can check: reviewer approval, email and website, how their listings were reviewed, scanner flags and reports on their messages, and how they answer students. It isn't a guarantee; still verify an employer yourself.</p>
+${owner && t.tips.length ? `<h4 class="small" style="margin:14px 0 6px">Raise your score</h4><ul class="small" style="margin:0 0 0 18px">${t.tips.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</section>`;
+}
+function companyHtml(p, uid, notice) {
+  const owner = me().id === uid, s = trustSignals(uid), t = N.trustFromSignals(s), med = median(s.reply_hours);
+  const jobs = approvedJobs().filter(j => j.employer_id === uid).slice().reverse();
+  const statusPill = {approved: '<span class="pill ok">✓ Approved employer</span>', pending: '<span class="pill warn">Waiting for review</span>', rejected: '<span class="pill bad">Not approved</span>', suspended: '<span class="pill bad">Suspended</span>', draft: '<span class="pill">Profile not finished</span>'}[p.status || "draft"] || "";
+  const meta = [p.industry, p.size && p.size + " people", p.location, p.founded && "Founded " + p.founded].filter(Boolean).map(esc).join(" · ");
+  const links = [["website", "Website"], ["linkedin", "LinkedIn"]].filter(([k]) => p[k]).map(([k, l]) => `<a href="${esc(p[k])}" target="_blank" rel="noopener noreferrer nofollow">${l} ↗</a>`).join("");
+  const actions = owner ? '<div class="row"><a class="b sm sec" href="#" data-go="setup?step=1">Edit profile</a><a class="b sm ghost" href="#" data-go="hiring">Your listings</a></div>'
+    : isStudent() && p.status === "approved" ? `<div class="row"><a class="b sm" href="#" data-go="newmsg?to=${uid}">${icon("chat", 14)} Message</a></div>` : "";
+  const hero = `<section class="card phero"><div class="pbanner emp" aria-hidden="true"></div><div class="pinfo"><span class="avatar xl emp">${initials(p.company)}</span>
+<div class="row between" style="align-items:flex-end;gap:14px"><div style="min-width:0"><h1>${esc(p.company || "Your organization")}</h1>${p.tagline ? `<p class="headline">${esc(p.tagline)}</p>` : ""}<p class="school">${meta}</p><p class="where"><span class="plinks">${links}</span></p>
+<div class="row" style="margin-top:10px">${statusPill}${trustPill(t, (owner ? "profile" : "company?id=" + uid) + "#trust")}</div></div>${actions}</div></div></section>`;
+  const since = p.status === "approved" ? (s.days_approved < 30 ? "New" : `${Math.floor(s.days_approved / 30)} month${s.days_approved >= 60 ? "s" : ""}`) : "Not yet approved";
+  const glance = `<section class="card"><div class="phead"><h2>Hiring at a glance</h2></div><div class="stats sm two"><div class="stat"><div class="n">${jobs.length}</div><div class="l">open listings</div></div><div class="stat"><div class="n">${s.listings}</div><div class="l">listings reviewed</div></div>
+<div class="stat"><div class="n">${s.threads ? Math.round(100 * s.replied / s.threads) + "%" : "—"}</div><div class="l">student messages answered</div></div><div class="stat"><div class="n" style="font-size:17px">${esc(replyTime(med) || "—")}</div><div class="l">typical reply time</div></div></div>
+<p class="small muted" style="margin-top:10px">On NoleCareerShield: ${esc(since)}</p></section>`;
+  const contact = p.contact_name ? `<section class="card"><div class="phead"><h2>Contact</h2></div><div class="person"><span class="avatar emp">${initials(p.contact_name)}</span><div style="min-width:0"><div class="nm">${esc(p.contact_name)}</div><div class="sub">${esc(p.contact_title || "")}</div></div></div></section>` : "";
+  const sec = (title, inner) => `<section class="card pcard"><div class="phead"><h2>${title}</h2></div>${inner}</section>`;
+  const main = (p.about ? sec("About", `<p class="desc">${esc(p.about)}</p>`) : "") + (p.fsu_connection ? sec("Working with FSU students", `<p class="desc">${esc(p.fsu_connection)}</p>`) : "")
+    + ((p.hires_for || []).length ? sec("Hires for", `<div class="chips">${p.hires_for.map(x => `<span class="pill">${esc(x)}</span>`).join("")}</div>`) : "")
+    + ((p.perks || []).length ? sec("Perks for student hires", `<div class="chips">${p.perks.map(x => `<span class="chip">✓ ${esc(x)}</span>`).join("")}</div>`) : "")
+    + `<section class="card pcard"><div class="phead"><h2>Open listings</h2><span class="small faint">${jobs.length}</span></div>${jobs.map(j => `<a class="job" href="#" data-go="job?id=${j.id}"><div class="job-title">${esc(j.title)}</div><div class="job-meta"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div></a>`).join("") || '<p class="small muted">No open listings right now.</p>'}</section>`;
+  return (notice || "") + hero + `<div class="pgrid"><aside class="pside">${trustCard(t, owner)}${glance}${contact}</aside><div class="pmain">${main}</div></div>`;
+}
+
 P.profile = () => {
   if (!me()) return needLogin("your profile");
   const data = `<h3 class="sec">Your data</h3><div class="card"><div class="row between"><div><b>Download your data</b><p class="small muted">On the live site: everything stored about your account, as a JSON file.</p></div><button class="b sm sec" type="button" data-do="export">Show my data</button></div>${S.showExport ? `<pre style="margin-top:12px;white-space:pre-wrap;font:12px/1.5 var(--mono);background:var(--sunk);padding:10px;border-radius:8px;max-height:260px;overflow:auto">${esc(exportData())}</pre>` : ""}</div>
@@ -2110,7 +2216,7 @@ P.profile = () => {
     return profileHtml(p, {owner: true, showLinks: true, notice, completion: completion(p)}) + `<div class="pdata">${data}</div>`;
   }
   const p = EP(me().id); if (!p || !p.company) { go("setup?step=1"); return null; }
-  return takeFlash() + (p.status === "pending" ? banner("info", "A reviewer checks every organization, usually within a business day. In the demo, open the reviewer view to approve it.") : "") + pageHead("Company profile", "", "Profile") + employerCard(p) + '<div class="row" style="margin-top:12px"><a class="b sec" href="#" data-go="setup?step=1">Edit profile</a></div>' + data;
+  return takeFlash() + (p.status === "pending" ? banner("info", "A reviewer checks every organization, usually within a business day. In the demo, open the reviewer view to approve it.") : "") + companyHtml(p, me().id, "") + `<div class="pdata">${data}</div>`;
 };
 // ---------------- profile sections (LinkedIn x Handshake), same as profile_page.py ----------------
 const ITEM_SECTIONS = [["experience", "Experience", "Add experience", "Jobs, internships, research and volunteer work."],
@@ -2479,9 +2585,7 @@ P.company = () => {
   if (!me()) return needLogin("company pages");
   const id = Number(S.route.q.id), p = EP(id);
   if (!p || (p.status !== "approved" && id !== me().id)) return '<p class="empty" style="margin:40px 0">That organization isn\'t available.</p>';
-  const jobs = approvedJobs().filter(j => j.employer_id === id);
-  return '<a class="back" href="#" data-go="jobs">← Jobs</a>' + employerCard(p) + (isStudent() && p.status === "approved" ? `<div class="row" style="margin-top:12px"><a class="b" href="#" data-go="newmsg?to=${id}">${icon("chat", 16)} Message ${esc(p.company)}</a></div>` : "") +
-    `<h3 class="sec">Open listings</h3>${jobs.map(j => jobCard(j)).join("") || '<div class="empty">No open listings right now.</div>'}`;
+  return '<a class="back" href="#" data-go="jobs">← Jobs</a>' + companyHtml(p, id);
 };
 P.talent = () => {
   if (!isEmployer()) return needLogin("the student directory", "employer");
@@ -2596,7 +2700,7 @@ function domainNote(email, site) {
   return `<span class="pill warn">Email @${esc(ed)} ≠ website ${esc(host || "?")}</span>`;
 }
 P.aemployers = () => adminPage("Employers", "aemployers", Object.keys(S.employers).map(Number).filter(id => S.employers[id].status === "pending").map(id => { const p = EP(id), u = U(id);
-  return `<div class="rev-card"><div class="row between" style="align-items:flex-start"><div><div class="job-title">${esc(p.company)}</div><div class="job-co">${esc(u.email)} · ${esc(p.contact_name || "")}, ${esc(p.contact_title || "")}</div></div>${domainNote(u.email, p.website)}</div>
+  return `<div class="rev-card"><div class="row between" style="align-items:flex-start"><div><div class="job-title">${esc(p.company)}</div><div class="job-co">${esc(u.email)} · ${esc(p.contact_name || "")}, ${esc(p.contact_title || "")}</div></div><div class="row">${domainNote(u.email, p.website)}${trustPill(trustOf(id))}</div></div>
 <p style="margin-top:10px">${esc(p.about)}</p><p class="small muted" style="margin-top:6px"><b>FSU connection:</b> ${esc(p.fsu_connection)}</p><p class="small muted">Website: ${esc(p.website)}</p>
 <div class="rev-actions"><button class="btn-approve" type="button" data-do="emp-approve" data-id="${id}">Approve</button><button class="btn-reject" type="button" data-do="emp-reject" data-id="${id}" data-note="We couldn't confirm the organization from its website and email.">Reject: can't verify</button><button class="btn-reject" type="button" data-do="emp-reject" data-id="${id}" data-note="We couldn't see how the organization hires or supports FSU students.">Reject: not FSU-related</button></div></div>`; }).join("") || '<div class="empty">No employers waiting.</div>');
 P.aposts = () => adminPage("Feed review", "aposts", S.posts.filter(p => ["pending", "held"].includes(p.status)).map(p => `<div class="rev-card"><div class="row between">${person(p.author, false)}<span class="pill warn">${p.status === "pending" ? "Employer post, needs approval" : "Held: scanner flags or reports"}</span></div>
@@ -2691,13 +2795,13 @@ document.addEventListener("click", e => {
     "del-version": () => { S.versions = S.versions.filter(x => x.id !== id); render(true); },
     block: () => { c.blocked_by = me().id; render(true); }, unblock: () => { c.blocked_by = null; render(true); },
     archive: () => { c.hidden[me().id] = true; go("messages"); },
-    "report-convo": () => { const last = c.messages.filter(m => m.from !== me().id).pop(); S.reports.push({what: "Conversation reported", by: me().id, text: last ? last.body : "(no messages)", at: NOW()}); flash("verified", "Reported. A reviewer will look at this conversation. You can also block the sender."); render(true); },
+    "report-convo": () => { const last = c.messages.filter(m => m.from !== me().id).pop(); S.reports.push({what: "Conversation reported", by: me().id, employer: isStudent() ? c.employer : null, text: last ? last.body : "(no messages)", at: NOW()}); flash("verified", "Reported. A reviewer will look at this conversation. You can also block the sender."); render(true); },
     helpful: () => { const p = S.posts.find(x => x.id === id); p.helpful.has(me().id) ? p.helpful.delete(me().id) : p.helpful.add(me().id); render(true); },
     comments: () => { S.openComments = S.openComments === id ? null : id; render(true); },
     "report-post": () => { const p = S.posts.find(x => x.id === id); if (!p.reports.has(me().id)) { p.reports.add(me().id); S.reports.push({what: "Feed post reported", by: me().id, text: p.body, at: NOW()}); if (p.reports.size >= 3) p.status = "held"; } render(true); },
     "del-post": () => { S.posts = S.posts.filter(x => x.id !== id); render(true); },
     export: () => { S.showExport = !S.showExport; render(true); },
-    "emp-approve": () => { EP(id).status = "approved"; mail(U(id).email, "Your organization was approved", "A reviewer approved your organization. You can now message students, browse the directory and post to the FSU feed.", null); render(true); },
+    "emp-approve": () => { EP(id).status = "approved"; EP(id).approved_at = NOW(); mail(U(id).email, "Your organization was approved", "A reviewer approved your organization. You can now message students, browse the directory and post to the FSU feed.", null); render(true); },
     "emp-reject": () => { EP(id).status = "rejected"; EP(id).status_note = d.dataset.note; render(true); },
     "emp-suspend": () => { EP(id).status = "suspended"; S.convos.forEach(cv => cv.messages.forEach(m => { if (m.from === id && m.status === "held") m.status = "removed"; })); render(true); },
     "post-publish": () => { S.posts.find(x => x.id === id).status = "published"; render(true); },
@@ -2802,11 +2906,16 @@ document.addEventListener("submit", e => {
   if (id === "esetup1") { const p = EP(me().id), web = url(g("website"));
     if (!g("company")) return back(1, "Organization name is required."); if (!web) return back(1, "Website doesn't look like a web address.");
     if (g("about").length < 40) return back(1, "Write at least a couple of sentences about the organization.");
-    Object.assign(p, {company: g("company").slice(0, 120), website: web, industry: g("industry"), size: g("size"), location: g("location").slice(0, 120), about: g("about").slice(0, 1500)});
+    const founded = g("founded"), li = url(g("linkedin"), "linkedin.com");
+    if (founded && !(/^(?:18|19|20)\d{2}$/.test(founded) && Number(founded) <= new Date().getFullYear())) return back(1, "Founded should be a year, like 2015.");
+    if (li === null) return back(1, "LinkedIn should be a linkedin.com address.");
+    Object.assign(p, {company: g("company").slice(0, 120), website: web, industry: g("industry"), size: g("size"), location: g("location").slice(0, 120), about: g("about").slice(0, 1500),
+      tagline: g("tagline").slice(0, 120), founded, linkedin: li});
     return go("setup?step=2"); }
   if (id === "esetup2") { const p = EP(me().id);
     if (!g("contact_name") || !g("contact_title") || !g("fsu_connection")) return back(2, "Fill in your name, title and how you work with FSU students.");
-    Object.assign(p, {contact_name: g("contact_name"), contact_title: g("contact_title"), fsu_connection: g("fsu_connection").slice(0, 800)});
+    Object.assign(p, {contact_name: g("contact_name"), contact_title: g("contact_title"), fsu_connection: g("fsu_connection").slice(0, 800),
+      hires_for: many("hires_for").filter(x => N.CATEGORIES.includes(x)), perks: many("perks").filter(x => PERKS.includes(x))});
     if (["draft", "rejected", undefined].includes(p.status)) p.status = "pending";
     return go("profile"); }
   if (id === "deleteForm") {

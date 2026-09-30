@@ -14,6 +14,7 @@ from fastapi import APIRouter, Cookie, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 import security
+import employer_page
 import store
 import ui
 import web
@@ -85,9 +86,11 @@ def employers(session: str | None = Cookie(default=None)):
     with store.db() as conn:
         pend = store.rows(conn, "SELECT e.*, u.email FROM employer_profiles e JOIN users u ON u.id = e.user_id WHERE e.status = 'pending' ORDER BY e.updated_at")
         live = store.rows(conn, "SELECT e.*, u.email FROM employer_profiles e JOIN users u ON u.id = e.user_id WHERE e.status IN ('approved','suspended') ORDER BY e.company LIMIT 200")
+        for e in pend + live:
+            e["trust_pill"] = employer_page.trust_pill(employer_page.trust(conn, e["user_id"]))
     rej = "".join(f'<button class="btn-reject" name="note" value="{k}" type="submit">Reject: {esc(k.replace("_", " "))}</button>' for k in REJECT_NOTES)
     cards = "".join(f"""<div class="rev-card"><div class="row between"><div><div class="job-title">{esc(e['company'])}</div>
-<div class="job-co">{esc(e['email'])} · {esc(e['website'])}</div></div>{_domain_note(e['email'], e['website'])}</div>
+<div class="job-co">{esc(e['email'])} · {esc(e['website'])}</div></div><div class="row">{_domain_note(e['email'], e['website'])}{e['trust_pill']}</div></div>
 <p class="small muted" style="margin-top:6px">{esc(" · ".join(x for x in (e['industry'], e['size'], e['location']) if x))}</p>
 <p style="margin-top:8px;white-space:pre-wrap">{esc(e['about'])}</p>
 <p class="small" style="margin-top:8px"><b>FSU connection:</b> {esc(e['fsu_connection'])}</p>
@@ -95,7 +98,7 @@ def employers(session: str | None = Cookie(default=None)):
 <div class="rev-actions"><form method="post" action="/admin/employers/{int(e['user_id'])}/approve">{csrf}<button class="btn-approve" type="submit">Approve</button></form>
 <form method="post" action="/admin/employers/{int(e['user_id'])}/reject" style="display:flex;gap:8px;flex-wrap:wrap">{csrf}{rej}</form></div></div>""" for e in pend) \
         or '<div class="empty">No employers waiting.</div>'
-    rows = "".join(f"""<tr><td><b>{esc(e['company'])}</b><div class="small faint">{esc(e['email'])}</div></td><td>{esc(e['status'])}</td>
+    rows = "".join(f"""<tr><td><b>{esc(e['company'])}</b><div class="small faint">{esc(e['email'])}</div></td><td>{esc(e['status'])}</td><td>{e['trust_pill']}</td>
 <td><form method="post" action="/admin/employers/{int(e['user_id'])}/{'suspend' if e['status'] == 'approved' else 'approve'}">{csrf}
 <button class="b sm {'danger' if e['status'] == 'approved' else 'sec'}" type="submit">{'Suspend' if e['status'] == 'approved' else 'Reinstate'}</button></form></td></tr>""" for e in live)
     body = (f'<p class="lead">Approve an organization only when the website, email domain and FSU connection check out. Approval lets them '
