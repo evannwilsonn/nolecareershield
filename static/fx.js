@@ -8,6 +8,8 @@
  *   4. Border light: sets --mx/--my on the card under the cursor so CSS can light its border there.
  *   5. Signed-in pages: score rings, bars and funnels draw in when seen, numbers count up once,
  *      "/" focuses the page's search box, and J/K move between cards in the reviewer queues.
+ *   6. Listing page: the sticky right column (.jd-side) that is taller than the window sticks by its
+ *      bottom edge instead of its top, so nothing in it is ever out of reach (CSS alone sticks it at the top).
  * Honours prefers-reduced-motion and Save-Data (the footage stays a still photo). Works on pages that
  * re-render in place (the demo): new sections are picked up as they appear, old ones are dropped. */
 (function () {
@@ -305,7 +307,22 @@
     kick();
   });
 
+  // ---------- listing page: a tall sticky column sticks by its bottom ----------
+  var sides = [];
+  function fitSide(el) {
+    var top = (header ? header.offsetHeight : 57) + 18;
+    var room = window.innerHeight - el.offsetHeight - 16;
+    el.style.setProperty("--side-top", Math.min(top, room) + "px");
+  }
+  function fitSides() { sides = sides.filter(function (el) { return el.isConnected; }); sides.forEach(fitSide); }
+  window.addEventListener("resize", fitSides);
+
   function scan() {
+    document.querySelectorAll(".jd-side").forEach(function (el) {
+      if (el.__side) return; el.__side = true;
+      sides.push(el);
+      if ("ResizeObserver" in window) new ResizeObserver(function () { fitSide(el); }).observe(el);
+    });
     cines = cines.filter(function (c) { return c.sec.isConnected; });
     scans = scans.filter(function (c) { return c.sec.isConnected; });
     pans = Array.prototype.filter.call(document.querySelectorAll("[data-pan]"), function (el) { return el.isConnected; });

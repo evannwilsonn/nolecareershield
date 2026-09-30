@@ -444,7 +444,7 @@ function completion(p) {
   return [Math.round(100 * checks.filter(c => c[0]).length / checks.length), checks.filter(c => !c[0]).map(c => c[1])];
 }
 
-// ---------------- the job board (twin of jobboard.py): tabs, search, chips, list, detail ----------------
+// ---------------- the job board (twin of jobboard.py): search + segmented tabs, filter rail, result cards, listing page ----------------
 const JB_KINDS = [["full-time", "Full-time"], ["internship", "Internship"], ["part-time", "Part-time"]], JB_KIND_LABEL = {"full-time": "Full-time", internship: "Internship", "part-time": "Part-time", "on-campus": "On-campus"};
 const JB_WHEN = [[0, "Any time"], [1, "Past 24 hours"], [7, "Past week"], [30, "Past month"]], JB_SORTS = [["relevant", "Most relevant"], ["recent", "Most recent"]];
 const JB_LEVEL = {high: "High", medium: "Medium", low: "Low"}, JB_MAX_SAVED = 200, JB_MAX_LIST = 60;
@@ -460,11 +460,11 @@ function jbParams(q, student) {
   const pick = (v, allowed, def) => allowed.includes((v || "").trim()) ? v.trim() : (def || "");
   return {search: (q.search || "").trim().slice(0, 200), category: pick(q.category, N.CATEGORIES), work_type: pick(q.work_type, N.WORK_TYPES), kind: pick(q.kind, JB_KINDS.map(k => k[0])),
     loc: (q.loc || "").trim().slice(0, 60), when: ["1", "7", "30"].includes(String(q.when)) ? Number(q.when) : 0, quick: String(q.quick) === "1" ? 1 : 0,
-    following: student && String(q.following) === "1" ? 1 : 0, sort: pick(q.sort, JB_SORTS.map(s => s[0]), "relevant"), tab: student && q.tab === "saved" ? "saved" : "jobs", job: Number(q.job) || 0};
+    following: student && String(q.following) === "1" ? 1 : 0, sort: pick(q.sort, JB_SORTS.map(s => s[0]), "relevant"), tab: student && q.tab === "saved" ? "saved" : "jobs"};
 }
 function jbUrl(p, over) {
   const cur = Object.assign({}, p, over || {}), qs = new URLSearchParams();
-  for (const k of ["tab", "search", "category", "work_type", "kind", "loc", "when", "quick", "following", "sort", "job"]) {
+  for (const k of ["tab", "search", "category", "work_type", "kind", "loc", "when", "quick", "following", "sort"]) {
     const v = cur[k]; if (v === null || v === undefined || v === "" || v === 0 || (k === "tab" && v === "jobs") || (k === "sort" && v === "relevant")) continue; qs.set(k, v);
   }
   return "jobs" + (qs.toString() ? "?" + qs : "");
@@ -481,35 +481,48 @@ function jbRank(jobs, p, profile) {
 }
 const jbSaveBtn = (jid, saved, next, label) => { const t = saved ? "Remove from saved jobs" : "Save job";
   return `<span class="jc-sv"><button type="button" class="${label ? "sv-l" : "sv-i"}${saved ? " on" : ""}" data-do="${saved ? "job-unsave" : "job-save"}" data-id="${jid}" data-next="${esc(next)}" aria-label="${t}" title="${t}" aria-pressed="${saved}">${bookmark(saved, 18)}${label ? `<span>${saved ? "Saved" : "Save"}</span>` : ""}</button></span>`; };
-function jbCard(j, p, sel, fitpct, saved) {
+// Card edge colour: the scam-check verdict plus the gauge zone (twin of jobboard.verdict_class).
+function jbVerdict(j) {
+  const zone = riskPosition(j.score, j.scam_status, j.findings.some(f => f.rule_id === "lead_gen"))[0];
+  return `v-${["clear", "flagged", "held"].includes(j.scam_status) ? j.scam_status : "flagged"} z${zone}`;
+}
+function jbCard(j, p, fitpct, saved) {
   const match = fitpct !== null && fitpct !== undefined ? `<span class="jc-match ${jbLevel(fitpct)}">${fitpct}% match</span>` : "";
   const tags = `<span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span>` + match + (j.easy_apply ? '<span class="jc-tag q">Quick apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="jc-tag n">New</span>' : "");
-  const facts = [jbWhere(j), cap(j.work_type), j.category].filter(Boolean).join(" · ");
-  return `<article class="jc${sel ? " sel" : ""}"${sel ? " aria-current=true" : ""}><span class="jc-logo" aria-hidden="true">${initials(j.company)}</span><div class="jc-body"><h3 class="jc-title"><a class="jc-link jc-d" href="#" data-go="${esc(jbUrl(p, {job: j.id}))}">${esc(j.title)}</a><a class="jc-link jc-m" href="#" data-go="job?id=${j.id}">${esc(j.title)}</a></h3>`
-    + `<div class="jc-co">${esc(j.company)}</div><div class="jc-facts">${esc(facts)}</div><div class="jc-tags">${tags}</div></div>${saved === null ? "" : jbSaveBtn(j.id, saved, jbUrl(p, {job: sel ? j.id : null}))}</article>`;
+  const place = jbWhere(j), setting = cap(j.work_type);
+  const facts = [place, place === setting ? "" : setting, jbKinds(j).slice(0, 2).map(k => JB_KIND_LABEL[k]).join(", ")].filter(Boolean).join(" · ");
+  return `<article class="jc ${jbVerdict(j)}"><span class="jc-logo" aria-hidden="true">${initials(j.company)}</span><div class="jc-body"><h3 class="jc-title"><a class="jc-link" href="#" data-go="job?id=${j.id}">${esc(j.title)}</a></h3>`
+    + `<div class="jc-co">${esc(j.company)} <span class="jc-cat">· ${esc(j.category)}</span></div><div class="jc-facts">${esc(facts)}</div><div class="jc-tags">${tags}</div></div>${saved === null ? "" : jbSaveBtn(j.id, saved, jbUrl(p))}</article>`;
 }
 const jbMenu = (label, items, active, cls) => `<details class="jb-dd ${cls || ""}"><summary class="jb-chip${active ? " on" : ""}">${esc(label)}<i class="car"></i></summary><div class="jb-menu">${items.map(([t, h, on]) => `<a href="#" data-go="${esc(h)}"${on ? " class=on aria-current=true" : ""}>${esc(t)}</a>`).join("")}</div></details>`;
-const jbToggle = (label, href, on) => `<a class="jb-chip${on ? " on" : ""}" href="#" data-go="${esc(href)}"${on ? " aria-pressed=true" : ""}>${esc(label)}</a>`;
-function jbControls(p, all, student) {
-  const search = `<form class="jb-search" id="jbSearch" role="search"><label class="sr" for="jb-q">Describe a job you want</label><input id="jb-q" name="search" value="${esc(p.search)}" placeholder="Describe a job you want" maxlength="200" autocomplete="off"><button type="submit">Search</button></form>`;
+const jbOpt = (label, href, on, kind) => `<a class="jb-opt ${kind || "check"}${on ? " on" : ""}" href="#" data-go="${esc(href)}"${on ? " aria-current=true" : ""}><i aria-hidden="true"></i><span>${esc(label)}</span></a>`;
+const jbSec = (title, opts, open) => `<details class="jb-sec"${open ? " open" : ""}><summary>${esc(title)}<i class="car" aria-hidden="true"></i></summary><div class="jb-opts">${opts.join("")}</div></details>`;
+const jbActive = p => ["category", "work_type", "kind", "loc", "when", "quick", "following"].filter(k => p[k]).length;
+function jbRailSections(p, all, student) {
   const locs = {}; all.forEach(j => { if (j.location) locs[j.location] = (locs[j.location] || 0) + 1; });
   const top = Object.keys(locs).sort((a, b) => locs[b] - locs[a] || a.toLowerCase().localeCompare(b.toLowerCase())).slice(0, 8);
-  const locItems = [["Any location", jbUrl(p, {loc: null}), !p.loc]].concat(top.map(l => [l, jbUrl(p, {loc: l}), p.loc.toLowerCase() === l.toLowerCase()]), [["Remote only", jbUrl(p, {work_type: p.work_type !== "remote" ? "remote" : null}), p.work_type === "remote"]]);
-  const chips = [jbMenu("Location" + (p.loc ? ": " + p.loc : ""), locItems, !!p.loc)];
-  JB_KINDS.forEach(([k, label]) => chips.push(jbToggle(label, jbUrl(p, {kind: p.kind === k ? null : k}), p.kind === k)));
-  chips.push(jbMenu("Date posted", JB_WHEN.map(([d, t]) => [t, jbUrl(p, {when: d}), p.when === d]), !!p.when));
-  chips.push(jbToggle("Quick apply", jbUrl(p, {quick: p.quick ? 0 : 1}), !!p.quick));
-  if (student) chips.push(jbToggle("From companies I follow", jbUrl(p, {following: p.following ? 0 : 1}), !!p.following));
-  const cats = [...new Set(all.map(j => j.category))].sort();
-  const fl = [["All categories", jbUrl(p, {category: null}), !p.category]].concat(cats.map(c => [c, jbUrl(p, {category: p.category === c ? null : c}), p.category === c]),
-    [["Any work setting", jbUrl(p, {work_type: null}), !p.work_type]], N.WORK_TYPES.map(w => [cap(w), jbUrl(p, {work_type: p.work_type === w ? null : w}), p.work_type === w]));
-  chips.push(jbMenu("Filters", fl, !!(p.category || (p.work_type && p.work_type !== "remote")), "wide"));
-  const clear = ["search", "category", "work_type", "kind", "loc", "when", "quick", "following"].some(k => p[k]) ? '<a class="jb-clear" href="#" data-go="jobs">Clear all</a>' : "";
-  return `<div class="jb-controls">${search}<div class="jb-chips" role="group" aria-label="Filters">${chips.join("")}${clear}</div></div>`;
+  const cats = [...new Set(all.map(j => j.category))].sort(), same = l => p.loc.toLowerCase() === l.toLowerCase();
+  const more = [jbOpt("Quick apply", jbUrl(p, {quick: p.quick ? 0 : 1}), !!p.quick)];
+  if (student) more.push(jbOpt("From companies I follow", jbUrl(p, {following: p.following ? 0 : 1}), !!p.following));
+  return [
+    jbSec("Job type", JB_KINDS.map(([k, label]) => jbOpt(label, jbUrl(p, {kind: p.kind === k ? null : k}), p.kind === k)), true),
+    jbSec("Date posted", JB_WHEN.map(([d, t]) => jbOpt(t, jbUrl(p, {when: d}), p.when === d, "radio")), true),
+    jbSec("Location", [jbOpt("Any location", jbUrl(p, {loc: null}), !p.loc, "radio")].concat(top.map(l => jbOpt(l, jbUrl(p, {loc: same(l) ? null : l}), same(l), "radio")),
+      [jbOpt("Remote only", jbUrl(p, {work_type: p.work_type !== "remote" ? "remote" : null}), p.work_type === "remote")]), true),
+    jbSec("Work setting", N.WORK_TYPES.map(w => jbOpt(cap(w), jbUrl(p, {work_type: p.work_type === w ? null : w}), p.work_type === w)), !!p.work_type),
+    jbSec("Category", [jbOpt("All categories", jbUrl(p, {category: null}), !p.category, "radio")].concat(cats.map(c => jbOpt(c, jbUrl(p, {category: p.category === c ? null : c}), p.category === c, "radio"))), !!p.category),
+    jbSec("More", more, true)].join("");
 }
+function jbRail(p, all, student) {   // twin of jobboard.rail: a sticky rail on wide screens, one "Filters" fold on narrow ones
+  const n = jbActive(p), clear = n || p.search ? '<a class="jb-clear" href="#" data-go="jobs">Clear all</a>' : "", secs = jbRailSections(p, all, student), badge = n ? `<span class="jb-n">${n}</span>` : "";
+  return `<aside class="jb-rail" aria-label="Filters"><div class="jb-rail-h"><h2>Filters${badge}</h2>${clear}</div>${secs}</aside>`
+    + `<details class="jb-mf"><summary><span>Filters${badge}</span><i class="car" aria-hidden="true"></i></summary><div class="jb-mf-b">${secs}${clear ? `<div class="jb-mf-c">${clear}</div>` : ""}</div></details>`;
+}
+const jbSearchBox = p => `<form class="jb-search" id="jbSearch" role="search"><label class="sr" for="jb-q">Describe a job you want</label><input id="jb-q" name="search" value="${esc(p.search)}" placeholder="Describe a job you want" maxlength="200" autocomplete="off"><button type="submit">Search</button></form>`;
 function jbTabs(p, student, nSaved) {
-  const items = [["Jobs", "jobs", p.tab === "jobs"]]; if (student) items.push([`Saved${nSaved ? ` (${nSaved})` : ""}`, "jobs?tab=saved", p.tab === "saved"], ["Resume optimizer", "resume", false]);
-  return `<nav class="jb-tabs" aria-label="Jobs">${items.map(([t, h, on]) => `<a href="#" data-go="${h}"${on ? " class=on aria-current=page" : ""}>${esc(t)}</a>`).join("")}</nav>`;
+  if (!student) return "";
+  const items = [["Jobs", "jobs", p.tab === "jobs"], [`Saved${nSaved ? ` (${nSaved})` : ""}`, "jobs?tab=saved", p.tab === "saved"], ["Resume optimizer", "resume", false]];
+  return `<nav class="jb-seg" aria-label="Jobs">${items.map(([t, h, on]) => `<a href="#" data-go="${h}"${on ? " class=on aria-current=page" : ""}>${esc(t)}</a>`).join("")}</nav>`;
 }
 function jbBoard() {
   const student = isStudent(), p = jbParams(S.route.q, student), all = approvedJobs().slice().reverse();
@@ -519,19 +532,19 @@ function jbBoard() {
   if (p.tab === "saved") { const pool = saved.map(i => all.find(j => j.id === i)).filter(Boolean); const fm = rich ? Object.fromEntries(jbRank(pool, {search: "", sort: "relevant"}, prof).map(r => [r.job.id, r.fit])) : {}; ranked = pool.map(j => ({job: j, fit: rich ? (fm[j.id] === undefined ? null : fm[j.id]) : null})); }
   else ranked = jbRank(jbFilter(all, p, followed), p, rich ? prof : null);
   ranked = ranked.slice(0, JB_MAX_LIST);
-  const ids = ranked.map(r => r.job.id), selId = ids.includes(p.job) ? p.job : (ids[0] || 0), explicit = !!(p.job && p.job === selId), savedSet = new Set(saved);
-  const cards = ranked.map(r => jbCard(r.job, p, r.job.id === selId, rich ? r.fit : null, student ? savedSet.has(r.job.id) : null)).join(""), n = ranked.length;
+  const savedSet = new Set(saved);
+  const cards = ranked.map(r => jbCard(r.job, p, rich ? r.fit : null, student ? savedSet.has(r.job.id) : null)).join(""), n = ranked.length;
   let head, empty;
   if (p.tab === "saved") {
-    head = `<div class="jb-count">${plural(n, "saved job")}</div>`;
+    head = `<div class="jb-count"><span>${plural(n, "saved job")}</span></div>`;
     empty = `<div class="empty">${bookmark(false, 36)}<p style="margin:10px 0 12px">No saved jobs yet. Tap the bookmark on any job to keep it here.</p><a class="b sec" href="#" data-go="jobs">Browse jobs</a></div>`;
   } else {
     const sort = jbMenu("Sort by " + JB_SORTS.find(s => s[0] === p.sort)[1], JB_SORTS.map(([s, t]) => [t, jbUrl(p, {sort: s}), p.sort === s]), false, "sort");
     head = `<div class="jb-count"><span>${plural(n, "job")}${p.search ? ` for “${esc(p.search)}”` : ""}</span>${sort}</div>`;
     empty = p.following ? '<div class="empty">Nothing from companies you follow right now. <a href="#" data-go="network?tab=following">Who you follow</a></div>' : '<div class="empty">No listings match. Try clearing filters or describing the job differently.</div>';
   }
-  const pane = selId ? jbDetail(all.find(j => j.id === selId), prof, jbUrl(p, {job: selId}), explicit, student ? savedSet.has(selId) : null, false) : '<div class="jd-empty">Select a job to see the details.</div>';
-  return `<div class="jb">${jbTabs(p, student, saved.length)}${p.tab === "jobs" ? jbControls(p, all, student) : ""}<div class="jb-grid"><div class="jb-list" id="jb-list">${head}${cards || empty}</div><aside class="jb-pane" aria-label="Job details">${pane}</aside></div></div>`;
+  const side = p.tab === "jobs" ? jbRail(p, all, student) : "";
+  return `<div class="jb"><div class="jb-top">${jbSearchBox(p)}${jbTabs(p, student, saved.length)}</div><div class="jb-grid${side ? "" : " solo"}">${side}<section class="jb-list" id="jb-list" aria-label="Results">${head}${cards || empty}</section></div></div>`;
 }
 function jbMarker(c, chosen) {
   const t = c.text.toLowerCase().replace(" (preferred)", "");
@@ -556,11 +569,14 @@ function jbMatch(job, f) {
   const pct = f.percent, lvl = f.level;
   const parts = f.parts.map(x => `<div class="cat"><span>${esc(x.name)}</span><div class="meter${x.score >= 75 ? " ok" : x.score < 40 ? " warn" : ""}"><i style="width:${x.score}%"></i></div><span>${x.score}%</span><div class="why2">${esc(x.detail)}</div></div>`).join("");
   const found = f.matched.slice(0, 6).map(m => `<li><b>${esc(m.skill)}</b><span class="ev">Found in ${esc(m.where.slice(0, 2).map(w => w.replace(/^Your /, "your ")).join(", "))}</span></li>`).join("");
-  const more = `<details class="jm-more"><summary>Show match details</summary><div class="fitparts">${parts}</div>${found ? `<h4 class="small" style="margin:12px 0 6px">Where your profile backs it up</h4><ul class="jm-found">${found}</ul>` : ""}</details>`;
+  const more = `<details class="jm-more"><summary class="jm-ai-b">${icon("spark", 15)}<span>Show match details</span></summary><div class="jm-more-b"><div class="fitparts">${parts}</div>${found ? `<h4 class="small" style="margin:12px 0 6px">Where your profile backs it up</h4><ul class="jm-found">${found}</ul>` : ""}</div></details>`;
   return `<section class="jm" id="fit"><div class="jm-head"><h3>Job match is <span class="jm-lvl ${lvl}">${JB_LEVEL[lvl]}</span></h3><span class="jm-pct">${pct}%</span></div>`
-    + `<div class="jm-meter ${lvl}" style="--pos:${pct}%" role="img" aria-label="Job match ${pct} percent, ${JB_LEVEL[lvl].toLowerCase()}"><i></i><i></i><i></i><b></b></div><div class="jm-scale" aria-hidden="true"><span>Low</span><span>Medium</span><span>High</span></div><p class="jm-conf">${esc(JB_CONF[f.confidence])}</p>${more}`
-    + `<div class="row jm-acts"><a class="b" href="#" data-go="resume?tab=tailor&amp;job=${job.id}">${icon("file", 16)} Tailor my resume</a><a class="b ghost" href="#" data-go="resume?src=main#rs-stand">${icon("spark", 16)} Help me stand out</a></div></section>`;
+    + `<div class="jm-meter ${lvl}" style="--pos:${pct}%" role="img" aria-label="Job match ${pct} percent, ${JB_LEVEL[lvl].toLowerCase()}"><i></i><i></i><i></i><b></b></div><div class="jm-scale" aria-hidden="true"><span>Low</span><span>Medium</span><span>High</span></div><p class="jm-conf">${esc(JB_CONF[f.confidence])}</p>${jbAiActions(job, more)}</section>`;
 }
+// Twin of jobboard.ai_actions: match details, then the per-job tailoring pages (demo routes tailor / standout).
+const jbAiActions = (job, more) => `<div class="jm-ai" role="group" aria-label="Help with this job">${more}`
+  + [[`tailor?job=${job.id}`, "Tailor my resume"], [`standout?job=${job.id}`, "Help me stand out"], [`tailor?job=${job.id}&amp;mode=note`, "Draft a note to the poster"]]
+    .map(([h, t]) => `<a class="jm-ai-b" href="#" data-go="${h}">${icon("spark", 15)}<span>${esc(t)}</span></a>`).join("") + "</div>";
 function jbGlance(j) {
   const kinds = jbKinds(j).map(k => JB_KIND_LABEL[k]).join(", ") || "Not stated", how = j.easy_apply ? "Quick apply on NoleCareerShield" : (j.apply_url ? "Employer’s site" : "Contact the employer");
   const rows = [["Posted", cap(jbPosted(j).replace("Posted ", ""))], ["Job type", kinds], ["Work setting", cap(j.work_type)], ["Location", jbWhere(j) || "Not stated"], ["Category", j.category], ["How to apply", how]];
@@ -590,7 +606,7 @@ function posterBlock(j, empOk) {   // twin of jobboard.poster_block
   const whoTxt = esc(title + (title ? " at " : "") + j.company);
   return `<section class="jp"><h3>Meet the poster</h3><div class="jp-row"><span class="jc-logo" aria-hidden="true">${initials(name)}</span><div class="jp-who"><b>${esc(name)}</b><span>${whoTxt}</span>${email}</div>${act}</div></section>`;
 }
-function jbDetail(j, prof, next, record, saved, full) {
+function jbDetail(j, prof, next, record, saved, extra) {   // twin of jobboard.detail: the /job/ID page
   const student = isStudent(), empOk = !!j.employer_id && approvedEmp(j.employer_id);
   let co = esc(j.company), trust = "", apply = "", banr = "", following = false, done = null;
   if (empOk) { trust = trustPill(trustOf(j.employer_id), "company?id=" + j.employer_id + "#trust"); co = `<a href="#" data-go="company?id=${j.employer_id}">${co}</a>`; }
@@ -611,12 +627,15 @@ function jbDetail(j, prof, next, record, saved, full) {
   if (student && empOk) acts += followButton(j.employer_id, following, "job?id=" + j.id, false);
   const own = isEmployer() && j.employer_id === me().id ? `<div class="banner info">This is your listing. <a href="#" data-go="hjob?id=${j.id}">See ranked student matches, candidates and stats →</a></div>` : "";
   const f = student && jbHasProfile(prof) ? N.fitScore(j, prof) : null;
-  const sub = [jbWhere(j), cap(j.work_type), jbPosted(j)].filter(Boolean).join(" · "), H = full ? "h1" : "h2";
-  return `${full ? '<a class="back jd-back" href="#" data-go="jobs">← All jobs</a>' : ""}<article class="jd"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">${initials(j.company)}</span><div class="jd-h"><${H} class="jd-title">${esc(j.title)}</${H}><div class="jd-co">${co}</div><div class="jd-sub">${esc(sub)}</div>${trust ? `<div class="jd-trust">${trust}</div>` : ""}</div></div>`
-    + `${own}<div class="jd-acts">${acts}</div>${student && j.easy_apply && !done ? QUICK_NOTE : ""}${banr}${posterBlock(j, empOk)}${jbScam(j)}${student ? jbMatch(j, f) : ""}${jbQuals(j, f, !!f)}${jbGlance(j)}<section class="jd-desc"><h3>About the job</h3><div class="detail-desc">${esc(j.description)}</div></section></article>`;
+  const sub = [jbWhere(j), jbWhere(j) === cap(j.work_type) ? "" : cap(j.work_type), jbPosted(j)].filter(Boolean).join(" · "), note = student && j.easy_apply && !done ? QUICK_NOTE : "";
+  const top = `<div class="jd-top"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">${initials(j.company)}</span><div class="jd-h"><div class="jd-co">${co}</div><h1 class="jd-title">${esc(j.title)}</h1><div class="jd-sub">${esc(sub)}</div>${trust ? `<div class="jd-trust">${trust}</div>` : ""}</div></div>${own}<div class="jd-acts">${acts}</div>${note}${banr}</div>`;
+  const side = `<aside class="jd-side" aria-label="Scam check and fit">${jbScam(j)}${student ? jbMatch(j, f) : ""}${jbQuals(j, f, !!f)}${posterBlock(j, empOk)}</aside>`;
+  const body = `<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">${esc(j.description)}</div></section>${jbGlance(j)}${extra || ""}</div>`;
+  return `<a class="back jd-back" href="#" data-go="jobs">← All jobs</a><article class="jd ${jbVerdict(j)}">${top}${side}${body}</article>`;
 }
 P.jobs = () => {
   if (!me()) { go("start?next=jobs"); return null; }
+  if (S.route.q.job) { go("job?id=" + S.route.q.job); return null; }   // the old two-pane address opens the listing page
   return jbBoard();
 };
 P.job = () => {
@@ -624,7 +643,7 @@ P.job = () => {
   const j = S.jobs.find(x => x.id === S.route.q.id);
   if (!j || j.review_status !== "approved") return '<p class="empty" style="margin:40px 0">That listing isn\'t available.</p>';
   const student = isStudent(), p = student ? SP(me().id) : null;
-  return `<div class="jb jb-one">${jbDetail(j, p, "job?id=" + j.id, true, student ? jbSaved(me().id).includes(j.id) : null, true)}</div>` + (student ? `<div class="jb jb-one">${tailorPanel(j, p)}</div>` : "");
+  return `<div class="jb jb-page">${jbDetail(j, p, "job?id=" + j.id, true, student ? jbSaved(me().id).includes(j.id) : null, student ? tailorPanel(j, p) : "")}</div>`;
 };
 P.post = () => {
   const v = S.draft || {}, val = n => esc(v[n] || "");
@@ -1947,12 +1966,11 @@ function render(keepScroll) {
   let out = fn(); if (out === null) return;
   const hero = out && out.hero ? out.hero : "", body = out && out.body !== undefined ? out.body : out;
   const inApp = me() && name in APP_PAGES && !(name === "home" && !me());
-  const main = $("#app"), jl0 = $("#jb-list"), pn0 = $(".jb-pane"), jst = keepScroll && jl0 ? jl0.scrollTop : 0, pst = keepScroll && pn0 ? pn0.scrollTop : 0;
+  const main = $("#app");
   if (inApp) main.innerHTML = `<div class="app">${sidebar(APP_PAGES[name])}<main class="main" id="main"><div class="wrap">${body}</div>${FOOTER}</main></div>`;
   else if (out && out.wide) main.innerHTML = `<main id="main">${hero}${body}</main>${FOOTER}`;
   else main.innerHTML = `${hero}<div class="wrap"><main id="main">${body}</main></div>${FOOTER}`;
   if (!keepScroll) window.scrollTo(0, 0);
-  if (jst && $("#jb-list")) $("#jb-list").scrollTop = jst; if (pst && $(".jb-pane")) $(".jb-pane").scrollTop = pst;
   if (S.scrollTo) { const el = document.getElementById(S.scrollTo); S.scrollTo = null; if (el) el.scrollIntoView({block: "start"}); }
   const th = $("#thread"); if (th) th.scrollTop = th.scrollHeight;
   const lg = $("#log"); if (lg) lg.scrollTop = lg.scrollHeight;
@@ -2100,7 +2118,7 @@ document.addEventListener("submit", e => {
   e.preventDefault();
   const f = e.target, fd = new FormData(f), g = k => String(fd.get(k) || "").trim(), many = k => fd.getAll(k).map(String);
   const id = f.id;
-  if (id === "jbSearch") { const rq = S.route.q, keep = {}; ["category", "work_type", "kind", "loc", "when", "quick", "following", "sort"].forEach(k => { if (rq[k]) keep[k] = rq[k]; }); return go(jbUrl(jbParams(Object.assign(keep, {search: g("search")}), isStudent()), {job: null})); }
+  if (id === "jbSearch") { const rq = S.route.q, keep = {}; ["category", "work_type", "kind", "loc", "when", "quick", "following", "sort"].forEach(k => { if (rq[k]) keep[k] = rq[k]; }); return go(jbUrl(jbParams(Object.assign(keep, {search: g("search")}), isStudent()))); }
   if (id === "talentForm") return go("talent" + (g("q") ? "?q=" + encodeURIComponent(g("q")) : ""));
   if (id === "adminLogin") { S.admin = true; return go("admin"); }
   if (id === "scamForm") { if (!g("text")) return;

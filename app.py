@@ -551,6 +551,9 @@ def jobs_feed(request: Request):
     viewer = getattr(request.state, "user", None)
     if not viewer:
         return RedirectResponse("/login?next=/jobs", status_code=303)       # the board is for FSU students and employers only
+    old = jobboard.old_pane_link(request.query_params)            # /jobs?job=ID was the two-pane board; listings have their own page now
+    if old:
+        return RedirectResponse(f"/job/{old}", status_code=301)
     # Query params are attacker-controlled input same as form fields: jobboard.parse_params drops anything unexpected.
     with store.db() as conn:
         body = jobboard.board(conn, viewer, dict(request.query_params), query_public(), pill=_score_pill, risk=_risk)
@@ -570,11 +573,11 @@ def job_detail(job_id: int, request: Request):
     with store.db() as conn:
         prof = store.student_profile(conn, viewer["id"]) if viewer["role"] == "student" else None
         saved = (int(j["id"]) in jobboard.saved_ids(conn, viewer["id"])) if viewer["role"] == "student" else None
-        body = f'<div class="jb jb-one">' + jobboard.detail(conn, viewer, j, prof, pill=_score_pill, risk=_risk, next_=f"/job/{int(j['id'])}",
-                                                             record=True, saved=saved, full=True) + "</div>"
         if viewer["role"] == "student":
             after = jobfit.tailor_panel(j, prof)
-    return shell(body + (f'<div class="jb jb-one">{after}</div>' if after else ""), title=esc(j["title"]) + " — NoleCareerShield", active="/jobs", js=bool(after))
+        body = '<div class="jb jb-page">' + jobboard.detail(conn, viewer, j, prof, pill=_score_pill, risk=_risk, next_=f"/job/{int(j['id'])}",
+                                                           record=True, saved=saved, extra=after) + "</div>"
+    return shell(body, title=esc(j["title"]) + " — NoleCareerShield", active="/jobs", js=bool(after))
 
 
 @app.get("/job/{job_id}/apply")

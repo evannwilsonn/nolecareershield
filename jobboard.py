@@ -1,11 +1,14 @@
-"""The job board: a two-pane list and detail (layout in the style of Handshake, LinkedIn and Indeed job pages).
+"""The job board: a filter rail beside one column of wide result cards, and a full page per listing.
 
-  * /jobs             tabs (Jobs, Saved, Resume optimizer), a natural-language search box, filter chips that open
-                      no-JS <details> menus, a result list and the selected job's detail beside it.
-  * /jobs?job=ID      the same board with that job open. On phones the pane is hidden and cards link to /job/ID.
+  * /jobs             a search box ("Describe a job you want") with a compact Jobs / Saved / Resume optimizer switch beside
+                      it, a sticky filter rail of collapsible no-JS <details> sections (one "Filters" fold on phones), and
+                      the results as cards whose left edge is coloured by the scam-check verdict. Every card opens /job/ID.
+                      Old /jobs?job=ID links are redirected to /job/ID by app.py.
+  * /job/ID           the listing: header, actions and the description on the left; a sticky column with the scam check,
+                      the match card (with the per-job AI actions), "What they're looking for" and Meet the poster.
   * /job/ID/save      bookmark a job (students only). Saved jobs are private to the student (table saved_jobs).
 
-Every card and the detail keep the scam check: the risk pill, the verdict banner and the findings. Students also get a
+Every card and listing keep the scam check: the risk pill, the verdict banner and the findings. Students also get a
 match percentage and an Indeed-style "What they're looking for" list built from the employer's qualifications (quals.py)
 and the requirements parsed from the description (fit.py). demo/app.js has a twin of everything here; change both.
 """
@@ -126,18 +129,20 @@ def parse_params(q: dict, is_student: bool) -> dict:
          "following": 1 if (is_student and str(q.get("following", "")) == "1") else 0,
          "sort": pick("sort", [s for s, _ in SORTS], "relevant"),
          "tab": "saved" if (is_student and q.get("tab") == "saved") else "jobs"}
-    try:
-        p["job"] = max(0, min(int(q.get("job") or 0), 10**9))
-    except ValueError:
-        p["job"] = 0
     return p
+
+
+def old_pane_link(q: dict) -> int:
+    """/jobs?job=ID was the old two-pane address; app.py sends it on to /job/ID. 0 when there's no usable id."""
+    v = str(q.get("job") or "").strip()
+    return int(v) if v.isdigit() and 0 < len(v) <= 9 else 0
 
 
 def board_url(p: dict, **over) -> str:
     """The board's address for these filters, with some overridden (None or 0 or '' removes one)."""
     cur = {**p, **over}
     qs = {}
-    for k in ("tab", "search", "category", "work_type", "kind", "loc", "when", "quick", "following", "sort", "job"):
+    for k in ("tab", "search", "category", "work_type", "kind", "loc", "when", "quick", "following", "sort"):
         v = cur.get(k)
         if v in (None, "", 0) or (k == "tab" and v == "jobs") or (k == "sort" and v == "relevant"):
             continue
@@ -191,16 +196,95 @@ def level_of(pct: int) -> str:
 
 # ---------- the list ----------
 
-def card(j: dict, p: dict, *, sel: bool, fitpct, saved: bool | None, pill: str) -> str:
+def verdict_class(j: dict) -> str:
+    """Card edge colour: the scam-check verdict (v-clear / v-flagged / v-held) plus the gauge zone (z0-z3), so a flagged
+    listing high on the gauge reads orange or red rather than amber. Twin: jbVerdict in demo/app.js."""
+    lead_gen = any(f.get("rule_id") == "lead_gen" for f in json.loads(j.get("findings_json") or "[]"))
+    zone = ui.risk_position(int(j.get("score") or 0), j.get("scam_status", ""), aggregator=lead_gen)[0]
+    status = j.get("scam_status") if j.get("scam_status") in ("clear", "flagged", "held") else "flagged"
+    return f"v-{status} z{zone}"
+
+
+def card(j: dict, p: dict, *, fitpct, saved: bool | None, pill: str) -> str:
     jid = int(j["id"])
     match = f'<span class="jc-match {level_of(fitpct)}">{fitpct}% match</span>' if fitpct is not None else ""
     tags = pill + match + ('<span class="jc-tag q">Quick apply</span>' if easyapply.is_easy(j) else "") + ('<span class="jc-tag n">New</span>' if days_old(j) < 7 else "")
-    facts = " · ".join(x for x in (where(j), j["work_type"].title(), j["category"]) if x)
-    sv = save_button(jid, bool(saved), board_url(p, job=jid if sel else None)) if saved is not None else ""
-    return (f'<article class="jc{" sel" if sel else ""}"{" aria-current=true" if sel else ""}><span class="jc-logo" aria-hidden="true">{ui.initials(j["company"])}</span>'
-            f'<div class="jc-body"><h3 class="jc-title"><a class="jc-link jc-d" href="{esc(board_url(p, job=jid))}">{esc(j["title"])}</a>'
-            f'<a class="jc-link jc-m" href="/job/{jid}">{esc(j["title"])}</a></h3><div class="jc-co">{esc(j["company"])}</div>'
+    place, setting = where(j), j["work_type"].title()
+    facts = " · ".join(x for x in (place, "" if place == setting else setting, ", ".join(KIND_LABEL[k] for k in kinds_of(j)[:2])) if x)
+    sv = save_button(jid, bool(saved), board_url(p)) if saved is not None else ""
+    return (f'<article class="jc {verdict_class(j)}"><span class="jc-logo" aria-hidden="true">{ui.initials(j["company"])}</span>'
+            f'<div class="jc-body"><h3 class="jc-title"><a class="jc-link" href="/job/{jid}">{esc(j["title"])}</a></h3>'
+            f'<div class="jc-co">{esc(j["company"])} <span class="jc-cat">· {esc(j["category"])}</span></div>'
             f'<div class="jc-facts">{esc(facts)}</div><div class="jc-tags">{tags}</div></div>{sv}</article>')
+
+
+def _opt(label: str, href: str, on: bool, kind: str = "check") -> str:
+    """One rail option: a plain link drawn as a checkbox (toggles) or a radio (pick one)."""
+    return (f'<a class="jb-opt {kind}{" on" if on else ""}" href="{esc(href)}"{" aria-current=true" if on else ""}>'
+            f'<i aria-hidden="true"></i><span>{esc(label)}</span></a>')
+
+
+def _sec(title: str, opts: list[str], open_: bool) -> str:
+    return (f'<details class="jb-sec"{" open" if open_ else ""}><summary>{esc(title)}<i class="car" aria-hidden="true"></i></summary>'
+            f'<div class="jb-opts">{"".join(opts)}</div></details>')
+
+
+def active_filters(p: dict) -> int:
+    return sum(1 for k in ("category", "work_type", "kind", "loc", "when", "quick", "following") if p[k])
+
+
+def rail_sections(p: dict, jobs_all: list[dict], is_student: bool) -> str:
+    """The filter sections. Every option is a link to the board with that filter toggled: nothing needs JavaScript."""
+    locs: dict[str, int] = {}
+    for j in jobs_all:
+        if j.get("location"):
+            locs[j["location"]] = locs.get(j["location"], 0) + 1
+    top = [l for l, _ in sorted(locs.items(), key=lambda kv: (-kv[1], kv[0].lower()))[:8]]
+    cats = sorted({j["category"] for j in jobs_all})
+    more = [_opt("Quick apply", board_url(p, quick=0 if p["quick"] else 1), bool(p["quick"]))]
+    if is_student:
+        more.append(_opt("From companies I follow", board_url(p, following=0 if p["following"] else 1), bool(p["following"])))
+    secs = [
+        _sec("Job type", [_opt(label, board_url(p, kind=None if p["kind"] == k else k), p["kind"] == k) for k, label in KINDS], True),
+        _sec("Date posted", [_opt(t, board_url(p, when=d), p["when"] == d, "radio") for d, t in WHEN], True),
+        _sec("Location", [_opt("Any location", board_url(p, loc=None), not p["loc"], "radio")]
+             + [_opt(l, board_url(p, loc=None if p["loc"].lower() == l.lower() else l), p["loc"].lower() == l.lower(), "radio") for l in top]
+             + [_opt("Remote only", board_url(p, work_type="remote" if p["work_type"] != "remote" else None), p["work_type"] == "remote")], True),
+        _sec("Work setting", [_opt(w.title(), board_url(p, work_type=None if p["work_type"] == w else w), p["work_type"] == w) for w in matching.WORK_TYPES],
+             bool(p["work_type"])),
+        _sec("Category", [_opt("All categories", board_url(p, category=None), not p["category"], "radio")]
+             + [_opt(c, board_url(p, category=None if p["category"] == c else c), p["category"] == c, "radio") for c in cats], bool(p["category"])),
+        _sec("More", more, True),
+    ]
+    return "".join(secs)
+
+
+def rail(p: dict, jobs_all: list[dict], is_student: bool) -> str:
+    """Wide screens: a sticky rail. Phones and narrow windows: the same sections folded into one "Filters" <details>
+    above the results (two copies because CSS can't force a closed <details> open; only one is ever displayed)."""
+    n = active_filters(p)
+    clear = '<a class="jb-clear" href="/jobs">Clear all</a>' if (n or p["search"]) else ""
+    secs = rail_sections(p, jobs_all, is_student)
+    badge = f'<span class="jb-n">{n}</span>' if n else ""
+    return (f'<aside class="jb-rail" aria-label="Filters"><div class="jb-rail-h"><h2>Filters{badge}</h2>{clear}</div>{secs}</aside>'
+            f'<details class="jb-mf"><summary><span>Filters{badge}</span><i class="car" aria-hidden="true"></i></summary>'
+            f'<div class="jb-mf-b">{secs}{f"<div class=jb-mf-c>{clear}</div>" if clear else ""}</div></details>')
+
+
+def search_box(p: dict) -> str:
+    hidden = "".join(f'<input type="hidden" name="{k}" value="{esc(p[k])}">' for k in ("category", "work_type", "kind", "loc", "when", "quick", "following", "sort") if p[k])
+    return (f'<form class="jb-search" method="get" action="/jobs" role="search"><label class="sr" for="jb-q">Describe a job you want</label>'
+            f'<input id="jb-q" name="search" value="{esc(p["search"])}" placeholder="Describe a job you want" maxlength="200" autocomplete="off">{hidden}'
+            f'<button type="submit">Search</button></form>')
+
+
+def tabs(p: dict, is_student: bool, n_saved: int) -> str:
+    """Jobs / Saved / Resume optimizer as a compact segmented control. Employers only have the board, so they get none."""
+    if not is_student:
+        return ""
+    items = [("Jobs", "/jobs", p["tab"] == "jobs"), (f"Saved{f' ({n_saved})' if n_saved else ''}", "/jobs?tab=saved", p["tab"] == "saved"),
+             ("Resume optimizer", "/resume", False)]
+    return '<nav class="jb-seg" aria-label="Jobs">' + "".join(f'<a href="{h}"{" class=on aria-current=page" if on else ""}>{esc(t)}</a>' for t, h, on in items) + "</nav>"
 
 
 def _menu(label: str, items: list[tuple[str, str, bool]], active: bool, cls: str = "") -> str:
@@ -208,49 +292,8 @@ def _menu(label: str, items: list[tuple[str, str, bool]], active: bool, cls: str
     return f'<details class="jb-dd {cls}"><summary class="jb-chip{" on" if active else ""}">{esc(label)}<i class="car"></i></summary><div class="jb-menu">{links}</div></details>'
 
 
-def _toggle_chip(label: str, href: str, on: bool) -> str:
-    return f'<a class="jb-chip{" on" if on else ""}" href="{esc(href)}"{" aria-pressed=true" if on else ""}>{esc(label)}</a>'
-
-
-def controls(p: dict, jobs_all: list[dict], is_student: bool) -> str:
-    """Search box and the chip row. Menus are <details>, toggles are plain links: nothing needs JavaScript."""
-    hidden = "".join(f'<input type="hidden" name="{k}" value="{esc(p[k])}">' for k in ("category", "work_type", "kind", "loc", "when", "quick", "following", "sort") if p[k])
-    search = (f'<form class="jb-search" method="get" action="/jobs" role="search"><label class="sr" for="jb-q">Describe a job you want</label>'
-              f'<input id="jb-q" name="search" value="{esc(p["search"])}" placeholder="Describe a job you want" maxlength="200" autocomplete="off">{hidden}'
-              f'<button type="submit">Search</button></form>')
-    locs: dict[str, int] = {}
-    for j in jobs_all:
-        if j.get("location"):
-            locs[j["location"]] = locs.get(j["location"], 0) + 1
-    top = [l for l, _ in sorted(locs.items(), key=lambda kv: (-kv[1], kv[0].lower()))[:8]]
-    loc_items = [("Any location", board_url(p, loc=None), not p["loc"])] + [(l, board_url(p, loc=l), p["loc"].lower() == l.lower()) for l in top] \
-        + [("Remote only", board_url(p, work_type="remote" if p["work_type"] != "remote" else None), p["work_type"] == "remote")]
-    chips = [_menu("Location" + (f": {p['loc']}" if p["loc"] else ""), loc_items, bool(p["loc"]))]
-    for k, label in KINDS:
-        chips.append(_toggle_chip(label, board_url(p, kind=None if p["kind"] == k else k), p["kind"] == k))
-    chips.append(_menu("Date posted", [(t, board_url(p, when=d), p["when"] == d) for d, t in WHEN], bool(p["when"])))
-    chips.append(_toggle_chip("Quick apply", board_url(p, quick=0 if p["quick"] else 1), bool(p["quick"])))
-    if is_student:
-        chips.append(_toggle_chip("From companies I follow", board_url(p, following=0 if p["following"] else 1), bool(p["following"])))
-    cats = sorted({j["category"] for j in jobs_all})
-    fl_items = ([("All categories", board_url(p, category=None), not p["category"])] + [(c, board_url(p, category=None if p["category"] == c else c), p["category"] == c) for c in cats]
-                + [(("Any work setting"), board_url(p, work_type=None), not p["work_type"])] + [(w.title(), board_url(p, work_type=None if p["work_type"] == w else w), p["work_type"] == w) for w in matching.WORK_TYPES])
-    chips.append(_menu("Filters", fl_items, bool(p["category"] or (p["work_type"] and p["work_type"] != "remote")), "wide"))
-    clear = ""
-    if any(p[k] for k in ("search", "category", "work_type", "kind", "loc", "when", "quick", "following")):
-        clear = f'<a class="jb-clear" href="/jobs">Clear all</a>'
-    return f'<div class="jb-controls">{search}<div class="jb-chips" role="group" aria-label="Filters">{"".join(chips)}{clear}</div></div>'
-
-
-def tabs(p: dict, is_student: bool, n_saved: int) -> str:
-    items = [("Jobs", "/jobs", p["tab"] == "jobs")]
-    if is_student:
-        items += [(f"Saved{f' ({n_saved})' if n_saved else ''}", "/jobs?tab=saved", p["tab"] == "saved"), ("Resume optimizer", "/resume", False)]
-    return '<nav class="jb-tabs" aria-label="Jobs">' + "".join(f'<a href="{h}"{" class=on aria-current=page" if on else ""}>{esc(t)}</a>' for t, h, on in items) + "</nav>"
-
-
-def board(conn, viewer: dict, q: dict, jobs_all: list[dict], *, pill, risk) -> str:
-    """The whole /jobs body. jobs_all: every live approved listing. pill(j) and risk(j) are the app's scam-check markup."""
+def board(conn, viewer: dict, q: dict, jobs_all: list[dict], *, pill, risk=None) -> str:
+    """The whole /jobs body. jobs_all: every live approved listing. pill(j) is the app's scam-check pill."""
     is_student = viewer["role"] == "student"
     p = parse_params(q, is_student)
     profile = store.student_profile(conn, viewer["id"]) if is_student else None
@@ -267,15 +310,12 @@ def board(conn, viewer: dict, q: dict, jobs_all: list[dict], *, pill, risk) -> s
     else:
         ranked = rank(filter_jobs(jobs_all, p, followed), p, profile if rich else None)
     ranked = ranked[:MAX_LIST]
-    ids = [r["job"]["id"] for r in ranked]
-    sel_id = p["job"] if p["job"] in ids else (ids[0] if ids else 0)
-    explicit = bool(p["job"] and p["job"] == sel_id)
     saved_set = set(saved)
-    cards = "".join(card(r["job"], p, sel=r["job"]["id"] == sel_id, fitpct=r["fit"] if rich else None,
+    cards = "".join(card(r["job"], p, fitpct=r["fit"] if rich else None,
                          saved=(r["job"]["id"] in saved_set) if is_student else None, pill=pill(r["job"])) for r in ranked)
     n = len(ranked)
     if p["tab"] == "saved":
-        head = f'<div class="jb-count">{n} saved job{"s" if n != 1 else ""}</div>'
+        head = f'<div class="jb-count"><span>{n} saved job{"s" if n != 1 else ""}</span></div>'
         empty = ('<div class="empty">' + bookmark(False, 36) + '<p style="margin:10px 0 12px">No saved jobs yet. Tap the bookmark on any job to keep it here.</p>'
                  '<a class="b sec" href="/jobs">Browse jobs</a></div>')
     else:
@@ -284,15 +324,9 @@ def board(conn, viewer: dict, q: dict, jobs_all: list[dict], *, pill, risk) -> s
         head = f'<div class="jb-count"><span>{n} job{"s" if n != 1 else ""}{forq}</span>{sort}</div>'
         empty = ('<div class="empty">Nothing from companies you follow right now. <a href="/network?tab=following">Who you follow</a></div>' if p["following"] else
                  '<div class="empty">No listings match. Try clearing filters or describing the job differently.</div>')
-    pane = ""
-    if sel_id:
-        j = next(r["job"] for r in ranked if r["job"]["id"] == sel_id)
-        pane = detail(conn, viewer, j, profile, pill=pill, risk=risk, next_=board_url(p, job=sel_id), record=explicit, saved=(sel_id in saved_set) if is_student else None)
-    else:
-        pane = '<div class="jd-empty">Select a job to see the details.</div>'
-    ctl = controls(p, jobs_all, is_student) if p["tab"] == "jobs" else ""
-    return (f'<div class="jb">{tabs(p, is_student, len(saved))}{ctl}<div class="jb-grid"><div class="jb-list" id="jb-list">{head}{cards or empty}</div>'
-            f'<aside class="jb-pane" aria-label="Job details">{pane}</aside></div></div>')
+    side = rail(p, jobs_all, is_student) if p["tab"] == "jobs" else ""
+    return (f'<div class="jb"><div class="jb-top">{search_box(p)}{tabs(p, is_student, len(saved))}</div>'
+            f'<div class="jb-grid{"" if side else " solo"}">{side}<section class="jb-list" id="jb-list" aria-label="Results">{head}{cards or empty}</section></div></div>')
 
 
 # ---------- the detail ----------
@@ -346,14 +380,24 @@ def match_panel(job: dict, f: dict | None) -> str:
     parts = "".join(f'<div class="cat"><span>{esc(x["name"])}</span><div class="meter{" ok" if x["score"] >= 75 else " warn" if x["score"] < 40 else ""}">'
                     f'<i style="width:{x["score"]}%"></i></div><span>{x["score"]}%</span><div class="why2">{esc(x["detail"])}</div></div>' for x in f["parts"])
     found = "".join(f'<li><b>{esc(m["skill"])}</b><span class="ev">Found in {esc(", ".join(w.replace("Your ", "your ", 1) for w in m["where"][:2]))}</span></li>' for m in f["matched"][:6])
-    more = (f'<details class="jm-more"><summary>Show match details</summary><div class="fitparts">{parts}</div>'
-            + (f'<h4 class="small" style="margin:12px 0 6px">Where your profile backs it up</h4><ul class="jm-found">{found}</ul>' if found else "") + '</details>')
-    jid = int(job["id"])
+    spark = ui.icon("spark", 15)
+    more = (f'<details class="jm-more"><summary class="jm-ai-b">{spark}<span>Show match details</span></summary><div class="jm-more-b"><div class="fitparts">{parts}</div>'
+            + (f'<h4 class="small" style="margin:12px 0 6px">Where your profile backs it up</h4><ul class="jm-found">{found}</ul>' if found else "") + '</div></details>')
     return (f'<section class="jm" id="fit"><div class="jm-head"><h3>Job match is <span class="jm-lvl {lvl}">{LEVEL_NAME[lvl]}</span></h3><span class="jm-pct">{pct}%</span></div>'
             f'<div class="jm-meter {lvl}" style="--pos:{pct}%" role="img" aria-label="Job match {pct} percent, {LEVEL_NAME[lvl].lower()}"><i></i><i></i><i></i><b></b></div>'
-            f'<div class="jm-scale" aria-hidden="true"><span>Low</span><span>Medium</span><span>High</span></div><p class="jm-conf">{esc(CONF[f["confidence"]])}</p>{more}'
-            f'<div class="row jm-acts"><a class="b" href="/resume?tab=tailor&amp;job={jid}">{ui.icon("file", 16)} Tailor my resume</a>'
-            f'<a class="b ghost" href="/resume/optimize?src=main#rs-stand">{ui.icon("spark", 16)} Help me stand out</a></div></section>')
+            f'<div class="jm-scale" aria-hidden="true"><span>Low</span><span>Medium</span><span>High</span></div><p class="jm-conf">{esc(CONF[f["confidence"]])}</p>'
+            f'{ai_actions(job, more)}</section>')
+
+
+def ai_actions(job: dict, more: str) -> str:
+    """The per-job helper row in the match card: match details (a <details>), then links to the tailoring pages that
+    resume_tools.py serves for this listing."""
+    jid = int(job["id"])
+    spark = ui.icon("spark", 15)
+    links = [(f"/job/{jid}/tailor", "Tailor my resume"), (f"/job/{jid}/standout", "Help me stand out"),
+             (f"/job/{jid}/tailor?mode=note", "Draft a note to the poster")]
+    return ('<div class="jm-ai" role="group" aria-label="Help with this job">' + more
+            + "".join(f'<a class="jm-ai-b" href="{esc(h)}">{spark}<span>{esc(t)}</span></a>' for h, t in links) + "</div>")
 
 
 def glance(j: dict) -> str:
@@ -422,8 +466,9 @@ def poster_block(conn, viewer: dict, j: dict, emp_ok: bool) -> str:
             f'<div class="jp-who"><b>{esc(name)}</b><span>{who}</span>{email}</div>{act}</div></section>')
 
 
-def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, next_: str, record: bool, saved: bool | None, full: bool = False) -> str:
-    """One listing: header and actions, scam check, match and qualifications, at a glance, description."""
+def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, next_: str, record: bool, saved: bool | None, extra: str = "") -> str:
+    """The /job/ID page. Left: header and actions, About the job, At a glance, then extra (the tailoring kit). Right, sticky:
+    scam check, match card, What they're looking for, Meet the poster. Phones: one column, the right column after the header."""
     jid = int(j["id"])
     is_student = viewer["role"] == "student"
     emp_ok = bool(j.get("employer_id")) and store.employer_approved(conn, j["employer_id"])
@@ -469,11 +514,12 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
     f = fit.fit_score(j, profile) if (is_student and has_profile(profile)) else None
     match = match_panel(j, f) if is_student else ""
     q = quals_block(j, f, personal=f is not None)
-    sub = " · ".join(x for x in (where(j), j["work_type"].title(), posted(j)) if x)
-    back = '<a class="back jd-back" href="/jobs">← All jobs</a>' if full else ""
-    h = "h1" if full else "h2"
-    return (f'{back}<article class="jd"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">{ui.initials(j["company"])}</span><div class="jd-h"><{h} class="jd-title">{esc(j["title"])}</{h}>'
-            f'<div class="jd-co">{co}</div><div class="jd-sub">{esc(sub)}</div>{f"<div class=jd-trust>{trust}</div>" if trust else ""}</div></div>'
-            f'{own}<div class="jd-acts">{acts}</div>{QUICK_NOTE if (is_student and easyapply.is_easy(j) and not done) else ""}{banner}'
-            f'{poster_block(conn, viewer, j, emp_ok)}{scam_block(j, pill(j), risk(j))}{match}{q}{glance(j)}'
-            f'<section class="jd-desc"><h3>About the job</h3><div class="detail-desc">{esc(j["description"])}</div></section></article>')
+    sub = " · ".join(x for x in (where(j), "" if where(j) == j["work_type"].title() else j["work_type"].title(), posted(j)) if x)
+    note = QUICK_NOTE if (is_student and easyapply.is_easy(j) and not done) else ""
+    top = (f'<div class="jd-top"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">{ui.initials(j["company"])}</span><div class="jd-h">'
+           f'<div class="jd-co">{co}</div><h1 class="jd-title">{esc(j["title"])}</h1><div class="jd-sub">{esc(sub)}</div>'
+           f'{f"<div class=jd-trust>{trust}</div>" if trust else ""}</div></div>{own}<div class="jd-acts">{acts}</div>{note}{banner}</div>')
+    side = f'<aside class="jd-side" aria-label="Scam check and fit">{scam_block(j, pill(j), risk(j))}{match}{q}{poster_block(conn, viewer, j, emp_ok)}</aside>'
+    body = (f'<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">{esc(j["description"])}</div></section>'
+            f'{glance(j)}{extra}</div>')
+    return (f'<a class="back jd-back" href="/jobs">← All jobs</a><article class="jd {verdict_class(j)}">{top}{side}{body}</article>')
