@@ -203,6 +203,31 @@ CREATE TABLE IF NOT EXISTS submitted_checks (
     user_label TEXT NOT NULL DEFAULT '',
     created_at REAL NOT NULL
 );
+-- Employer hiring tools (hiring.py)
+CREATE TABLE IF NOT EXISTS job_views (
+    job_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    PRIMARY KEY (job_id, user_id, day)
+);
+CREATE TABLE IF NOT EXISTS job_apply_clicks (
+    job_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (job_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS candidates (
+    job_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    employer_id INTEGER NOT NULL,
+    stage TEXT NOT NULL DEFAULT 'new',
+    source TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (job_id, student_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cand_employer ON candidates (employer_id, job_id, stage);
 CREATE TABLE IF NOT EXISTS notify_log (
     user_id INTEGER NOT NULL,
     conversation_id INTEGER NOT NULL,
@@ -236,6 +261,10 @@ def purge(conn) -> None:
     conn.execute("DELETE FROM post_comments WHERE status = 'removed' AND created_at < ?", (now - 30 * 86400,))
     conn.execute("UPDATE messages SET body = '' WHERE status = 'removed' AND created_at < ?", (now - 30 * 86400,))
     conn.execute("DELETE FROM submitted_checks WHERE created_at < ?", (now - 365 * 86400,))
+    # Listing stats and trackers go when their listing does; view counts are kept for 180 days.
+    for t in ("job_views", "job_apply_clicks", "candidates"):
+        conn.execute(f"DELETE FROM {t} WHERE job_id NOT IN (SELECT id FROM jobs)")
+    conn.execute("DELETE FROM job_views WHERE day < ?", (time.strftime("%Y-%m-%d", time.gmtime(now - 180 * 86400)),))
     conn.commit()
 
 
@@ -259,6 +288,9 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM ai_usage WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM submitted_checks WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM notify_log WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM job_views WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM job_apply_clicks WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM candidates WHERE student_id = ? OR employer_id = ?", (user_id, user_id))
     conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM user_tokens WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE jobs SET employer_id = NULL WHERE employer_id = ?", (user_id,))

@@ -28,6 +28,7 @@ import mailer
 import msgcheck
 import profiles
 import security
+import hiring
 import store
 import ui
 import web
@@ -94,6 +95,9 @@ def add_message(conn, c: dict, sender: dict, body: str) -> dict:
     cur = conn.execute("INSERT INTO messages (conversation_id, sender_id, body, created_at, scan_band, scan_score, scan_json, status) "
                        "VALUES (?,?,?,?,?,?,?,?)", (c["id"], sender["id"], body, now, band, r["score"], json.dumps(findings), status))
     conn.execute("UPDATE conversations SET last_at = ?, student_hidden = 0, employer_hidden = 0 WHERE id = ?", (now, c["id"]))
+    if status == "delivered" and c.get("job_id"):
+        # A delivered message about a listing puts the student in that listing's candidate tracker.
+        hiring.add_candidate(conn, c["job_id"], c["student_id"], c["employer_id"], "messaged" if sender["id"] == c["student_id"] else "invited")
     return {"id": cur.lastrowid, "status": status, "band": band}
 
 
@@ -225,7 +229,7 @@ def inbox(request: Request):
 
 
 @router.get("/messages/new", response_class=HTMLResponse)
-def new_form(request: Request, to: int = 0, job: int = 0):
+def new_form(request: Request, to: int = 0, job: int = 0, invite: int = 0):
     user = web.require_user(request)
     with store.db() as conn:
         ok, why = can_start(conn, user, to)
@@ -240,6 +244,9 @@ def new_form(request: Request, to: int = 0, job: int = 0):
         name, sub, kind = web.display_name(conn, to)
         jobrow = store.row(conn, "SELECT id, title FROM jobs WHERE id = ? AND review_status = 'approved' AND employer_id = ?",
                            (job, employer_id)) if job > 0 else None
+        draft = ""
+        if invite and jobrow and user["role"] == "employer":
+            draft = hiring.invite_text(conn, user["id"], store.student_profile(conn, to) or {}, jobrow)
     about = f'<p class="small muted" style="margin:10px 0 0">About: <b>{esc(jobrow["title"])}</b></p>' if jobrow else ""
     tip = ("Introduce yourself and say which role you're interested in. Don't include your student ID, SSN or bank details. No real employer needs them in a first message."
            if user["role"] == "student" else
@@ -248,7 +255,7 @@ def new_form(request: Request, to: int = 0, job: int = 0):
             f'<div class="card" style="max-width:680px">{web.person(name, sub, kind)}{about}'
             f'<form method="post" action="/messages/new" style="margin-top:14px">{ui.user_csrf_input()}<input type="hidden" name="to" value="{int(to)}">'
             f'<input type="hidden" name="job" value="{int(jobrow["id"]) if jobrow else 0}">'
-            f'<div class="form-field"><label for="n-body">Message</label><textarea id="n-body" name="body" required maxlength="{MAX_BODY}" data-count></textarea></div>'
+            f'<div class="form-field"><label for="n-body">Message</label><textarea id="n-body" name="body" required maxlength="{MAX_BODY}" data-count>{esc(draft)}</textarea></div>'
             '<button class="submit-btn" type="submit">Send</button></form></div>')
     return web.page(body, "New message", active="/messages", js=True)
 

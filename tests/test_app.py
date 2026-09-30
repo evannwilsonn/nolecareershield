@@ -700,7 +700,16 @@ def test_signed_in_student_sees_the_apply_link(client):
     _approved_job(client)
     make_verified(client, "student", "jane@fsu.edu"); user_login(client, "student", "jane@fsu.edu")
     page = client.get("/job/1").text
-    assert 'href="https://acme.example/secret-apply-link"' in page and "Log in as an FSU student" not in page
+    assert 'href="/job/1/apply"' in page and "Log in as an FSU student" not in page
+    r = client.get("/job/1/apply", follow_redirects=False)       # counted once for the employer's totals, then on to the link
+    assert r.status_code == 303 and r.headers["location"] == "https://acme.example/secret-apply-link"
+
+
+def test_apply_link_is_not_leaked_to_visitors(client):
+    _approved_job(client)
+    r = client.get("/job/1/apply", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/job/1"
+    assert "secret-apply-link" not in client.get("/job/1").text
 
 
 # ---------- page policy ----------

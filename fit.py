@@ -21,6 +21,8 @@ demo/engine.js has a line-for-line port checked by tests/test_demo_engine.py.
 
 from __future__ import annotations
 
+import copy
+import functools
 import re
 import time
 
@@ -133,6 +135,11 @@ def _sources(profile: dict) -> list[tuple[str, str, str]]:
 
 
 def job_requirements(title: str, text: str) -> dict:
+    return copy.deepcopy(_job_requirements(title, text))
+
+
+@functools.lru_cache(maxsize=512)
+def _job_requirements(title: str, text: str) -> dict:
     full = f"{title}\n{text}"
     required, preferred = [], []
     for m in _SENT.finditer(full):
