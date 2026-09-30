@@ -28,11 +28,13 @@ def toy(tmp_path, monkeypatch):
     p.write_text(json.dumps(TOY))
     monkeypatch.setattr(ml, "MODEL_PATH", p)
     monkeypatch.delenv("SCAM_MODEL", raising=False)
+    monkeypatch.delenv("SCAM_MODEL_PATH", raising=False)     # no model retrained on a live board
     return p
 
 
 def test_no_model_file_means_rules_only(tmp_path, monkeypatch):
     monkeypatch.setattr(ml, "MODEL_PATH", tmp_path / "missing.json")
+    monkeypatch.delenv("SCAM_MODEL_PATH", raising=False)
     assert ml.load() is None and ml.second_look(QUIET["title"], QUIET["description"]) is None
 
 

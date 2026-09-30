@@ -210,6 +210,18 @@ CREATE TABLE IF NOT EXISTS submitted_checks (
     user_label TEXT NOT NULL DEFAULT '',
     created_at REAL NOT NULL
 );
+-- Every automatic retrain of the learned scam model (learning.py): what it trained on and whether the gate let it ship.
+CREATE TABLE IF NOT EXISTS model_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at REAL NOT NULL,
+    finished_at REAL,
+    trigger TEXT NOT NULL DEFAULT 'schedule',
+    status TEXT NOT NULL DEFAULT 'running',
+    version TEXT,
+    train_rows INTEGER NOT NULL DEFAULT 0,
+    live_labels INTEGER NOT NULL DEFAULT 0,
+    report TEXT NOT NULL DEFAULT ''
+);
 -- "Want NoleCareerShield at your school?" from the public scam check. Only the school name is kept.
 CREATE TABLE IF NOT EXISTS school_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -345,6 +357,11 @@ _STUDENT_EXTRA = {"location": "TEXT NOT NULL DEFAULT ''", "looking_roles": "TEXT
                   "allow_connections": "INTEGER NOT NULL DEFAULT 1"}
 _EMPLOYER_EXTRA = {"tagline": "TEXT NOT NULL DEFAULT ''", "founded": "TEXT NOT NULL DEFAULT ''", "linkedin": "TEXT NOT NULL DEFAULT ''",
                    "hires_for": "TEXT NOT NULL DEFAULT '[]'", "perks": "TEXT NOT NULL DEFAULT '[]'"}
+# Sent-in checks became a labeling queue: what was checked, the reviewer's confirmed label, its scam wave, and
+# whether it trains the model or sits in the frozen live holdout.
+_CHECK_EXTRA = {"kind": "TEXT NOT NULL DEFAULT 'message'", "title": "TEXT NOT NULL DEFAULT ''", "company": "TEXT NOT NULL DEFAULT ''",
+                "url": "TEXT NOT NULL DEFAULT ''", "source": "TEXT NOT NULL DEFAULT 'student'", "review_label": "TEXT",
+                "reviewed_at": "REAL", "campaign": "INTEGER", "learn_split": "TEXT"}
 ITEM_KINDS = ["experience", "education", "project", "certification", "organization", "course", "language"]
 
 
@@ -358,6 +375,10 @@ def init(conn) -> None:
     for col, typ in _EMPLOYER_EXTRA.items():
         if col not in have:
             conn.execute(f"ALTER TABLE employer_profiles ADD COLUMN {col} {typ}")
+    have = {r[1] for r in conn.execute("PRAGMA table_info(submitted_checks)")}
+    for col, typ in _CHECK_EXTRA.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE submitted_checks ADD COLUMN {col} {typ}")
     conn.commit()
 
 

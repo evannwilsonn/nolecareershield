@@ -47,6 +47,35 @@ labels like "From:" and "Subject:", and URL schemes. Otherwise it learns "archiv
 The threshold comes from cross-validation on the training rows, never below 0.5. Every run writes
 `models/TRAINING_REPORT.md`.
 
+## How it keeps learning (learning.py)
+
+The loop runs on the live site. Nobody has to remember to retrain.
+
+1. **Labels:**
+   - Reviewers label board listings when they approve or reject them.
+   - Anything sent in from the scam check ("Send this to our reviewers") lands in the **label queue**
+     (`/admin/checks`). A reviewer confirms Scam, Real, Lead-gen or Skip there.
+   - A visitor's answer is shown but never used on its own, so nobody can poison the model by spamming
+     "not a scam".
+2. **Scam waves:** a sent-in item that near-copies one from the last 30 days joins its wave. The reviewer sees
+   "Wave: N near-copies", and one click labels the whole wave. Earlier decisions on the same wave are shown.
+3. **New patterns:** when the AI second opinion is confident it's a scam but the rules were quiet, the student
+   is asked to send it in (nothing is saved without that click). It reaches the queue tagged "AI flagged a
+   pattern the rules missed".
+4. **Rolling holdout:** the first time a confirmed label is used, about 1 in 3 go to the live holdout (whole
+   waves together) and the rest to training. A label never moves after that. Every retrain is tested on
+   the repo holdouts and on this live holdout, so a model has to handle this month's scams, not only
+   September's.
+5. **Monthly retrain:** the daily maintenance loop retrains in the background once it's been `RETRAIN_DAYS`
+   (30) since the last run and `RETRAIN_MIN_NEW` (20) new labels exist. The new model replaces the active one
+   only through the gate above; otherwise nothing changes.
+   - The live model is written to `learning/models/scam_model.json` next to the database and takes over
+     from the repo model.
+   - Every run, with its full report, is on `/admin/model`, which also has a "Retrain now" button.
+   - A full retrain takes about 20 seconds.
+
+`export_labeled.py` includes confirmed label-queue items, with email addresses and phone numbers masked.
+
 ## Status (Sept 30, 2026): shipped, version in models/scam_model.json
 
 | Run | Training rows | Holdout scams caught (rules alone: 15/28) | New false alarms | Gate |

@@ -34,6 +34,7 @@ import web
 from scam_detector.rules import FREE_MAIL
 from scam_detector.scorer import score_posting
 from scam_detector import ml
+import learning
 
 router = APIRouter()
 
@@ -157,6 +158,12 @@ def _ai_opinion(text: str, sender: str) -> dict | None:
         return ai.structured(system, content, "scam_opinion", schema, max_tokens=900)
     except ai.AIUnavailable:
         return None
+
+
+def is_novel(r: dict) -> bool:
+    """The AI is confident it's a scam but the rules were quiet: probably a pattern the detector doesn't know yet."""
+    o = r.get("ai") or {}
+    return o.get("verdict") == "scam" and float(o.get("confidence") or 0) >= 0.7 and r.get("band") in ("clear", "caution")
 
 
 def check(text: str, sender: str = "", *, use_ai: bool = False, platform_employer: dict | None = None) -> dict:
@@ -434,10 +441,14 @@ def check_submit(request: Request, text: str = Form(""), sender: str = Form(""),
             if not store.ai_take(conn, user["id"], ai.daily_limit()):
                 use_ai = False
     r = check(text, sender, use_ai=use_ai)
-    report = f"""<details class="card" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
-<p class="small muted" style="margin:8px 0 12px">Helps the detector learn. We save the message text and your answer, never your name. Remove personal details first if you can.</p>
+    novel = is_novel(r)
+    lead = ('<div class="banner warning" style="margin:0 0 10px"><b>This may be a new kind of scam.</b> The AI flagged it, but none of our '
+            'rules caught it. Sending it to our reviewers is how the detector learns to catch the next one.</div>' if novel else "")
+    report = f"""<details class="card" style="margin-top:22px"{" open" if novel else ""}><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
+{lead}<p class="small muted" style="margin:8px 0 12px">Helps the detector learn. We save the message text and your answer, never your name. Remove personal details first if you can.</p>
 <form method="post" action="/check/submit"><input type="hidden" name="csrf" value="{security.make_csrf('form')}">
 <input type="hidden" name="text" value="{ui.esc(text)}"><input type="hidden" name="sender" value="{ui.esc(sender)}"><input type="hidden" name="band" value="{ui.esc(r['band'])}">
+<input type="hidden" name="kind" value="message"><input type="hidden" name="source" value="{'ai_novel' if novel else 'student'}">
 <div class="row"><button class="b sm" name="label" value="scam">It was a scam</button><button class="b sm sec" name="label" value="unsure">Not sure</button>
 <button class="b sm ghost" name="label" value="legit">It was real</button></div></form></details>"""
     extra = "" if user else _school_form()
@@ -477,11 +488,11 @@ def check_listing_submit(request: Request, title: str = Form(""), company: str =
         v["url"] = "https://" + v["url"]
     r = check_listing(v["title"], v["description"], v["company"], v["url"], v["contact"])
     full = full_view(user)
-    body_text = f'{v["title"]}\n{v["company"]}\n\n{v["description"]}'.strip()
     report = f"""<details class="card" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
 <p class="small muted" style="margin:8px 0 12px">Helps the detector learn. We save the listing and your answer, never your name.</p>
 <form method="post" action="/check/submit"><input type="hidden" name="csrf" value="{security.make_csrf('form')}">
-<input type="hidden" name="text" value="{ui.esc(body_text[:8000])}"><input type="hidden" name="sender" value="{ui.esc((v['url'] or v['contact'])[:200])}"><input type="hidden" name="band" value="{ui.esc(r['band'])}">
+<input type="hidden" name="text" value="{ui.esc(v['description'][:8000])}"><input type="hidden" name="sender" value="{ui.esc(v['contact'][:200])}"><input type="hidden" name="band" value="{ui.esc(r['band'])}">
+<input type="hidden" name="kind" value="listing"><input type="hidden" name="title" value="{ui.esc(v['title'][:200])}"><input type="hidden" name="company" value="{ui.esc(v['company'][:200])}"><input type="hidden" name="url" value="{ui.esc(v['url'][:2000])}">
 <div class="row"><button class="b sm" name="label" value="scam">It was a scam</button><button class="b sm sec" name="label" value="unsure">Not sure</button>
 <button class="b sm ghost" name="label" value="legit">It was real</button></div></form></details>"""
     extra = "" if user else _school_form()
@@ -490,12 +501,16 @@ def check_listing_submit(request: Request, title: str = Form(""), company: str =
 
 @router.post("/check/submit", response_class=HTMLResponse)
 def check_contribute(request: Request, text: str = Form(""), sender: str = Form(""), band: str = Form(""),
-                     label: str = Form(""), csrf: str = Form("")):
+                     label: str = Form(""), csrf: str = Form(""), kind: str = Form("message"), title: str = Form(""),
+                     company: str = Form(""), url: str = Form(""), source: str = Form("student")):
     security.enforce_rate_limit(request, security.check_limiter, "check_submit")
     if not security.verify_csrf(csrf, "form") or label not in ("scam", "unsure", "legit") or not (15 <= len(text) <= 8000):
         return _page(ui.banner("warning", "That didn't go through. Please try again.") + _form(), 400)
+    clean = lambda x, n: security._CONTROL_CHARS_RE.sub("", x or "").strip()[:n]
     user = web.current_user(request)
     with store.db() as conn:
-        conn.execute("INSERT INTO submitted_checks (user_id, body, sender, band, user_label, created_at) VALUES (?,?,?,?,?,?)",
-                     (user["id"] if user else None, text, sender[:200], band if band in BAND_LEVEL else "", label, time.time()))
+        learning.add_submission(conn, body=clean(text, 8000), sender=clean(sender, 200), band=band if band in BAND_LEVEL else "",
+                                user_label=label, user_id=user["id"] if user else None,
+                                kind="listing" if kind == "listing" else "message", title=clean(title, 200), company=clean(company, 200),
+                                url=clean(url, 2000), source="ai_novel" if source == "ai_novel" else "student")
     return _page(ui.banner("verified", "Thanks. A reviewer will look at it, and it helps the detector catch the next one.") + _form())

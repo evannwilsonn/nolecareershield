@@ -76,6 +76,7 @@ import jobboard
 import jobfit
 import messaging
 import msgcheck
+import learning
 import assistant
 import resume_tools
 import feed
@@ -113,6 +114,7 @@ def daily_maintenance():
         backup.run_backup(DB_PATH)
     except Exception:                      # noqa: BLE001 - a failed backup must never take the site down
         log.exception("database backup failed")
+    learning.maybe_retrain()               # retrains the scam model in the background when a month and enough labels have passed
 
 
 async def _maintenance_loop():
@@ -145,7 +147,7 @@ _EXTRA_COLUMNS = {"review_label": "TEXT", "ruleset_version": "TEXT", "reviewed_a
                   "easy_apply": "INTEGER NOT NULL DEFAULT 0", "questions": "TEXT NOT NULL DEFAULT '[]'",
                   "requirements": "TEXT NOT NULL DEFAULT '[]'",
                   "poster_name": "TEXT NOT NULL DEFAULT ''", "poster_title": "TEXT NOT NULL DEFAULT ''",
-                  "show_email": "INTEGER NOT NULL DEFAULT 0"}
+                  "show_email": "INTEGER NOT NULL DEFAULT 0", "learn_split": "TEXT"}
 REVIEW_REASONS = ["scam", "lead_gen", "other"]
 
 
@@ -157,6 +159,7 @@ def _ensure_columns(db):
 
 
 def init_db():
+    learning.configure()                   # the detector uses the model retrained on this board, when there is one
     with closing(sqlite3.connect(DB_PATH)) as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
@@ -794,7 +797,7 @@ mailer.copy_hook = emails.keep
 
 # ---------- student network ----------
 
-for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, assistant.router, resume_tools.router,
+for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, learning.router, assistant.router, resume_tools.router,
            feed.router, admin_extra.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router):
     app.include_router(_r)
 
@@ -888,7 +891,7 @@ def privacy():
 <ul><li>Only signed-in FSU students and approved employers can read or post. Employer posts are reviewed before they appear and must be relevant to FSU students.</li>
 <li>Anyone can report a post; reported posts are checked by a reviewer. Rejected and removed posts are deleted after 30 days.</li></ul>
 <h3>Scam checker</h3>
-<ul><li>Messages you paste into the scam checker are not saved, unless you press "send to reviewers" to help improve the detector. Those are kept for up to a year.</li></ul>
+<ul><li>Messages and listings you paste into the scam checker are not saved, unless you press "Send this to our reviewers" to help improve the detector. Those are kept for up to a year, without your name. When a reviewer confirms whether one was a scam, that text (with email addresses and phone numbers masked) can be used to retrain the detector.</li></ul>
 {ai_block}
 <h3>People who post a job</h3>
 <ul><li>You need an employer account: an email address (confirmed by a link) and a password, stored the same way as above, plus a company profile that a reviewer approves before you can message students or post to the feed.</li>

@@ -133,6 +133,18 @@ stand, what was decided and why, and what's next.
 - **An "applicant tracker" that scores students on reply speed was dropped** (Evan's call after discussing privacy and
   hiring-law concerns).
 
+## Scam detector: model and learning loop (Sept 30)
+
+- **The learned model:** `scam_detector/ml.py`, trained by `scam_detector/tools/train_model.py`, documented in
+  `scam_detector/MODEL.md`. It only escalates (flags a listing for review, or "Be careful" on the public listing
+  check) and never rejects anything.
+- **The learning loop:** `learning.py`.
+  - `/admin/checks` is the label queue, with scam waves and label-all.
+  - `/admin/model` shows the active model, the training runs and a "Retrain now" button.
+  - It retrains monthly on the reviewers' confirmed labels and ships only through the gate.
+- **Server requirement:** it needs scikit-learn on the server (in requirements.txt). The live model is saved
+  next to the database on the Render disk.
+
 ## Next / waiting on someone
 
 1. **FSU single sign-on:** ask FSU ITS to register NoleCareerShield in FSU's Microsoft Entra tenant with redirect URI
