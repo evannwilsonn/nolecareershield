@@ -129,13 +129,14 @@ function reset() {
   link(casey.id, m.id, casey.id, "accepted", "", t - 9 * 86400e3);
   link(riley.id, m.id, m.id, "accepted", "", t - 6 * 86400e3);
   link(blair.id, j.id, blair.id, "pending", "Hi Jordan, we're both in STA 4102. Would love to compare notes on the R project.", t - 5 * 3600e3);
-  void morgan;
 
   const listings = NCS_SEED.concat(EXTRA_LISTINGS);
   S.jobs = listings.map((l, i) => {
     const pst = POSTERS[l.id] || ["", "", 0];
-    const job = Object.assign({}, l, {apply_url: APPLY_FIX[l.id] || l.apply_url, employer_id: EMPLOYER_OF[l.company] || null, age_days: (listings.length - i) * 2,
-      poster_name: pst[0], poster_title: pst[1], show_email: pst[2] ? 1 : 0});
+    const age = (listings.length - i) * 2;
+    const job = Object.assign({}, l, {apply_url: APPLY_FIX[l.id] || l.apply_url, employer_id: EMPLOYER_OF[l.company] || null, age_days: age,
+      poster_name: pst[0], poster_title: pst[1], show_email: pst[2] ? 1 : 0, listing_status: "open", expiry_days: LISTING_DAYS.def,
+      expires_at: l.state === "approved" ? t + (LISTING_DAYS.def - age) * 86400e3 : null, expiry_reminded: null});
     scoreJob(job); job.review_status = l.state; job.review_label = l.state === "approved" ? "legit" : null; job.seedApproved = l.state === "approved"; return job;
   });
   S.nextJob = 11;
@@ -148,7 +149,16 @@ function reset() {
   // Each new message also sent Jordan an email; the in-site Emails page keeps a copy of both.
   const noteMail = (eid, at, read) => { mail(j.email, "You have a new message on NoleCareerShield", `${(EP(eid) || {}).company || "An employer"} sent you a message on NoleCareerShield.\n\nRead it on the site. We never put message text in emails, so an email that includes a "message" and asks you to reply is not from us.`, null); Object.assign(S.inbox[0], {at, read}); };
   noteMail(4, t - 3600e3, true); noteMail(5, t - 1800e3, false);
-  const jc = S.candidates.find(x => x.job === 1 && x.student === j.id); if (jc) { jc.stage = "interviewing"; jc.note = "SQL reports for the county. Video call Thursday."; }
+  const jc = S.candidates.find(x => x.job === 1 && x.student === j.id); if (jc) { jc.stage = "interviewing"; jc.note = "SQL reports for the county. Video call Thursday."; jc.rating = 4; }
+  // More of Garnet's tracker, so the applicant table has something to sort: two saved from matches, one quick-apply application.
+  addCandidate(1, blair.id, 4, "saved"); addCandidate(1, casey.id, 4, "saved");
+  S.apps.push({job: 9, student: morgan.id, employer: 4, answers: [{q: "Why this role?", a: "I run my club's Instagram and grew it 40% last spring."}, {q: "Are you authorized to work in the US?", a: "Yes"}, {q: "Portfolio link", a: ""}],
+    note: "Happy to share examples.", share: false, at: t - 2 * 86400e3});
+  addCandidate(9, morgan.id, 4, "applied");
+  S.candidates.forEach(c => { if (c.student === morgan.id) c.at = t - 2 * 86400e3; if (c.student === blair.id) { c.at = t - 4 * 86400e3; c.stage = "reviewing"; } if (c.student === casey.id) c.at = t - 6 * 86400e3; });
+  // The Social Media Intern listing ends in 4 days, so Garnet already has the 5-day reminder in its Emails.
+  const sm = S.jobs.find(x => x.id === 9); if (sm) sm.expires_at = t + 4 * 86400e3 + 3600e3;
+  sendExpiryReminders();
   // Listing stats: students who opened the Garnet Analytics listing and pressed Apply (totals only).
   for (let k = 0; k < 23; k++) recordView(1, 1000 + k);
   for (let k = 0; k < 7; k++) (S.clicks[1] = S.clicks[1] || new Set()).add(1000 + k);
@@ -193,7 +203,17 @@ const U = id => S.users.find(u => u.id === id);
 const SP = id => S.students[id];
 const EP = id => S.employers[id];
 const approvedEmp = id => !!(EP(id) && EP(id).status === "approved");
-const approvedJobs = () => S.jobs.filter(j => j.review_status === "approved");
+// One rule for what students can see (twin of store.listing_state / store.visible_listing): approved by a reviewer,
+// not paused or closed by the employer, and not past its expiry date.
+const LISTING_DAYS = {def: 60, min: 7, max: 120, remind: 5};
+function listingState(j) {
+  if (!j) return "removed";
+  if (j.review_status !== "approved") return j.review_status || "pending";
+  const ls = j.listing_status || "open"; if (ls === "paused" || ls === "closed") return ls;
+  return j.expires_at && j.expires_at <= NOW() ? "expired" : "live";
+}
+const visibleListing = j => listingState(j) === "live";
+const approvedJobs = () => S.jobs.filter(visibleListing);
 const me = () => S.session;
 const isStudent = () => me() && me().role === "student";
 const isEmployer = () => me() && me().role === "employer";
@@ -249,7 +269,7 @@ function cleanQuestions(raw) {
   }
   return out;
 }
-const canApply = j => !!(j && j.easy_apply && j.review_status === "approved" && j.employer_id && approvedEmp(j.employer_id));
+const canApply = j => !!(j && j.easy_apply && visibleListing(j) && j.employer_id && approvedEmp(j.employer_id));
 const myApp = (jid, uid) => S.apps.find(a => a.job === jid && a.student === uid);
 function applicationHtml(a, p) {
   const rows = a.answers.map(x => `<div class="qa"><div class="q">${esc(x.q)}</div><div class="a">${x.a ? esc(x.a) : "<span class=faint>No answer</span>"}</div></div>`).join("");
@@ -390,7 +410,7 @@ function nav() {
   if (me()) $("#navActions").innerHTML = extra + `<span class="who">${esc(me().email)}</span><button class="ghostbtn" type="button" data-do="logout">Log out</button>` + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "");
   else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="employers">For employers</a>';
 }
-const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages", tailor: "resume", standout: "resume", optimized: "resume",
+const APP_PAGES = {hiring: "hiring", hjob: "hiring", applicants: "hiring", hedit: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages", tailor: "resume", standout: "resume", optimized: "resume",
   resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", network: "network", applications: "applications", emails: "emails", easy: "jobs", u: "", company: "", about: "", privacy: "", report: ""};
 
 // ---------------- pages ----------------
@@ -431,11 +451,11 @@ function employerHome() {
   const tile = {pending: ["goldt", "Your organization is in review", "You can post jobs now. Messaging, the student directory and feed posts open once you're approved.", '<a class="b sm sec" href="#" data-go="admin">Approve it in the reviewer view</a>'],
     approved: ["", "You're an approved employer", "You can message students, browse the directory and post opportunities to the FSU feed.", '<a class="b sm sec" href="#" data-go="talent">Find students</a>'],
     rejected: ["tint", "Your profile wasn't approved", p.status_note || "Update your details and send it again.", '<a class="b" href="#" data-go="setup?step=1">Update profile</a>']}[p.status] || ["tint", "Finish your company profile", "", '<a class="b" href="#" data-go="setup?step=1">Finish profile</a>'];
-  const live = mine.filter(j => j.review_status === "approved").length, st = mine.map(jobStats), viewed = st.reduce((a, x) => a + x.views, 0), cands = S.candidates.filter(c => mine.some(j => j.id === c.job)).length;
+  const live = mine.filter(visibleListing).length, st = mine.map(jobStats), viewed = st.reduce((a, x) => a + x.views, 0), cands = S.candidates.filter(c => mine.some(j => j.id === c.job)).length;
   const kpis = kpi(live, `live listing${live !== 1 ? "s" : ""}`, "hiring") + kpi(viewed, `student view${viewed !== 1 ? "s" : ""} of your listings`, "hiring") + kpi(cands, `candidate${cands !== 1 ? "s" : ""} in your tracker`, "hiring") + kpi(n, "unread", "messages", n > 0);
   return `${helloBand("Employer", `${hello},<br><em>${esc(p.company)}.</em>`, "Post roles for FSU students, answer messages, and share opportunities on the feed.", kpis, "office-960.webp")}
 <div class="bento"><div class="tile w4 ${tile[0]}"><h3>${esc(tile[1])}</h3><p>${esc(tile[2])}</p><div class="foot">${tile[3]}</div></div>
-<div class="tile w2"><h3>${icon("jobs")}Live listings</h3><div class="big">${mine.filter(j => j.review_status === "approved").length}</div><p>${mine.filter(j => j.review_status === "pending").length} waiting for review</p><div class="foot row"><a class="b sm" href="#" data-go="hiring">Matches &amp; stats</a><a class="b sm sec" href="#" data-go="post">Post a job</a></div></div>
+<div class="tile w2"><h3>${icon("jobs")}Live listings</h3><div class="big">${mine.filter(visibleListing).length}</div><p>${mine.filter(j => j.review_status === "pending").length} waiting for review</p><div class="foot row"><a class="b sm" href="#" data-go="hiring">Matches &amp; stats</a><a class="b sm sec" href="#" data-go="post">Post a job</a></div></div>
 <div class="tile w3"><h3>${icon("people")}Find students</h3><p>Search students who opted in, by skill or major.</p><div class="foot"><a class="b sm sec" href="#" data-go="talent">Open directory</a></div></div>
 <div class="tile w3"><h3>${icon("feed")}FSU feed</h3><p>Share internships, info sessions and advice. Posts must be relevant to FSU students.</p><div class="foot"><a class="b sm sec" href="#" data-go="feed">Open the feed</a></div></div></div>`;
 }
@@ -644,18 +664,23 @@ P.jobs = () => {
 P.job = () => {
   if (!me()) { go("start?next=job-" + S.route.q.id); return null; }
   const j = S.jobs.find(x => x.id === S.route.q.id);
-  if (!j || j.review_status !== "approved") return '<p class="empty" style="margin:40px 0">That listing isn\'t available.</p>';
+  if (!visibleListing(j)) return '<p class="empty" style="margin:40px 0">That listing isn\'t available.</p>';
   const student = isStudent(), p = student ? SP(me().id) : null;
   return `<div class="jb jb-page">${jbDetail(j, p, "job?id=" + j.id, true, student ? jbSaved(me().id).includes(j.id) : null, student ? tailorPanel(j, p) : "")}</div>`;
 };
-P.post = () => {
-  const v = S.draft || {}, val = n => esc(v[n] || "");
+P.post = () => postFormHtml(S.draft || {}, 0);
+function postFormHtml(v, editId) {
+  const val = n => esc(v[n] || "");
   const qv = Array.isArray(v.questions) ? v.questions.slice() : []; while (qv.length < MAX_QUESTIONS) qv.push({});
   const qRows = qv.slice(0, MAX_QUESTIONS).map((q, i) => `<div class="qrow"><label class="sr" for="f-qtext${i}">Question ${i + 1}</label><input id="f-qtext${i}" name="qtext" maxlength="${Q_LEN}" placeholder="Question ${i + 1}" value="${esc(q.q || "")}">`
     + `<label class="sr" for="f-qkind${i}">Answer type for question ${i + 1}</label><select id="f-qkind${i}" name="qkind">${Q_KINDS.map(([k, n]) => `<option value="${k}"${q.kind === k ? " selected" : ""}>${esc(n)}</option>`).join("")}</select>`
     + `<label class="sr" for="f-qreq${i}">Required or optional for question ${i + 1}</label><select id="f-qreq${i}" name="qreq"><option value="0">Optional</option><option value="1"${q.required ? " selected" : ""}>Required</option></select></div>`).join("");
-  return `${pageHead("Submit a job", "Submitting isn't publishing. Every listing is scam-scanned and then reviewed by a person before it appears.", me() ? "Hiring" : "")}${takeFlash()}
-<form id="postForm" class="card" style="max-width:720px">
+  const cur = expiryDays(v.expiry_days);
+  const expiry = editId ? "" : `<div class="form-field"><label for="f-expiry">Keep it up for</label><p class="hint">Counted from the day a reviewer approves it. You can extend, pause or close it any time from Your listings. We email you 5 days before it ends.</p><select id="f-expiry" name="expiry_days">${[7, 14, 30, 45, 60, 90, 120].map(d => `<option value="${d}"${d === cur ? " selected" : ""}>${d} days</option>`).join("")}</select></div>`;
+  const top = editId ? `<a class="back" href="#" data-go="hjob?id=${editId}">← Back to the listing</a>${pageHead("Edit listing", "Changing the title, company, description, apply URL or questions scans the listing again and sends it back to a reviewer; it is off the board until they approve it. Category, work type, location and who's posting change right away.", "Hiring")}`
+    : pageHead("Submit a job", "Submitting isn't publishing. Every listing is scam-scanned and then reviewed by a person before it appears.", me() ? "Hiring" : "");
+  return `${top}${takeFlash()}
+<form id="${editId ? "editForm" : "postForm"}" data-job="${editId || ""}" class="card" style="max-width:720px">
 <div class="form-field"><label for="f-title">Job title</label><input id="f-title" name="title" required maxlength="200" placeholder="e.g. Marketing Data Analyst" value="${val("title")}"></div>
 <div class="form-field"><label for="f-company">Company</label><input id="f-company" name="company" required maxlength="200" placeholder="e.g. Leaf Home" value="${val("company") || (isEmployer() ? esc(EP(me().id).company || "") : "")}"></div>
 <div class="grid2"><div class="form-field"><label for="f-category">Category</label><select id="f-category" name="category">${N.CATEGORIES.map(c => `<option${v.category === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
@@ -663,7 +688,7 @@ P.post = () => {
 <div class="form-field"><label for="f-location">Location</label><p class="hint">City/state, or leave blank if fully remote.</p><input id="f-location" name="location" maxlength="120" placeholder="e.g. Tallahassee, FL" value="${val("location")}"></div>
 <div class="form-field"><label for="f-description">Description</label><p class="hint">The full posting: responsibilities, requirements, and pay if you can share it.</p><textarea id="f-description" name="description" required maxlength="8000">${val("description")}</textarea></div>
 <div class="form-field"><label for="f-apply_url">Apply URL</label><p class="hint">Where applicants should go. The scanner checks this link too.</p><input id="f-apply_url" name="apply_url" maxlength="2000" placeholder="https://..." value="${val("apply_url")}"></div>
-<fieldset class="form-field easyset"><legend>Who's posting</legend>
+${expiry}<fieldset class="form-field easyset"><legend>Who's posting</legend>
 <p class="hint">Your name appears on the listing so students know who they'd be talking to. Students who apply can message you on NoleCareerShield.</p>
 <div class="form-field"><label for="f-poster_name">Your name</label><input id="f-poster_name" name="poster_name" maxlength="80" placeholder="e.g. Dana Whitfield" value="${val("poster_name")}"></div>
 <div class="form-field"><label for="f-poster_title">Your job title</label><input id="f-poster_title" name="poster_title" maxlength="80" placeholder="e.g. Campus Recruiting Manager" value="${val("poster_title")}"></div>
@@ -672,7 +697,13 @@ P.post = () => {
 <fieldset class="form-field easyset"><legend>Quick apply</legend>
 <label class="toggle" for="f-easy"><input id="f-easy" type="checkbox" name="easy_apply" value="1"${v.easy_apply ? " checked" : ""}><span><b>Collect applications on NoleCareerShield.</b> Students apply from their profile in one step, and you get their answers in your candidate tracker. Leave it off to send them to your Apply URL.</span></label>
 <p class="hint" style="margin-top:10px">Optional questions for applicants (up to ${MAX_QUESTIONS}). Nothing that asks for an SSN, bank or card details or a password.</p>${qRows}</fieldset>
-<button class="submit-btn" type="submit">Submit for review</button><p class="fine" style="text-align:left">${isEmployer() ? "Sending as " + esc(me().email) + "." : "You'll log in or sign up before it sends."}</p></form>`;
+<button class="submit-btn" type="submit">${editId ? "Save changes" : "Submit for review"}</button>${editId ? "" : `<p class="fine" style="text-align:left">${isEmployer() ? "Sending as " + esc(me().email) + "." : "You'll log in or sign up before it sends."}</p>`}</form>`;
+}
+P.hedit = () => {
+  if (!isEmployer()) return needLogin("your listings", "employer");
+  const j = S.jobs.find(x => x.id === S.route.q.id && x.employer_id === me().id);
+  if (!j || ["rejected", "removed"].includes(j.review_status)) return pageHead("Listing can't be edited") + '<a class="b sec" href="#" data-go="hiring">Your listings</a>';
+  return postFormHtml(S.editDraft && S.editDraft.id === j.id ? S.editDraft.v : Object.assign({}, j, {direct: 1}), j.id);
 };
 P.posted = () => `${pageHead("Submitted for review")}${banner("info", "Thanks, your listing was scanned and is now waiting for a person to approve it. Nothing is published automatically. Open the reviewer view to see its score and approve it, and check the demo inbox for the receipt.")}<div class="row"><a class="b" href="#" data-go="admin">Open the reviewer view</a><a class="b sec" href="#" data-go="home">Home</a></div>`;
 
@@ -726,13 +757,18 @@ function sendApplication(f, fd) {
   flash("verified", "Application sent. The employer sees it in their candidate tracker.");
   go("applications");
 }
+// Twin of easyapply._closed_note: the listing's own state, never the employer's stage.
+const CLOSED_NOTES = {closed: ["Closed", "The employer closed this listing. Your application stays with them unless you withdraw it."],
+  paused: ["Paused", "The employer paused this listing for now. Your application stays with them."], expired: ["Expired", "This listing is no longer on the board. Your application stays with the employer."],
+  removed: ["Removed", "This listing was taken down."], pending: ["Being re-reviewed", "The employer edited this listing."]};
+function closedNote(j) { const st = j && j.id ? listingState(j) : "", n = CLOSED_NOTES[st]; return n ? `<p class="small appnote"><span class="pill ${st === "closed" || st === "removed" ? "bad" : "warn"}">${esc(n[0])}</span> ${esc(n[1])}</p>` : ""; }
 P.applications = () => {
   if (!isStudent()) return needStudent("applications");
   const head = pageHead("Your applications", "Everything you sent with quick apply. Employers see it only while it's here.", "Apply") + takeFlash();
   const apps = S.apps.filter(a => a.student === me().id).sort((x, y) => y.at - x.at);
   if (!apps.length) return head + '<div class="empty">No applications yet. Listings with a <b>Quick apply</b> button let you apply without leaving the site. <a href="#" data-go="jobs">Browse jobs</a></div>';
   return head + apps.map(a => { const j = S.jobs.find(x => x.id === a.job) || {title: "Listing", company: ""};
-    return `<div class="card app"><div class="row between" style="align-items:flex-start;gap:12px"><div style="min-width:0"><a class="job-title" href="#" data-go="job?id=${a.job}">${esc(j.title)}</a><div class="job-co">${esc(j.company)} · sent ${ago(a.at)}</div></div><button class="b sm ghost" type="button" data-do="withdraw" data-id="${a.job}">Withdraw</button></div></div>`; }).join("");
+    return `<div class="card app"><div class="row between" style="align-items:flex-start;gap:12px"><div style="min-width:0"><a class="job-title" href="#" data-go="job?id=${a.job}">${esc(j.title)}</a><div class="job-co">${esc(j.company)} · sent ${ago(a.at)}</div>${closedNote(j)}</div><button class="b sm ghost" type="button" data-do="withdraw" data-id="${a.job}">Withdraw</button></div></div>`; }).join("");
 };
 
 // ---- network (twin of network.py) ----
@@ -2196,9 +2232,106 @@ const STAGES = [["new", "New"], ["reviewing", "Reviewing"], ["interviewing", "In
 const STAGE_NAME = Object.fromEntries(STAGES);
 const SOURCES = {applied: ["Applied", "ok"], messaged: ["Messaged you", "accent"], invited: ["You invited", "gold"], saved: ["Saved from matches", ""]};
 const JOB_STATUS = {approved: ["ok", "Live"], pending: ["warn", "In review"], rejected: ["bad", "Not approved"], removed: ["bad", "Removed"]};
+// What the employer sees for each listingState() (twin of hiring.STATE_PILL).
+const STATE_PILL = {live: ["ok", "Live"], pending: ["warn", "In review"], rejected: ["bad", "Not approved"], removed: ["bad", "Removed"], paused: ["gold", "Paused"], closed: ["", "Closed"], expired: ["bad", "Expired"]};
+const HDONE = {paused: ["info", "Paused. Students can't see it; everyone who applied stays in your tracker."], resumed: ["verified", "Back on the board."],
+  closed: ["info", "Closed. It's off the board, and students who applied see that it's closed."], extended: ["verified", "Expiry date updated."],
+  badexpiry: ["warning", "Pick 7 to 120 days, or a date in that range."], copied: ["verified", "Copied. The new listing is scanned and waiting for a reviewer, like any new listing. Edit it before it's approved if you like."],
+  saved: ["verified", "Saved. Those changes are live now."], review: ["info", "Saved and sent back for review: the listing was scanned again and is off the board until a reviewer approves it."]};
+const expiryDays = v => { const d = parseInt(v, 10); return isNaN(d) ? LISTING_DAYS.def : Math.max(LISTING_DAYS.min, Math.min(LISTING_DAYS.max, d)); };
+const shortDay = ts => new Date(ts).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"});
+function expiryLine(j) {   // twin of hiring.expiry_line
+  const st = listingState(j);
+  if (st === "pending") return `Runs ${j.expiry_days || LISTING_DAYS.def} days once approved`;
+  if (st === "rejected" || st === "removed" || !j.expires_at) return "";
+  if (st === "expired") return "Expired " + shortDay(j.expires_at);
+  const days = Math.max(0, Math.round((j.expires_at - NOW()) / 86400e3));
+  return (st === "closed" ? "Was due to end " : "Ends ") + shortDay(j.expires_at) + (st === "closed" ? "" : ` · ${plural(days, "day")} left`);
+}
+function listingControls(j, full) {   // twin of hiring.listing_controls
+  const st = listingState(j), back = full ? "" : ' data-back="list"', out = [];
+  const btn = (act, label, cls, extra) => `<button class="b sm ${cls}" type="button" data-do="${act}" data-id="${j.id}"${back}${extra || ""}>${esc(label)}</button>`;
+  if (st === "live") out.push(btn("lst-status", "Pause", "sec", ' data-v="pause"'));
+  if (st === "paused") out.push(btn("lst-status", "Resume", "", ' data-v="resume"'));
+  if (["live", "paused", "expired"].includes(st)) out.push(btn("lst-status", "Close", "ghost", ' data-v="close"'));
+  if (st === "expired") out.push(btn("lst-extend", "Extend 30 days", ""));
+  if (["pending", "live", "paused", "expired"].includes(st)) out.push(`<a class="b sm ghost" href="#" data-go="hedit?id=${j.id}">Edit</a>`);
+  if (st !== "removed") out.push(btn("lst-dup", "Duplicate", "ghost"));
+  const row = `<div class="lc-row">${out.join("")}</div>`;
+  if (!full || ["closed", "rejected", "removed"].includes(st)) return row;
+  const sel = st === "pending" ? (j.expiry_days || 60) : 30;
+  const opts = [7, 14, 30, 45, 60, 90, 120].map(d => `<option value="${d}"${d === sel ? " selected" : ""}>${d} days</option>`).join("");
+  const iso = ms => new Date(ms).toISOString().slice(0, 10);
+  const label = st === "pending" ? "Keep it up for (from approval)" : st === "expired" ? "Put it back up for" : "Extend or shorten: keep it up for";
+  const date = st === "pending" ? "" : `<span class="lc-or">or until</span><label class="sr" for="lc-date">End date</label><input id="lc-date" type="date" name="date" min="${iso(NOW() + 7 * 86400e3)}" max="${iso(NOW() + 120 * 86400e3)}">`;
+  return row + `<form id="expiryForm" data-job="${j.id}" class="lc-exp"><label for="lc-days">${esc(label)}</label><select id="lc-days" name="days">${opts}</select>${date}<button class="b sm sec" type="submit">Set</button></form>`;
+}
+function hDone(back, id, done) { if (HDONE[done]) flash(...HDONE[done]); go(back === "list" ? "hiring" : "hjob?id=" + id); }
+function listingStatus(id, v, back) {   // twin of hiring.listing_status
+  const j = S.jobs.find(x => x.id === id && x.employer_id === me().id); if (!j) return;
+  const moves = {pause: [["live"], "paused", "paused"], resume: [["paused"], "open", "resumed"], close: [["live", "paused", "expired"], "closed", "closed"]}, m = moves[v];
+  if (m && m[0].includes(listingState(j))) { j.listing_status = m[1]; return hDone(back, id, m[2]); }
+  hDone(back, id, "");
+}
+function setExpiry(id, days, date, back) {   // twin of hiring.listing_expiry
+  const j = S.jobs.find(x => x.id === id && x.employer_id === me().id), st = listingState(j); if (!j || ["closed", "rejected", "removed"].includes(st)) return;
+  let ts = null;
+  if (date && st !== "pending") { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date); ts = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], 23, 59, 59) : null;
+    if (ts === null || !(ts > NOW() + 6 * 86400e3 && ts <= NOW() + 121 * 86400e3)) return hDone(back, id, "badexpiry"); }
+  else { const d = /^\d+$/.test(days || "") ? Number(days) : 0; if (d < LISTING_DAYS.min || d > LISTING_DAYS.max) return hDone(back, id, "badexpiry");
+    if (st === "pending") { j.expiry_days = d; return hDone(back, id, "extended"); }
+    ts = NOW() + d * 86400e3; }
+  j.expires_at = ts; hDone(back, id, "extended");
+}
+function duplicateListing(id) {   // twin of app.listing_duplicate: a new pending listing, scanned and reviewed like any other
+  const j = S.jobs.find(x => x.id === id && x.employer_id === me().id); if (!j || j.review_status === "removed") return;
+  const keep = ["title", "company", "category", "work_type", "location", "description", "apply_url", "contact", "easy_apply", "questions", "requirements", "poster_name", "poster_title", "show_email", "expiry_days"];
+  const d = {}; keep.forEach(k => { if (j[k] !== undefined) d[k] = JSON.parse(JSON.stringify(j[k])); });
+  const n = Object.assign({id: S.nextJob++, employer_id: me().id, age_days: 0, review_status: "pending", review_label: null, listing_status: "open", expires_at: null, expiry_reminded: null}, d);
+  scoreJob(n); S.jobs.push(n);
+  mail(me().email, "We received your listing", `We received your listing "${n.title}". It has been scanned, and a person reviews every listing before it appears on the board.`, null);
+  flash(...HDONE.copied); go("hjob?id=" + n.id);
+}
+function saveListingEdit(f, fd) {   // twin of app.listing_edit_save
+  const g = k => String(fd.get(k) || "").trim(), many = k => fd.getAll(k).map(String), id = Number(f.dataset.job);
+  const j = S.jobs.find(x => x.id === id && x.employer_id === me().id); if (!j || ["rejected", "removed"].includes(j.review_status)) return go("hiring");
+  const qt = many("qtext"), qk = many("qkind"), qr = many("qreq");
+  const v = {title: g("title"), company: g("company"), category: g("category"), work_type: g("work_type"), location: g("location"), description: g("description"), apply_url: g("apply_url"),
+    easy_apply: fd.get("easy_apply") ? 1 : 0, questions: qt.slice(0, MAX_QUESTIONS).map((t, i) => ({q: t, kind: qk[i] || "short", required: qr[i] === "1"})),
+    poster_name: g("poster_name").replace(/\s+/g, " ").slice(0, 80), poster_title: g("poster_title").replace(/\s+/g, " ").slice(0, 80), show_email: fd.get("show_email") ? 1 : 0, direct: fd.get("direct") ? 1 : 0};
+  const fail = msg => { S.editDraft = {id, v}; flash("warning", msg); render(); };
+  if (!v.direct) return fail("Confirm that you work directly for this company. " + RECRUITER_MSG);
+  if (RECRUITER.test([v.title, v.company, v.description, v.poster_title].join(" "))) return fail(RECRUITER_MSG);
+  if (!v.title || !v.company || !v.description) return fail("Title, company and description are required.");
+  if (v.apply_url && !/^https?:\/\/[^\s<>"']+$/i.test(v.apply_url)) return fail("The apply URL must start with http:// or https://.");
+  try { v.questions = cleanQuestions(v.questions); } catch (err) { return fail(String(err)); }
+  const ep = EP(me().id) || {};
+  if (companyMismatch(ep.company || "", v.company)) return fail(`You can only post jobs for your own organization (${ep.company}). ` + RECRUITER_MSG);
+  if (!v.poster_name) v.poster_name = ep.contact_name || ""; if (!v.poster_title) v.poster_title = ep.contact_title || "";
+  S.editDraft = null; delete v.direct;
+  const review = ["title", "company", "description", "apply_url"].some(k => (v[k] || "") !== (j[k] || "")) || JSON.stringify(v.questions) !== JSON.stringify(j.questions || []);
+  ["category", "work_type", "location", "easy_apply", "poster_name", "poster_title", "show_email"].forEach(k => { j[k] = v[k]; });
+  if (review) {
+    if (j.review_status === "approved" && j.expires_at) j.expiry_days = Math.min(LISTING_DAYS.max, Math.max(LISTING_DAYS.min, Math.round((j.expires_at - NOW()) / 86400e3)));
+    Object.assign(j, {title: v.title, company: v.company, description: v.description, apply_url: v.apply_url, questions: v.questions, review_status: "pending", review_label: null, expires_at: null, expiry_reminded: null, seedApproved: false});
+    scoreJob(j);
+  }
+  flash(...HDONE[review ? "review" : "saved"]); go("hjob?id=" + id);
+}
+function sendExpiryReminders() {   // twin of app.send_expiry_reminders: once per expiry date, 5 days before
+  let n = 0;
+  S.jobs.forEach(j => {
+    if (!visibleListing(j) || !j.expires_at || j.expires_at > NOW() + LISTING_DAYS.remind * 86400e3 || j.expiry_reminded === j.expires_at || !j.employer_id) return;
+    j.expiry_reminded = j.expires_at; const u = U(j.employer_id); if (!u) return;
+    const days = Math.max(1, Math.round((j.expires_at - NOW()) / 86400e3));
+    mail(u.email, `Your listing "${j.title}" ends in ${plural(days, "day")}`, `Your NoleCareerShield listing "${j.title}" comes off the board on ${new Date(j.expires_at).toLocaleDateString("en-US", {month: "long", day: "numeric", year: "numeric"})}. Students who applied stay in your tracker.\n\nTo keep it up, open it and choose Extend.\nIf you've filled the role, you can close it there too.`, null);
+    n++;
+  });
+  return n;
+}
 function addCandidate(job, student, employer, source) {
   if (!job || S.candidates.some(c => c.job === job && c.student === student)) return false;
-  S.candidates.push({job, student, employer, stage: "new", source, note: "", at: NOW(), updated: NOW()}); return true;
+  S.candidates.push({job, student, employer, stage: "new", source, note: "", rating: 0, archived: false, at: NOW(), updated: NOW()}); return true;
 }
 const recordView = (jid, uid) => { (S.views[jid] = S.views[jid] || new Set()).add(uid); };
 function jobStats(j) {
@@ -2234,20 +2367,22 @@ function inviteText(eid, p, j) {
 }
 P.hiring = () => {
   if (!isEmployer()) return needLogin("your listings", "employer");
-  const head = pageHead("Your listings", "Views, Apply clicks, ranked student matches and a candidate tracker for every listing you post.", "Hiring");
+  sendExpiryReminders();
+  const head = pageHead("Your listings", "Views, Apply clicks, ranked student matches and a candidate tracker for every listing you post.", "Hiring") + takeFlash();
   const mine = S.jobs.filter(j => j.employer_id === me().id).slice().reverse();
   if (!mine.length) return head + '<div class="empty">No listings yet. <a href="#" data-go="post">Post your first job</a> and it shows up here once it\'s submitted.</div>';
-  return head + `<div class="row" style="margin-bottom:14px"><a class="b" href="#" data-go="post">${icon("plus", 16)} Post a job</a></div>` + mine.map(j => {
-    const s = jobStats(j), [tone, label] = JOB_STATUS[j.review_status] || ["", j.review_status];
-    return `<a class="card lift hjob" href="#" data-go="hjob?id=${j.id}"><div class="row between" style="align-items:flex-start"><div style="min-width:0"><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</div></div><span class="pill ${tone}">${esc(label)}</span></div>
-${funnel(s, null, "sm")}</a>`; }).join("");
+  const nApp = mine.reduce((a, j) => a + jobStats(j).candidates, 0);
+  return head + `<div class="row" style="margin-bottom:14px"><a class="b" href="#" data-go="post">${icon("plus", 16)} Post a job</a><a class="b sec" href="#" data-go="applicants">${icon("user", 16)} All applicants (${nApp})</a></div>` + mine.map(j => {
+    const s = jobStats(j), st = listingState(j), [tone, label] = STATE_PILL[st] || ["", st], when = expiryLine(j);
+    return `<div class="card hjob2 st-${st}"><div class="row between" style="align-items:flex-start"><a class="hj-main" href="#" data-go="hjob?id=${j.id}"><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</div></a><div class="hj-state"><span class="pill ${tone}">${esc(label)}</span>${when ? `<span class="hj-when">${esc(when)}</span>` : ""}</div></div>
+<a class="hj-stats" href="#" data-go="hjob?id=${j.id}">${funnel(s, null, "sm")}</a>${listingControls(j, false)}</div>`; }).join("");
 };
 P.hjob = () => {
   if (!isEmployer()) return needLogin("your listings", "employer");
   const j = S.jobs.find(x => x.id === S.route.q.id && x.employer_id === me().id);
   if (!j) return pageHead("Listing not found") + '<a class="b sec" href="#" data-go="hiring">Your listings</a>';
-  const tab = S.route.q.tab === "candidates" ? "candidates" : "matches", s = jobStats(j), [tone, label] = JOB_STATUS[j.review_status] || ["", j.review_status];
-  const cands = S.candidates.filter(c => c.job === j.id).sort((a, b) => b.updated - a.updated), live = j.review_status === "approved";
+  const tab = S.route.q.tab === "candidates" ? "candidates" : "matches", s = jobStats(j), st = listingState(j), [tone, label] = STATE_PILL[st] || ["", st], when = expiryLine(j);
+  const cands = S.candidates.filter(c => c.job === j.id && !c.archived).sort((a, b) => b.updated - a.updated), live = visibleListing(j);
   const stageBits = STAGES.filter(([k]) => s.stages[k]).map(([k, v]) => `${s.stages[k]} ${v.toLowerCase()}`).join(" · ");
   let content;
   if (!approvedEmp(me().id)) content = banner("info", "Ranked matches and student profiles open once a reviewer approves your organization. Your listing's stats are already counting.");
@@ -2259,7 +2394,7 @@ P.hjob = () => {
 ${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class="small" style="margin-top:8px">${evidence(f)}</p>${reqsHtml(f)}<div class="chips" style="margin-top:8px">${f.parts.map(x => `<span class="chip" title="${esc(x.detail)}">${esc(x.name)} ${x.score}</span>`).join("")}</div>
 <div class="row" style="margin-top:12px">${live && p.allow_messages ? `<a class="b sm" href="#" data-go="newmsg?to=${id}&amp;job=${j.id}&amp;invite=1">${icon("chat", 14)} Invite to apply</a>` : ""}${saved.has(id) ? '<span class="pill ok">In candidates</span>' : `<button class="b sm sec" type="button" data-do="save-cand" data-id="${id}">Save to candidates</button>`}<a class="b sm ghost" href="#" data-go="u?id=${id}">View profile</a></div></div>`).join("")
       : '<div class="empty">No students match yet. Matches come from students who made their profile visible to approved employers.</div>');
-  } else content = cands.length ? pipeline(cands) + '<p class="small muted" style="margin-bottom:12px">Stages and notes are private to your organization.</p>' + cands.map(c => {
+  } else content = cands.length ? pipeline(cands) + `<p class="small muted" style="margin-bottom:12px">Stages and notes are private to your organization. Archived candidates are in <a href="#" data-go="applicants?job=${j.id}&amp;show=archived">the applicant table</a>.</p>` + cands.map(c => {
       const p = SP(c.student); if (!p) return "";
       const f = N.fitScore(j, p), [src, st] = SOURCES[c.source] || [c.source, ""], convo = S.convos.find(x => x.student === c.student && x.employer === me().id);
       const app = S.apps.find(a => a.job === j.id && a.student === c.student);
@@ -2270,10 +2405,110 @@ ${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<p class=
 <div class="row" style="margin-top:8px">${msg}<a class="b sm ghost" href="#" data-go="u?id=${c.student}">View profile</a></div></div>`; }).join("")
     : '<div class="empty">No candidates yet. Students appear here when they apply here, when they message you about this listing, when you invite them, or when you save them from the ranked matches.</div>';
   return `<a class="back" href="#" data-go="hiring">← Your listings</a>${takeFlash()}<div class="row between" style="align-items:flex-start;margin-top:6px"><div><h2 class="page" style="margin:0">${esc(j.title)}</h2><p class="job-co">${esc(j.company)} · ${esc(cap(j.work_type))}${j.location ? " · " + esc(j.location) : ""}</p></div><div class="row"><span class="pill ${tone}">${esc(label)}</span>${live ? `<a class="b sm sec" href="#" data-go="job?id=${j.id}">View listing</a>` : ""}</div></div>
+<div class="lc card"><div class="lc-top"><b>Listing</b>${when ? `<span class="hj-when">${esc(when)}</span>` : ""}</div>${listingControls(j, true)}</div>
 ${funnel(s, ["", s.views ? Math.round(100 * s.clicks / s.views) + "% of viewers" : "", "", stageBits])}
 <p class="small faint">Views and Apply clicks are totals. You see who a student is only when they message you, you invite them, or you save them from matches.</p>
 <div class="seg" role="tablist" style="margin:18px 0"><a href="#" data-go="hjob?id=${j.id}&amp;tab=matches"${tab === "matches" ? ' class="on" aria-current="page"' : ""}>Ranked matches</a><a href="#" data-go="hjob?id=${j.id}&amp;tab=candidates"${tab === "candidates" ? ' class="on" aria-current="page"' : ""}>Candidates (${cands.length})</a></div>${content}`;
 };
+
+
+// ---- one applicant table across every listing (twin of hiring.applicants) ----
+const AT_PAGE = 25, AT_SORTS = {match: "Best match", date: "Newest", rating: "Your rating", name: "Name"}, AT_MIN = [0, 25, 50, 65, 75, 90];
+const STARS = ["No rating"].concat([1, 2, 3, 4, 5].map(n => "★".repeat(n) + "☆".repeat(5 - n)));
+const classOf = p => { const m = /(20\d\d)/.exec(p.grad_term || ""); return m ? "Class of " + m[1] : ""; };
+function applicantRows(eid, archived) {   // twin of hiring.applicant_rows: only students this employer may already see
+  const jobs = new Map(S.jobs.filter(j => j.employer_id === eid).map(j => [j.id, j]));
+  S.apps.filter(a => a.employer === eid && jobs.has(a.job)).forEach(a => addCandidate(a.job, a.student, eid, "applied"));
+  const appliedTo = new Set(S.apps.filter(a => a.employer === eid).map(a => a.student)), talking = new Set(S.convos.filter(c => c.employer === eid && !c.blocked_by).map(c => c.student));
+  return S.candidates.filter(c => c.employer === eid && jobs.has(c.job) && !!c.archived === !!archived).map(c => {
+    const p = SP(c.student); if (!p || !studentReady(p) || !(p.visible || talking.has(c.student) || appliedTo.has(c.student))) return null;
+    const j = jobs.get(c.job), f = N.fitScore(j, p), app = S.apps.find(a => a.job === c.job && a.student === c.student);
+    return {c, p, j, f, applied: !!app, at: app ? app.at : c.at, reqOk: f.checklist.filter(x => x.must).every(x => x.status === "met")};
+  }).filter(Boolean);
+}
+function atParams(q) {
+  const num = (k, lo, hi, d) => { const v = parseInt(q[k], 10); return isNaN(v) ? d : Math.max(lo, Math.min(hi, v)); };
+  return {job: num("job", 0, 2 ** 31, 0), stage: STAGE_NAME[q.stage] ? q.stage : "", source: SOURCES[q.source] ? q.source : "", min: num("min", 0, 100, 0),
+    req: q.req === "1" ? "1" : "", sort: AT_SORTS[q.sort] ? q.sort : "match", show: q.show === "archived" ? "archived" : "", page: num("page", 1, 1e6, 1)};
+}
+function atFilter(rows, q) {
+  const nm = x => x.p.display_name.toLowerCase(), cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+  const key = {match: (a, b) => b.f.percent - a.f.percent || cmp(nm(a), nm(b)), date: (a, b) => b.at - a.at || cmp(nm(a), nm(b)),
+    rating: (a, b) => (b.c.rating || 0) - (a.c.rating || 0) || b.f.percent - a.f.percent || cmp(nm(a), nm(b)), name: (a, b) => cmp(nm(a), nm(b)) || b.f.percent - a.f.percent}[q.sort];
+  return rows.filter(x => (!q.job || x.j.id === q.job) && (!q.stage || x.c.stage === q.stage) && (!q.source || x.c.source === q.source) && x.f.percent >= q.min && (!q.req || x.reqOk)).sort(key);
+}
+function atQs(q, over) {
+  const d = Object.assign({}, q, over || {}), out = {};
+  Object.keys(d).forEach(k => { const v = d[k]; if (v === "" || v === 0 || v == null || (k === "sort" && v === "match") || (k === "page" && v === 1)) return; out[k] = v; });
+  const s = new URLSearchParams(out).toString(); return "applicants" + (s ? "?" + s : "");
+}
+const atOpts = (items, cur) => items.map(([k, v]) => `<option value="${esc(k)}"${String(k) === String(cur) ? " selected" : ""}>${esc(v)}</option>`).join("");
+function reqsShort(f) {   // twin of hiring._reqs(f, short=True)
+  if (!f.checklist.length) return '<span class="faint">None set</span>';
+  const mark = {met: ["✓", "met", "Met"], missing: ["⊘", "miss", "Not met"], unknown: ["?", "unk", "Not on profile"]};
+  const rows = f.checklist.map(c => `<li class="rq ${mark[c.status][1]}"><span aria-hidden="true">${mark[c.status][0]}</span><span class="sr">${mark[c.status][2]}: </span>${esc(c.text.replace(" (preferred)", ""))}`
+    + `${c.must ? "<em>Required</em>" : (c.text.includes("(preferred)") ? '<em class="p">Preferred</em>' : "")}</li>`).join("");
+  return `<details class="rqs short"><summary><b>${f.met}/${f.total}</b><span class="sr"> requirements met</span></summary><ul>${rows}</ul></details>`;
+}
+P.applicants = () => {
+  if (!isEmployer()) return needLogin("your applicants", "employer");
+  const q = atParams(S.route.q);
+  const head = `<a class="back" href="#" data-go="hiring">← Your listings</a>` + pageHead("Applicants", "Everyone in your candidate trackers, across all your listings. Stages, ratings and notes are private to your organization.", "Hiring") + takeFlash();
+  if (!approvedEmp(me().id)) return head + banner("info", "The applicant table opens once a reviewer approves your organization.");
+  const jobs = S.jobs.filter(j => j.employer_id === me().id).slice().reverse(), rows = applicantRows(me().id, q.show === "archived");
+  const shown = atFilter(rows, q), pages = Math.max(1, Math.ceil(shown.length / AT_PAGE)); q.page = Math.min(q.page, pages);
+  const start = (q.page - 1) * AT_PAGE, pageRows = shown.slice(start, start + AT_PAGE);
+  const jobOpts = [[0, "All listings"]].concat(jobs.map(j => { const st = listingState(j); return [j.id, j.title + (st === "live" ? "" : ` (${(STATE_PILL[st] || ["", st])[1].toLowerCase()})`)]; }));
+  const filters = `<form id="atFilters" class="at-filters card" role="search" aria-label="Filter applicants">
+<div class="form-field"><label for="af-job">Listing</label><select id="af-job" name="job">${atOpts(jobOpts, q.job)}</select></div>
+<div class="form-field"><label for="af-stage">Stage</label><select id="af-stage" name="stage">${atOpts([["", "Any stage"]].concat(STAGES), q.stage)}</select></div>
+<div class="form-field"><label for="af-src">Source</label><select id="af-src" name="source">${atOpts([["", "Any source"]].concat(Object.entries(SOURCES).map(([k, v]) => [k, v[0]])), q.source)}</select></div>
+<div class="form-field"><label for="af-min">Match</label><select id="af-min" name="min">${atOpts(AT_MIN.map(m => [m, m ? m + "% or more" : "Any match"]), q.min)}</select></div>
+<div class="form-field"><label for="af-sort">Sort by</label><select id="af-sort" name="sort">${atOpts(Object.entries(AT_SORTS), q.sort)}</select></div>
+<div class="form-field"><label for="af-show">Show</label><select id="af-show" name="show">${atOpts([["", "Active"], ["archived", "Archived"]], q.show)}</select></div>
+<label class="toggle at-req" for="af-req"><input id="af-req" type="checkbox" name="req" value="1"${q.req ? " checked" : ""}><span>Meets all required qualifications</span></label>
+<div class="at-fbtn"><button class="b sm" type="submit">Apply filters</button><a class="b sm ghost" href="#" data-go="applicants">Clear</a></div></form>`;
+  if (!rows.length) return head + filters + `<div class="empty">${q.show ? "No archived applicants." : "No applicants yet. Students appear here when they apply with Quick apply, message you about a listing, or when you invite them or save them from ranked matches."}</div>`;
+  if (!shown.length) return head + filters + `<div class="empty">No applicants match those filters. <a href="#" data-go="${esc(atQs(q, {stage: "", source: "", min: 0, req: "", page: 1}))}">Loosen them</a> or <a href="#" data-go="applicants">clear all</a>.</div>`;
+  const archived = q.show === "archived";
+  const bulk = `<form id="bulk" class="at-bulk"><span class="at-count"><b>${shown.length}</b> applicant${shown.length !== 1 ? "s" : ""}${pages > 1 ? ` · showing ${start + 1}–${start + pageRows.length}` : ""}</span>
+<span class="at-bact"><label for="bk-stage">Move selected to</label><select id="bk-stage" name="stage">${atOpts(STAGES, "reviewing")}</select><button class="b sm" type="submit" name="do" value="stage">Move</button>
+<button class="b sm ghost" type="submit" name="do" value="${archived ? "restore" : "archive"}">${archived ? "Restore selected" : "Archive selected"}</button></span></form>`;
+  const built = pageRows.map((x, i) => {
+    const {c, p, j, f} = x, fid = "rf" + i, who = [p.major, classOf(p)].filter(Boolean).join(" · "), [src, srcTone] = SOURCES[c.source] || [c.source, ""], st = listingState(j);
+    const pct = f.percent, tone = pct >= 75 ? "hi" : pct >= 50 ? "mid" : "lo", label = `${esc(p.display_name)} for ${esc(j.title)}`;
+    const reqAll = x.reqOk && f.checklist.some(y => y.must) ? '<span class="at-all" title="Meets every required qualification">✓ all required</span>' : "";
+    const how = x.applied ? "Applied" : "Added";
+    return [`<tr id="a${j.id}-${c.student}"><td class="at-sel" data-l="Select"><input type="checkbox" form="bulk" name="sel" value="${j.id}:${c.student}" aria-label="Select ${label}"></td>
+<td class="at-stu" data-l="Student"><div class="person"><span class="avatar">${initials(p.display_name)}</span><div style="min-width:0"><div class="nm"><a href="#" data-go="u?id=${c.student}" style="text-decoration:none">${esc(p.display_name)}</a></div><div class="sub">${esc(who)}</div></div></div></td>
+<td class="at-lst" data-l="Listing"><a class="at-job" href="#" data-go="hjob?id=${j.id}&amp;tab=candidates#c${c.student}">${esc(j.title)}</a>${st === "live" ? "" : ` <span class="at-st">${esc((STATE_PILL[st] || ["", st])[1])}</span>`}<span class="at-src"><span class="sr">Source: </span><span class="pill ${srcTone}">${esc(src)}</span></span></td>
+<td data-l="Stage"><label class="sr" for="${fid}s">Stage for ${label}</label><select id="${fid}s" form="${fid}" name="stage">${atOpts(STAGES, c.stage)}</select></td>
+<td data-l="Match"><span class="at-pct ${tone}">${pct}%</span></td>
+<td data-l="Requirements">${reqsShort(f)}${reqAll}</td>
+<td data-l="${how}"><span class="at-date" title="${esc(shortDay(x.at))}">${esc(shortDay(x.at).replace(/,\s*\d{4}$/, ""))}</span><span class="at-how">${how}</span></td>
+<td class="at-priv" data-l="Your rating and note"><div class="at-pv"><label class="sr" for="${fid}r">Your rating for ${label}</label><select id="${fid}r" form="${fid}" name="rating" class="at-stars">${atOpts(STARS.map((v, n) => [n, v]), c.rating || 0)}</select>
+<label class="sr" for="${fid}n">Private note on ${label}</label><input id="${fid}n" form="${fid}" name="note" maxlength="300" value="${esc(c.note)}" placeholder="Private note"><button class="b sm" form="${fid}" type="submit">Save</button></div></td></tr>`,
+      `<form id="${fid}" class="atRow" data-job="${j.id}" data-student="${c.student}"></form>`];
+  });
+  const table = `<div class="at-wrap"><table class="at"><caption class="sr">Applicants across your listings</caption><thead><tr><th scope="col" class="at-sel"><span class="sr">Select</span></th><th scope="col">Student</th><th scope="col">Listing &amp; source</th><th scope="col">Stage</th><th scope="col">Match</th><th scope="col">Req. met</th><th scope="col">Date</th><th scope="col">Your rating &amp; note</th></tr></thead><tbody>${built.map(b => b[0]).join("")}</tbody></table></div>${built.map(b => b[1]).join("")}`;
+  const nav = pages > 1 ? `<nav class="at-pages" aria-label="Pages">${q.page > 1 ? `<a class="b sm sec" href="#" data-go="${esc(atQs(q, {page: q.page - 1}))}">← Previous</a>` : "<span></span>"}<span class="small muted">Page ${q.page} of ${pages}</span>${q.page < pages ? `<a class="b sm sec" href="#" data-go="${esc(atQs(q, {page: q.page + 1}))}">Next →</a>` : "<span></span>"}</nav>` : "";
+  return head + filters + bulk + table + nav + '<p class="small faint at-tip">Match % is the same whole-profile fit students see. Ratings and notes are yours alone: students never see them. Open a student\'s profile for anything they chose to share.</p>';
+};
+function applicantsBulk(sel, act, stage) {   // twin of hiring.applicants_bulk
+  const q = atParams(S.route.q), mine = new Set(S.jobs.filter(j => j.employer_id === me().id).map(j => j.id));
+  const pairs = sel.slice(0, 200).map(v => /^(\d+):(\d+)$/.exec(v)).filter(Boolean).map(m => [Number(m[1]), Number(m[2])]).filter(([j]) => mine.has(j));
+  if (!pairs.length || !["stage", "archive", "restore"].includes(act) || (act === "stage" && !STAGE_NAME[stage])) { flash("info", "Tick at least one applicant first."); return render(true); }
+  let n = 0;
+  pairs.forEach(([jid, sid]) => { const c = S.candidates.find(x => x.job === jid && x.student === sid && x.employer === me().id); if (!c) return;
+    if (act === "stage") c.stage = stage; else c.archived = act === "archive"; c.updated = NOW(); n++; });
+  flash("verified", act === "stage" ? `Moved ${n} to ${STAGE_NAME[stage]}.` : act === "archive" ? `Archived ${n}. They're under Show: Archived.` : `Restored ${n}.`);
+  go(atQs(q));
+}
+function applicantsRow(jid, sid, stage, rating, note) {   // twin of hiring.applicants_row
+  const c = S.candidates.find(x => x.job === jid && x.student === sid && x.employer === me().id), r = /^[0-5]$/.test(rating) ? Number(rating) : null;
+  if (c && STAGE_NAME[stage] && r !== null) { c.stage = stage; c.rating = r; c.note = note.replace(CTRL, "").slice(0, 300); c.updated = NOW(); flash("verified", "Saved."); }
+  S.scrollTo = `a${jid}-${sid}`; render(true);
+}
 
 function exportData() {
   const u = me(), d = {account: {email: u.email, role: u.role}, student_profile: SP(u.id) || null, employer_profile: EP(u.id) || null,
@@ -2287,6 +2522,7 @@ function exportData() {
     saved_jobs: S.savedJobs.filter(x => x.user === u.id).map(x => ({job_id: x.job, created_at: new Date(x.at).toISOString()})),
     follows: S.follows.filter(f => f.student === u.id).map(f => ({employer_id: f.employer, created_at: new Date(f.at).toISOString()})),
     emails: myEmails().slice().reverse().map(m => ({subject: m.subject, body: emailBody(m), sent_at: new Date(m.at).toISOString(), read_at: m.read ? "yes" : null}))};
+  if (u.role === "employer") d.candidate_tracker = S.candidates.filter(c => c.employer === u.id).map(c => ({job_id: c.job, student_id: c.student, stage: c.stage, source: c.source, note: c.note, rating: c.rating || 0, archived: c.archived ? 1 : 0}));
   return JSON.stringify(d, (k, v) => v instanceof Set ? [...v] : v, 2);
 }
 function canView(viewer, sid) {
@@ -2463,7 +2699,7 @@ P.aschools = () => { const m = new Map();
 function adminPage(title, active, body) {
   if (!S.admin) return `${pageHead("Reviewer sign-in", "The review queues are restricted. In this demo any password works.")}<form id="adminLogin" class="card" style="max-width:440px"><div class="form-field"><label for="a-pw">Password</label><input id="a-pw" type="password" name="password" required maxlength="200" autocomplete="off"></div><button class="submit-btn" type="submit">Sign in</button></form>`;
   const c = adminCounts(), tabs = ADMIN_TABS.concat([["live", "Live listings"]]);
-  c.live = approvedJobs().length;
+  c.live = S.jobs.filter(j => j.review_status === "approved").length;
   const cells = tabs.map(([k, t]) => `<a href="#" data-go="${k}"${k === active ? ' class="on" aria-current="page"' : ""}><span class="n${c[k] ? "" : " zero"}">${c[k] || 0}</span><span class="l">${t}</span></a>`).join("");
   return `<section class="desk"><div class="desk-top"><div><div class="eyebrow">Reviewer</div><h1>${esc(title)}</h1></div><span class="keys"><kbd>J</kbd><kbd>K</kbd> next and previous card</span></div><nav class="qtabs" aria-label="Review queues">${cells}</nav></section>${body}<p style="margin-top:18px"><button class="linkbtn" type="button" data-do="admin-out">Sign out of the reviewer view</button></p>`;
 }
@@ -2480,7 +2716,7 @@ ${findingsHtml(j.findings) ? `<div style="margin:12px 0">${findingsHtml(j.findin
 <div class="detail-desc" style="font-size:14px;max-height:140px;overflow:auto;background:var(--sunk);padding:10px 12px;border-radius:8px">${esc(j.description)}</div>${j.apply_url ? `<p class="small muted" style="word-break:break-all">Apply: ${esc(j.apply_url)}</p>` : ""}
 <div class="rev-actions"><button class="btn-approve" type="button" data-act="approve" data-id="${j.id}">Approve &amp; publish</button><button class="btn-reject" type="button" data-act="reject" data-reason="scam" data-id="${j.id}">Reject: scam</button><button class="btn-reject" type="button" data-act="reject" data-reason="lead_gen" data-id="${j.id}">Reject: aggregator</button><button class="btn-reject" type="button" data-act="reject" data-reason="other" data-id="${j.id}">Reject: other</button></div></div>`).join("") || '<div class="empty">Nothing waiting for review.</div>'));
 };
-P.live = () => adminPage("Live listings", "live", approvedJobs().slice().reverse().map(j => `<div class="rev-card"><div class="row between"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><div class="rev-actions" style="margin-top:0"><button class="btn-reject" type="button" data-act="remove" data-reason="scam" data-id="${j.id}">Remove: scam</button><button class="btn-reject" type="button" data-act="remove" data-reason="other" data-id="${j.id}">Remove: other</button></div></div></div>`).join("") || '<div class="empty">No live listings.</div>');
+P.live = () => adminPage("Live listings", "live", S.jobs.filter(j => j.review_status === "approved").slice().reverse().map(j => `<div class="rev-card"><div class="row between"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><div class="rev-actions" style="margin-top:0"><button class="btn-reject" type="button" data-act="remove" data-reason="scam" data-id="${j.id}">Remove: scam</button><button class="btn-reject" type="button" data-act="remove" data-reason="other" data-id="${j.id}">Remove: other</button></div></div></div>`).join("") || '<div class="empty">No live listings.</div>');
 function domainNote(email, site) {
   const ed = email.split("@").pop().toLowerCase(), host = ((/^https?:\/\/([^\/?#]+)/i.exec(site || "") || [])[1] || "").toLowerCase().replace(/^www\./, "");
   if (["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "aol.com"].includes(ed)) return `<span class="pill warn">Personal email (@${esc(ed)})</span>`;
@@ -2561,7 +2797,8 @@ function submitDraft() {
   if (!d.poster_name) d.poster_name = ep.contact_name || "";   // a listing always names the person who posted it
   if (!d.poster_title) d.poster_title = ep.contact_title || "";
   delete d.direct;
-  const j = Object.assign({id: S.nextJob++, employer_id: me().id, age_days: 0, review_status: "pending", review_label: null}, d);
+  const j = Object.assign({id: S.nextJob++, employer_id: me().id, age_days: 0, review_status: "pending", review_label: null, listing_status: "open", expires_at: null, expiry_reminded: null}, d);
+  j.expiry_days = expiryDays(d.expiry_days);
   scoreJob(j); S.jobs.push(j);
   mail(me().email, "We received your listing", `We received your listing "${d.title}". It has been scanned, and a person reviews every listing before it appears on the board.`, null);
   return true;
@@ -2574,7 +2811,7 @@ document.addEventListener("click", e => {
   const a = e.target.closest("[data-go]"); if (a) { e.preventDefault(); go(a.dataset.go); return; }
   const b = e.target.closest("[data-act]");
   if (b && S.admin) { const j = S.jobs.find(x => x.id === Number(b.dataset.id)); if (!j) return; const act = b.dataset.act; j.seedApproved = false;
-    if (act === "approve" && j.review_status === "pending") { j.review_status = "approved"; j.review_label = "legit"; }
+    if (act === "approve" && j.review_status === "pending") { j.review_status = "approved"; j.review_label = "legit"; j.expires_at = NOW() + (j.expiry_days || LISTING_DAYS.def) * 86400e3; j.expiry_reminded = null; }
     else if (act === "reject" && j.review_status === "pending") { j.review_status = "rejected"; j.review_label = b.dataset.reason; }
     else if (act === "remove" && j.review_status === "approved") { j.review_status = "removed"; j.review_label = b.dataset.reason; }
     render(true); return; }
@@ -2610,6 +2847,9 @@ document.addEventListener("click", e => {
     "cs-copy": () => { const ch = csChat(S.chatId), m = ch && ch.msgs.find(x => x.id === Number(d.dataset.m)); if (m) { try { navigator.clipboard.writeText(m.text).then(() => { d.classList.add("on"); d.title = "Copied"; }, () => {}); } catch (x) { /* clipboard unavailable */ } } },
     "apply-rewrite": () => { const r = S.lastRewrites[Number(d.dataset.i)], p = SP(me().id); if (r && p.resume_text.includes(r.text)) p.resume_text = p.resume_text.replace(r.text, r.rewrite); flash("verified", "Rewrite applied. Fill in any [placeholder] with your real numbers."); render(true); },
     "sample-resume": () => { const p = SP(me().id); p.resume_text = RESUME; p.resume_name = "Sample resume"; if (!(p.items || []).length) importResume(p); render(); },
+    "lst-status": () => listingStatus(id, d.dataset.v, d.dataset.back),
+    "lst-extend": () => setExpiry(id, "30", "", d.dataset.back),
+    "lst-dup": () => duplicateListing(id),
     "save-cand": () => { const j = S.jobs.find(x => x.id === S.route.q.id && x.employer_id === me().id), p = SP(id); if (j && p && p.visible) addCandidate(j.id, id, me().id, "saved"); render(true); },
     "import-resume": () => { const n = importResume(SP(me().id)); flash(n ? "verified" : "info", n ? `Added ${n} entr${n === 1 ? "y" : "ies"} from your resume. Check them over and edit anything that's off.` : "Your profile already has everything your resume shows."); render(true); },
     "del-item": () => { const p = SP(me().id), it = (p.items || []).find(i => i.id === id); p.items = (p.items || []).filter(i => i.id !== id); flash("verified", "Entry deleted."); go("profile" + (it ? "#" + it.kind : "")); },
@@ -2635,7 +2875,7 @@ document.addEventListener("click", e => {
     save: () => { const p = S.posts.find(x => x.id === id); if (p && p.status === "published" && !isSaved(me().id, id) && S.saves.filter(x => x.user === me().id).length < MAX_SAVES) S.saves.push({user: me().id, post: id, at: NOW()}); render(true); },
     unsave: () => { S.saves = S.saves.filter(x => !(x.user === me().id && x.post === id)); render(true); },
     "job-save": () => { const j = S.jobs.find(x => x.id === id);
-      if (isStudent() && j && j.review_status === "approved" && !S.savedJobs.some(x => x.user === me().id && x.job === id) && S.savedJobs.filter(x => x.user === me().id).length < JB_MAX_SAVED) S.savedJobs.push({user: me().id, job: id, at: NOW()});
+      if (isStudent() && visibleListing(j) && !S.savedJobs.some(x => x.user === me().id && x.job === id) && S.savedJobs.filter(x => x.user === me().id).length < JB_MAX_SAVED) S.savedJobs.push({user: me().id, job: id, at: NOW()});
       render(true); },
     "job-unsave": () => { S.savedJobs = S.savedJobs.filter(x => !(x.user === me().id && x.job === id)); render(true); },
     "del-post": () => { S.posts = S.posts.filter(x => x.id !== id); S.saves = S.saves.filter(x => x.post !== id); render(true); },
@@ -2741,7 +2981,8 @@ document.addEventListener("submit", e => {
     const qt = many("qtext"), qk = many("qkind"), qr = many("qreq");
     const d = {title: g("title"), company: g("company"), category: g("category"), work_type: g("work_type"), location: g("location"), description: g("description"), apply_url: g("apply_url"), contact: "",
       easy_apply: fd.get("easy_apply") ? 1 : 0, questions: qt.slice(0, MAX_QUESTIONS).map((t, i) => ({q: t, kind: qk[i] || "short", required: qr[i] === "1"})),
-      poster_name: g("poster_name").replace(/\s+/g, " ").slice(0, 80), poster_title: g("poster_title").replace(/\s+/g, " ").slice(0, 80), show_email: fd.get("show_email") ? 1 : 0, direct: fd.get("direct") ? 1 : 0};
+      poster_name: g("poster_name").replace(/\s+/g, " ").slice(0, 80), poster_title: g("poster_title").replace(/\s+/g, " ").slice(0, 80), show_email: fd.get("show_email") ? 1 : 0, direct: fd.get("direct") ? 1 : 0,
+      expiry_days: expiryDays(g("expiry_days"))};
     S.draft = d;
     // Only the hiring organization may post its jobs (twin of app._clean_listing).
     if (!d.direct) { flash("warning", "Confirm that you work directly for this company. " + RECRUITER_MSG); return render(); }
@@ -2756,6 +2997,12 @@ document.addEventListener("submit", e => {
       submitDraft(); return go("posted"); }
     return go("login?role=employer&next=post");
   }
+  if (id === "editForm") return saveListingEdit(f, fd);
+  if (id === "expiryForm") return setExpiry(Number(f.dataset.job), g("days"), g("date"), f.dataset.back);
+  if (id === "atFilters") { const q = {}; ["job", "stage", "source", "min", "sort", "show"].forEach(k => { const v = g(k); if (v && v !== "0" && !(k === "sort" && v === "match")) q[k] = v; }); if (fd.get("req")) q.req = "1";
+    return go("applicants" + (Object.keys(q).length ? "?" + new URLSearchParams(q).toString() : "")); }
+  if (id === "bulk") return applicantsBulk(many("sel"), (e.submitter && e.submitter.value) || "", g("stage"));
+  if (f.classList.contains("atRow")) return applicantsRow(Number(f.dataset.job), Number(f.dataset.student), g("stage"), g("rating"), g("note"));
   // profile setup
   const nameOk = v => /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .'\-]{1,59}$/.test(v) && !v.includes("@");
   const url = (v, host) => { if (!v) return ""; if (!/^https?:\/\//i.test(v)) v = "https://" + v; if (!/^https?:\/\/[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[\/?#][^\s<>"']*)?$/.test(v)) return null;

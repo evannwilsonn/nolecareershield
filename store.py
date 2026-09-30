@@ -8,6 +8,7 @@ goes through delete_account(), which removes or blanks everything that belongs t
 
 from __future__ import annotations
 
+import calendar
 import json
 import os
 import sqlite3
@@ -345,6 +346,8 @@ _STUDENT_EXTRA = {"location": "TEXT NOT NULL DEFAULT ''", "looking_roles": "TEXT
                   "allow_connections": "INTEGER NOT NULL DEFAULT 1"}
 _EMPLOYER_EXTRA = {"tagline": "TEXT NOT NULL DEFAULT ''", "founded": "TEXT NOT NULL DEFAULT ''", "linkedin": "TEXT NOT NULL DEFAULT ''",
                    "hires_for": "TEXT NOT NULL DEFAULT '[]'", "perks": "TEXT NOT NULL DEFAULT '[]'"}
+# Employer-private applicant-table fields (hiring.py): a 1-5 rating and an archive flag. The note column already exists.
+_CAND_EXTRA = {"rating": "INTEGER NOT NULL DEFAULT 0", "archived": "INTEGER NOT NULL DEFAULT 0"}
 ITEM_KINDS = ["experience", "education", "project", "certification", "organization", "course", "language"]
 
 
@@ -358,6 +361,10 @@ def init(conn) -> None:
     for col, typ in _EMPLOYER_EXTRA.items():
         if col not in have:
             conn.execute(f"ALTER TABLE employer_profiles ADD COLUMN {col} {typ}")
+    have = {r[1] for r in conn.execute("PRAGMA table_info(candidates)")}
+    for col, typ in _CAND_EXTRA.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE candidates ADD COLUMN {col} {typ}")
     conn.commit()
 
 
@@ -429,10 +436,70 @@ def delete_account(conn, user_id: int) -> None:
 
 # ---------- shared lookups ----------
 
-def live_jobs(conn, ttl_days: int) -> list[dict]:
-    cutoff = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - ttl_days * 86400))
-    return rows(conn, "SELECT * FROM jobs WHERE review_status = 'approved' AND created_at >= ? "
-                      "ORDER BY created_at DESC", (cutoff,))
+def live_jobs(conn, ttl_days: int | None = None) -> list[dict]:
+    return rows(conn, f"SELECT * FROM jobs WHERE {live_where(ttl_days=ttl_days)} ORDER BY created_at DESC")
+
+
+# ---------- listing visibility: the one rule for what students can see ----------
+# A listing is on the board only when a reviewer approved it, the employer hasn't paused or closed it
+# (jobs.listing_status), and it hasn't expired (jobs.expires_at, set when it is approved). Listings approved
+# before expiry dates existed (expires_at NULL) fall back to the old rule: LISTING_TTL_DAYS after they were posted.
+# Every public query (board, job page, assistant, resume tools, feed, company pages) goes through live_where()
+# in SQL or visible_listing() in Python.
+
+LISTING_DAYS_DEFAULT, LISTING_DAYS_MIN, LISTING_DAYS_MAX, REMIND_DAYS = 60, 7, 120, 5
+
+
+def _ttl_days(ttl_days: int | None = None) -> int:
+    return int(ttl_days or os.environ.get("LISTING_TTL_DAYS", "90"))
+
+
+def _old_cutoff(ttl_days: int | None = None) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - _ttl_days(ttl_days) * 86400))
+
+
+def live_where(alias: str = "", ttl_days: int | None = None) -> str:
+    """SQL condition (no parameters) for listings students may see. alias: the jobs table's alias, e.g. "j"."""
+    a = alias + "." if alias else ""
+    now = int(time.time())
+    return (f"({a}review_status = 'approved' AND COALESCE({a}listing_status, 'open') = 'open' AND "
+            f"(({a}expires_at IS NOT NULL AND {a}expires_at > {now}) OR ({a}expires_at IS NULL AND {a}created_at >= '{_old_cutoff(ttl_days)}')))")
+
+
+def expires_ts(j: dict) -> float | None:
+    """When the listing drops off the board (epoch seconds), or None if it was never approved."""
+    if j.get("expires_at"):
+        return float(j["expires_at"])
+    if j.get("review_status") != "approved":
+        return None
+    try:
+        made = calendar.timegm(time.strptime(str(j.get("created_at") or "")[:19], "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        return None
+    return made + _ttl_days() * 86400
+
+
+def listing_state(j: dict | None) -> str:
+    """pending | rejected | removed | closed | paused | expired | live."""
+    if not j:
+        return "removed"
+    rs = j.get("review_status")
+    if rs != "approved":
+        return rs or "pending"
+    ls = j.get("listing_status") or "open"
+    if ls in ("closed", "paused"):
+        return ls
+    exp = expires_ts(j)
+    return "expired" if exp is not None and exp <= time.time() else "live"
+
+
+def visible_listing(j: dict | None) -> bool:
+    """True when students may see and apply to this listing (the Python twin of live_where)."""
+    return listing_state(j) == "live"
+
+
+def live_job(conn, job_id: int) -> dict | None:
+    return row(conn, f"SELECT * FROM jobs WHERE id = ? AND {live_where()}", (job_id,))
 
 
 def student_profile(conn, user_id: int) -> dict | None:

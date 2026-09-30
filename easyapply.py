@@ -94,7 +94,7 @@ def applications_for(conn, job_id: int) -> dict[int, dict]:
 
 
 def can_apply(conn, job: dict) -> bool:
-    return (is_easy(job) and job["review_status"] == "approved" and bool(job.get("employer_id"))
+    return (is_easy(job) and store.visible_listing(job) and bool(job.get("employer_id"))
             and store.employer_approved(conn, job["employer_id"]))
 
 
@@ -238,7 +238,8 @@ def my_applications(request: Request, sent: int = 0, already: int = 0, withdrawn
     user = web.require_user(request, "student")
     security.enforce_rate_limit(request, security.general_limiter, "applications")
     with store.db() as conn:
-        apps = store.rows(conn, "SELECT a.*, j.title, j.company, j.review_status FROM applications a JOIN jobs j ON j.id = a.job_id "
+        apps = store.rows(conn, "SELECT a.*, j.title, j.company, j.review_status, j.listing_status, j.expires_at, j.created_at AS job_created "
+                                "FROM applications a JOIN jobs j ON j.id = a.job_id "
                                 "WHERE a.student_id = ? ORDER BY a.created_at DESC LIMIT 100", (user["id"],))
     note = ""
     if sent:
@@ -254,10 +255,27 @@ def my_applications(request: Request, sent: int = 0, already: int = 0, withdrawn
     csrf = ui.user_csrf_input()
     cards = "".join(
         f'<div class="card app"><div class="row between" style="align-items:flex-start;gap:12px"><div style="min-width:0">'
-        f'<a class="job-title" href="/job/{int(a["job_id"])}">{esc(a["title"])}</a><div class="job-co">{esc(a["company"])} · sent {esc(web.ago(a["created_at"]))}</div></div>'
+        f'<a class="job-title" href="/job/{int(a["job_id"])}">{esc(a["title"])}</a><div class="job-co">{esc(a["company"])} · sent {esc(web.ago(a["created_at"]))}</div>'
+        f'{_closed_note(a)}</div>'
         f'<form method="post" action="/applications/{int(a["job_id"])}/withdraw" class="navform">{csrf}<button class="b sm ghost" type="submit">Withdraw</button></form></div></div>'
         for a in apps)
     return web.page(head + note + cards, "Applications", active="/applications")
+
+
+_CLOSED_NOTES = {"closed": "Closed: the employer closed this listing. Your application stays with them unless you withdraw it.",
+                 "paused": "Paused: the employer paused this listing for now. Your application stays with them.",
+                 "expired": "Expired: this listing is no longer on the board. Your application stays with the employer.",
+                 "removed": "Removed: this listing was taken down.", "pending": "Being re-reviewed: the employer edited this listing."}
+
+
+def _closed_note(a: dict) -> str:
+    """A short note on an application whose listing isn't live any more (the listing's own state, never the employer's stage)."""
+    state = store.listing_state(dict(a, created_at=a.get("job_created")))
+    note = _CLOSED_NOTES.get(state)
+    if not note:
+        return ""
+    label, text = note.split(": ", 1)
+    return f'<p class="small appnote"><span class="pill{" bad" if state in ("closed", "removed") else " warn"}">{esc(label)}</span> {esc(text)}</p>'
 
 
 @router.post("/applications/{job_id}/withdraw")

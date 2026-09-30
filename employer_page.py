@@ -201,7 +201,7 @@ def trust_card(t: dict, owner: bool = False) -> str:
 
 
 def hiring_stats(conn, uid: int, s: dict) -> dict:
-    open_n = conn.execute("SELECT COUNT(*) FROM jobs WHERE employer_id = ? AND review_status = 'approved'", (uid,)).fetchone()[0]
+    open_n = conn.execute(f"SELECT COUNT(*) FROM jobs WHERE employer_id = ? AND {store.live_where()}", (uid,)).fetchone()[0]
     med = statistics.median(s["reply_hours"]) if s["reply_hours"] else None
     return {"open": open_n, "posted": s["listings"], "reply_rate": round(100 * s["replied"] / s["threads"]) if s["threads"] else None,
             "reply_time": reply_time(med), "since": s["days_approved"]}
@@ -212,7 +212,7 @@ def company_html(conn, p: dict, uid: int, viewer: dict, notice: str = "") -> str
     sig = signals(conn, uid)
     t = trust_from_signals(sig)
     hs = hiring_stats(conn, uid, sig)
-    jobs = store.rows(conn, "SELECT id, title, category, work_type, location FROM jobs WHERE employer_id = ? AND review_status = 'approved' "
+    jobs = store.rows(conn, f"SELECT id, title, category, work_type, location FROM jobs WHERE employer_id = ? AND {store.live_where()} "
                             "ORDER BY created_at DESC LIMIT 20", (uid,))
     hires_for, perks = store.jload(p.get("hires_for"), []), store.jload(p.get("perks"), [])
     status_pill = {"approved": '<span class="pill ok">✓ Approved employer</span>', "pending": '<span class="pill warn">Waiting for review</span>',
