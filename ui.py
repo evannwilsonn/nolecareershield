@@ -742,6 +742,9 @@ kbd{font:600 11px var(--sans);min-width:20px;height:20px;display:inline-grid;pla
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 """
 
+import css_resume  # noqa: E402  (Resume studio styles live in their own module)
+CSS += css_resume.CSS
+
 # Kept for compatibility with older imports.
 BASE_CSS = CSS
 

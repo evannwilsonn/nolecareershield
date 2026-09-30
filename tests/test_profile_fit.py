@@ -178,7 +178,7 @@ def test_pdf_and_docx_uploads_fill_the_resume(net):
     t = ucsrf(s)
     r = s.post("/resume/upload", data={"csrf": t}, files={"resume": ("Evan Wilson Resume.pdf", pdf, "application/pdf")})
     assert r.status_code == 303
-    assert "Resume score" in s.get("/resume").text
+    assert "Resume score" in s.get("/resume?tab=review").text
     prof = s.get("/profile").text
     assert "Today's Dental Network" in straight(prof)      # filled from the PDF
     docx = resume_engine.to_docx(RESUME)
