@@ -949,6 +949,8 @@ async def listing_edit_save(job_id: int, request: Request):
     with closing(sqlite3.connect(DB_PATH)) as db:
         if review:
             result, scam_status, findings = _scan(clean, int(j["id"]))
+            with store.db() as conn:
+                defense.index_job(conn, int(j["id"]), "\n".join(clean.get(k, "") or "" for k in ("title", "company", "description", "apply_url", "contact")))
             full = dict(minor, title=clean["title"], company=clean["company"], description=clean["description"], apply_url=clean["apply_url"],
                         contact=clean["contact"], questions=json.dumps(clean["questions"]), score=result.score, band=result.band,
                         scam_status=scam_status, findings_json=json.dumps(findings), ruleset_version=result.ruleset_version,
