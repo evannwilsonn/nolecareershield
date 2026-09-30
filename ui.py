@@ -122,6 +122,7 @@ _ICON_PATHS = {
     "send": '<path d="M4 12 20 4l-5 16-3-7z"/>',
     "check": '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     "out": '<path d="M14 4h5v16h-5"/><path d="M10 8l-4 4 4 4M6 12h9"/>',
+    "search": '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
     "calendar": '<rect x="3.5" y="5.5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3.5v4M16 3.5v4"/><path d="M7.5 13.5h2M11 13.5h2M14.5 13.5h2M7.5 17h2M11 17h2"/>',
 }
 

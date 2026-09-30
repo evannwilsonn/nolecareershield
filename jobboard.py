@@ -408,7 +408,7 @@ def glance(j: dict) -> str:
     return ('<section class="jg"><h3>At a glance</h3><dl>' + "".join(f"<div><dt>{esc(a)}</dt><dd>{esc(b)}</dd></div>" for a, b in rows) + "</dl></section>")
 
 
-def scam_block(j: dict, pill: str, risk: str) -> str:
+def scam_block(j: dict, pill: str, risk: str, report: str = "") -> str:
     findings = json.loads(j.get("findings_json") or "[]")
     if j["scam_status"] == "clear":
         banner = '<div class="banner verified">✓ This listing passed the scam check and was approved by a reviewer. Still verify the employer through their own website before sharing personal information.</div>'
@@ -418,7 +418,8 @@ def scam_block(j: dict, pill: str, risk: str) -> str:
     if j["scam_status"] != "clear":
         items = "".join(f'<div class="finding {f["severity"]}"><b>{esc(f["title"])}</b><br>{esc(f["why"])}</div>' for f in findings if f["severity"] in ("critical", "warning"))
         items = f'<div class="jd-find"><b style="font-size:14px">Signals to be aware of:</b>{items}</div>' if items else ""
-    return f'<section class="js"><div class="js-top"><h3>Scam check</h3>{pill}</div>{risk}{banner}{items}</section>'
+    open_ = (f'<a class="b sm sec js-report" href="{esc(report)}">{ui.icon("shield", 15)} Open security report</a>' if report else "")
+    return f'<section class="js"><div class="js-top"><h3>Scam check</h3>{pill}</div>{risk}{banner}{items}{open_}</section>'
 
 
 QUICK_NOTE = ('<p class="qa-note">Quick apply makes job applications short and sweet. However, experts recommend '
@@ -519,7 +520,9 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
     top = (f'<div class="jd-top"><div class="jd-head"><span class="jc-logo lg" aria-hidden="true">{ui.initials(j["company"])}</span><div class="jd-h">'
            f'<div class="jd-co">{co}</div><h1 class="jd-title">{esc(j["title"])}</h1><div class="jd-sub">{esc(sub)}</div>'
            f'{f"<div class=jd-trust>{ui.verified_badge()} {trust}</div>" if trust else ""}</div></div>{own}<div class="jd-acts">{acts}</div>{note}{banner}</div>')
-    side = f'<aside class="jd-side" aria-label="Scam check and fit">{scam_block(j, pill(j), risk(j))}{match}{q}{poster_block(conn, viewer, j, emp_ok)}</aside>'
+    own_listing = viewer["role"] == "employer" and j.get("employer_id") == store.org_id(viewer)
+    report = f"/job/{jid}/report" if (is_student or own_listing) else ""
+    side = f'<aside class="jd-side" aria-label="Scam check and fit">{scam_block(j, pill(j), risk(j), report)}{match}{q}{poster_block(conn, viewer, j, emp_ok)}</aside>'
     body = (f'<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">{esc(j["description"])}</div></section>'
             f'{glance(j)}{extra}</div>')
     return (f'<a class="back jd-back" href="/jobs">← All jobs</a><article class="jd {verdict_class(j)}">{top}{side}{body}</article>')

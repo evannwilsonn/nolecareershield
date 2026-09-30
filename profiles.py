@@ -586,6 +586,8 @@ def export(request: Request):
                 "connections": store.rows(conn, "SELECT user_a, user_b, requested_by, status, created_at FROM connections WHERE user_a = ? OR user_b = ?", (user["id"], user["id"])),
                 "follows": store.rows(conn, "SELECT employer_id, created_at FROM follows WHERE student_id = ?", (user["id"],)),
                 "saved_jobs": store.rows(conn, "SELECT job_id, created_at FROM saved_jobs WHERE user_id = ?", (user["id"],)),
+                "security_reports_opened": store.rows(conn, "SELECT job_id, created_at FROM report_views WHERE user_id = ?", (user["id"],)),
+                "hidden_from_gallery": store.rows(conn, "SELECT job_id, created_at FROM gallery_hidden WHERE user_id = ?", (user["id"],)),
                 "emails": store.rows(conn, "SELECT subject, body, sent_at, read_at FROM emails WHERE user_id = ? ORDER BY sent_at", (user["id"],)),
                 "assistant_chats": [dict(c, messages=store.rows(conn, "SELECT role, text, feedback, created_at FROM assistant_msgs WHERE chat_id = ? ORDER BY id", (c["id"],)))
                                     for c in store.rows(conn, "SELECT id, title, created_at, updated_at FROM assistant_chats WHERE user_id = ? ORDER BY id", (user["id"],))],
@@ -635,6 +637,9 @@ def delete_account(request: Request, password: str = Form(""), csrf: str = Form(
 def dashboard(user: dict) -> str:
     if user["role"] == "employer":
         return employer_dash.dashboard(user)          # the hiring dashboard
+    if user["role"] == "student":
+        import guardian
+        return guardian.gallery(user)                 # The Gallery: a few listings picked for this student
     from datetime import datetime
     hour = datetime.now().hour
     hello = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"

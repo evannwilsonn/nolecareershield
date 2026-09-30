@@ -13,6 +13,7 @@ const NOW = () => Date.now();
 
 // ---------------- icons (same drawings as ui.py) ----------------
 const ICONS = {
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
   home: '<path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/>',
   jobs: '<rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5v2"/><path d="M3.5 12.5h17"/>',
   feed: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12.5h8M8 16h5"/>',
@@ -69,7 +70,7 @@ function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [], dismissed: {}, suggs: {},
        session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, mailN: 0, itemN: 0, applyClicks: new Set(), timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0, apps: [], conns: [], follows: [], saves: [], savedJobs: [], connLog: [], easyDraft: null, chats: [], chatId: null, mems: [], csPins: {},
        ivs: [], ivEvents: [], ivN: 0, ivDraft: null, tpls: [], tplSeeded: {}, tplDraft: null, tplErr: null, tplEditErr: null, companyViews: [],
-       team: [], invites: [], invN: 0, teamErr: null, teamDraft: null};
+       team: [], invites: [], invN: 0, teamErr: null, teamDraft: null, reportViews: [], galleryHidden: []};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -488,27 +489,6 @@ P.home = () => {
   const teaser = j => `<a class="job teaser" href="#" data-go="start?next=job-${j.id}"><div class="job-top"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="pill">${icon("shield", 13)} Log in to view</span></div><div class="job-meta"><span class="chip">${esc(j.category)}</span></div></a>`;
   return {wide: true, hero, body: `<section class="home-list"><h2 class="display section-title rv">Latest listings.</h2><p class="muted" style="margin:0 0 18px">${all.length} verified listing${all.length !== 1 ? "s" : ""} from ${emps} approved employer${emps !== 1 ? "s" : ""}, every one scam-checked and approved by a person. Log in with your @fsu.edu email to see the details and apply.</p><div class="teasers">${list.map(teaser).join("")}</div><p style="margin:16px 0 8px"><a href="#" data-go="start?next=jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Log in to see all jobs →</a></p></section>`};
 };
-function studentHome() {
-  const p = SP(me().id); if (!p || !p.setup_step) { go("setup?step=1"); return null; }
-  const h = new Date().getHours(), hello = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
-  const recs = N.rankJobs(approvedJobs(), p, "", 3), n = unread(me().id), [pct, missing] = completion(p);
-  const recHtml = recs.map(r => `<a class="job" href="#" data-go="job?id=${r.job.id}" style="margin:0 0 8px"><div class="job-top"><div><div class="job-title" style="font-size:16px">${esc(r.job.title)}</div><div class="job-co">${esc(r.job.company)}</div></div>${r.fit ? fitBadge(r.fit.score, r.fit.label) : `<span class="pill accent">${r.score}% match</span>`}</div>${r.reasons.length ? `<div class="why">${esc(r.reasons[0])}</div>` : ""}</a>`).join("") || "<p>No listings yet.</p>";
-  let resumeTile;
-  if (p.resume_text) { const rv = N.review(p.resume_text);
-    resumeTile = `<div class="tile w3"><h3>${icon("file")}Resume</h3><div class="score"><div class="ring" style="--p:${rv.score}"><b>${rv.score}</b></div><p>${esc(rv.grade)}. ${esc(rv.findings[0] ? rv.findings[0].message : "Looking good.")}</p></div><div class="foot"><a class="b sm sec" href="#" data-go="resume">Open resume studio</a></div></div>`; }
-  else resumeTile = `<div class="tile w3"><h3>${icon("file")}Resume</h3><p>Add it for a score, line-by-line fixes, and a version tailored to any job.</p><div class="foot"><a class="b sm sec" href="#" data-go="resume">Add your resume</a></div></div>`;
-  const posts = S.posts.filter(x => x.status === "published").sort((a, b) => b.at - a.at).slice(0, 2);
-  const date = new Date().toLocaleDateString("en-US", {weekday: "long", month: "long", day: "numeric"});
-  const first = (p.display_name || "").split(" ")[0], live = approvedJobs().length, best = Math.max(0, ...recs.map(r => r.fit ? r.fit.score : r.score));
-  const kpis = kpi(live, `live listing${live !== 1 ? "s" : ""}, all reviewed`, "jobs") + (recs.length ? kpi(best, "your best fit right now", "jobs", best >= 65) : "") + kpi(n, `unread message${n !== 1 ? "s" : ""}`, "messages", n > 0);
-  return `${helloBand(date, `${hello}${first ? "," : "."}${first ? `<br><em>${esc(first)}.</em>` : ""}`, "Here's what's new for you. Every listing and message is scanned for scams before you see it.", kpis, "arch-074.webp")}
-<div class="bento"><div class="tile w4 tall"><h3>${icon("spark")}Recommended for you</h3>${recHtml}<div class="foot row"><a class="b sm" href="#" data-go="assistant">Ask the job assistant</a><a class="b sm sec" href="#" data-go="jobs">All jobs</a></div></div>
-<div class="tile w2 goldt"><h3>${icon("chat")}Messages</h3><div class="big">${n}</div><p>unread message${n !== 1 ? "s" : ""}</p><div class="foot"><a class="b sm sec" href="#" data-go="messages">Open messages</a></div></div>
-<div class="tile w2"><h3>${icon("shield")}Scam check</h3><p>Got a DM or email about a job? Paste it and get a verdict with the evidence.</p><div class="foot"><a class="b sm sec" href="#" data-go="scam?kind=message">Check a message</a></div></div>
-${resumeTile}
-<div class="tile w3"><h3>${icon("user")}Profile</h3><div class="meter"><i style="width:${pct}%"></i></div><p>${pct}% complete${missing.length ? ". Add " + esc(missing[0]) : ""}</p><div class="foot"><a class="b sm sec" href="#" data-go="profile">View profile</a></div></div>
-<div class="tile w6"><h3>${icon("feed")}From the FSU feed</h3>${posts.map(x => `<p style="border-left:2px solid var(--line);padding-left:10px;margin-top:6px">${esc(x.body.slice(0, 120))}${x.body.length > 120 ? "…" : ""}</p>`).join("")}<div class="foot"><a class="b sm sec" href="#" data-go="feed">Open the feed</a></div></div></div>`;
-}
 // ---------------- employer home: the hiring dashboard (twin of employer_dash.py) ----------------
 const ED_APPLICANT = ["applied", "messaged"], ED_ROWS = 8, ED_EXPIRY_DAYS = 7, MAJORS_MIN = 3;
 const ED_STATUS = {draft: ["warn", "Finish your company profile so a reviewer can approve you", "setup?step=1", "Finish profile"],
@@ -655,7 +635,7 @@ function jbVerdict(j) {
 function jbCard(j, p, fitpct, saved) {
   const match = fitpct !== null && fitpct !== undefined ? `<span class="jc-match ${jbLevel(fitpct)}">${fitpct}% match</span>` : "";
   const lg = j.findings.some(f => f.rule_id === "lead_gen"), sc = shownScore(j.score, lg);
-  const tags = scanChip(scanState(j.scam_status), sc, `Scam risk ${sc} · ${j.scam_status}`) + match + (j.easy_apply ? '<span class="jc-tag q">Quick apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="jc-tag n">New</span>' : "");
+  const tags = gdChip(j, isStudent() ? gdOpened(me().id) : null) + match + (j.easy_apply ? '<span class="jc-tag q">Quick apply</span>' : "") + ((j.age_days || 0) < 7 ? '<span class="jc-tag n">New</span>' : "");
   const place = jbWhere(j), setting = cap(j.work_type);
   const facts = [place, place === setting ? "" : setting, jbKinds(j).slice(0, 2).map(k => JB_KIND_LABEL[k]).join(", ")].filter(Boolean).join(" · ");
   return `<article class="jc ${jbVerdict(j)}"><span class="jc-logo" aria-hidden="true">${initials(j.company)}</span><div class="jc-body"><h3 class="jc-title"><a class="jc-link" href="#" data-go="job?id=${j.id}">${esc(j.title)}</a></h3>`
@@ -753,7 +733,10 @@ function jbScam(j) {
   const ban = j.scam_status === "clear" ? banner("verified", "✓ This listing passed the scam check and was approved by a reviewer. Still verify the employer through their own website before sharing personal information.")
     : banner("warning", "⚠ This listing was approved but tripped some scam signals. Read the notes below and verify the employer independently before responding.");
   const fs = j.scam_status !== "clear" ? j.findings.filter(f => f.severity === "critical" || f.severity === "warning").map(f => `<div class="finding ${esc(f.severity)}"><b>${esc(f.title)}</b><br>${esc(f.why)}</div>`).join("") : "";
-  return `<section class="js"><div class="js-top"><h3>Scam check</h3><span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span></div>${riskMeter(j.score, j.scam_status, j.findings.some(f => f.rule_id === "lead_gen"))}${ban}${fs ? `<div class="jd-find"><b style="font-size:14px">Signals to be aware of:</b>${fs}</div>` : ""}</section>`;
+  const own = isEmployer() && j.employer_id && orgOf(j.employer_id) === orgOf(me().id), canOpen = isStudent() || own;   // twin of jobboard.scam_block's report link
+  const chip = gdChip(j, isStudent() ? gdOpened(me().id) : null, canOpen);
+  const open = canOpen ? `<a class="b sm sec js-report" href="#" data-go="report?job=${j.id}">${icon("shield", 15)} Open security report</a>` : "";
+  return `<section class="js"><div class="js-top"><h3>Scam check</h3>${chip}</div>${riskMeter(j.score, j.scam_status, j.findings.some(f => f.rule_id === "lead_gen"))}${ban}${fs ? `<div class="jd-find"><b style="font-size:14px">Signals to be aware of:</b>${fs}</div>` : ""}${open}</section>`;
 }
 const QUICK_NOTE = '<p class="qa-note">Quick apply makes job applications short and sweet. However, experts recommend applying directly on company websites.</p>';
 // Has this student applied: through Quick apply, or by opening the employer's own application link (twin of jobboard.applied).
@@ -947,11 +930,9 @@ P.network = () => {
 // ---- scam check ----
 // The full evidence is for FSU students and approved employers (same as msgcheck.full_view): enough to spot a scam, not to tune one.
 const fullView = () => !!me() && (isStudent() || approvedEmp(me().id));
-function publicVerdictHtml(r) {
+function publicVerdictHtml(r) {   // twin of msgcheck.render_result(r, full=False): the HUD with the verdict and up to three plain reasons
   const shown = (r.findings.filter(f => f.severity !== "note").length ? r.findings.filter(f => f.severity !== "note") : r.findings).slice(0, 3), more = r.findings.length - shown.length;
-  const items = shown.map(f => `<li><b>${esc(f.title)}</b><span class="ev">${esc(f.why)}</span></li>`).join("") || '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns.</span></li>';
-  return `<section class="verdict ${r.key}" aria-live="polite"><div class="eyebrow" style="color:inherit">Verdict</div><h2>${icon("shield", 22)}${esc(r.title)}</h2><p>${esc(r.advice)}</p><ul class="reasons">${items}</ul></section>
-<div class="banner info" style="margin-top:12px">FSU students see ${more > 0 ? `${more} more signal${more !== 1 ? "s" : ""}, ` : ""}the exact words each signal caught and the link and sender checks, and can check messages straight from their inbox. <a href="#" data-go="start">Log in with your @fsu.edu email</a></div>
+  return gdCheckReport(r, false) + `<div class="banner info" style="margin-top:12px">FSU students see ${more > 0 ? `${more} more signal${more !== 1 ? "s" : ""}, ` : ""}the exact words each signal caught and the link and sender checks, and can check messages straight from their inbox. <a href="#" data-go="start">Log in with your @fsu.edu email</a></div>
 <h3 class="sec">What to do next</h3><ol class="next">${(r.steps || N.NEXT_STEPS[r.level]).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`;
 }
 function schoolForm() {
@@ -960,13 +941,9 @@ function schoolForm() {
   return `<form id="schoolForm" class="card" style="margin-top:22px"><b>Want NoleCareerShield at your school?</b><p class="small muted" style="margin:4px 0 10px">Tell us which one. We only keep the school name, nothing about you.</p>
 <div class="row" style="flex-wrap:nowrap"><label for="c-school" class="hp">Your school</label><input id="c-school" name="school" maxlength="80" required placeholder="e.g. University of Florida" style="flex:1;min-width:0"><button class="b sm" type="submit">Send</button></div></form>`;
 }
-function verdictHtml(r, from) {
-  const items = r.findings.slice(0, 8).map(f => `<li><b>${esc(f.title)}</b> <span class="pill ${f.severity === "critical" ? "bad" : f.severity === "warning" ? "warn" : ""}">${{critical: "strong signal", warning: "warning", note: "note"}[f.severity]}</span><span class="ev">${esc(f.why)}</span>${f.matched && f.matched.length ? `<span class="ev">Found: “${esc(f.matched.join("”, “"))}”</span>` : ""}</li>`).join("")
-    + (r.lead_gen.flag ? `<li><b>Looks like a data-harvesting or aggregator ad</b><span class="ev">${esc(r.lead_gen.verdict)}</span></li>` : "")
-    || '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns, the sender and every link.</span></li>';
-  const plat = from ? `<p class="small" style="margin-top:8px">Sent through NoleCareerShield by <b>${esc(who(from)[0])}</b>, ${approvedEmp(from) ? "an employer our reviewers approved" : "an employer our reviewers have not approved"}.</p>` : "";
-  return `<section class="verdict ${r.key}" aria-live="polite"><div class="eyebrow" style="color:inherit">Verdict</div><h2>${icon("shield", 22)}${esc(r.title)}</h2><p>${esc(r.advice)}</p>${plat}<ul class="reasons">${items}</ul></section>
-<h3 class="sec">What to do next</h3><ol class="next">${(r.steps || N.NEXT_STEPS[r.level]).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`;
+function verdictHtml(r, from) {   // twin of msgcheck.render_result(r): the Security Report HUD, then what to do next
+  if (from) r.from = from;
+  return gdCheckReport(r, true) + `<h3 class="sec">What to do next</h3><ol class="next">${(r.steps || N.NEXT_STEPS[r.level]).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`;
 }
 
 // ---- checking a job listing found elsewhere (same as msgcheck.check_listing) ----
@@ -989,7 +966,8 @@ function checkListing(v) {
   const band = critical || score >= 65 ? "block" : score >= 35 ? "review" : score >= 15 ? "caution" : "clear";
   let level = {clear: 0, caution: 1, review: 2, block: 3}[band]; if (res.lead_gen.flag && level < 1) level = 1;
   const [key, title, advice] = LISTING_LEVELS[level];
-  return {kind: "listing", level, key, title, advice, score, band, findings, lead_gen: res.lead_gen, steps: (res.lead_gen.flag ? [LEADGEN_STEP] : []).concat(LISTING_STEPS[level])};
+  return {kind: "listing", level, key, title, advice, score, band, findings, lead_gen: res.lead_gen, steps: (res.lead_gen.flag ? [LEADGEN_STEP] : []).concat(LISTING_STEPS[level]),
+    subject: v.title, company: v.company, url: v.url, comp: N.compensationInfo(v.title, v.description + (v.contact ? "\n" + v.contact : "")), digest: [v.title, v.company, v.description, v.url, v.contact].join("\n")};
 }
 const LISTING_SAMPLES = [
   ["Check-cashing gig", {title: "Remote Admin Assistant", company: "QuickCash Staffing", description: "Part-time remote assistant, $500 weekly, no experience needed. We will send you a check to buy office equipment from our vendor. Deposit it and send the rest by Zelle.", url: "", contact: "quickcash.hiring@gmail.com"}],
@@ -1021,8 +999,8 @@ P.scam = () => {
   if (q.m && me()) {
     const c = S.convos.find(c => c.messages.some(m => m.id === q.m)), m = c && c.messages.find(x => x.id === q.m);
     if (m && (c.student === me().id || c.employer === me().id) && m.from !== me().id && m.status === "delivered")
-      top = `<div class="card"><div class="eyebrow">The message you're checking</div><p style="white-space:pre-wrap;margin-top:6px">${esc(m.body)}</p><a class="small" href="#" data-go="messages?c=${c.id}">← Back to the conversation</a></div>` + verdictHtml(N.check(m.body), m.from === c.employer ? m.from : 0);
-  } else if (q.run) { const r = N.check(text, sender); top = fullView() ? verdictHtml(r) : publicVerdictHtml(r) + schoolForm(); }
+      top = `<div class="card"><div class="eyebrow">The message you're checking</div><p style="white-space:pre-wrap;margin-top:6px">${esc(m.body)}</p><a class="small" href="#" data-go="messages?c=${c.id}">← Back to the conversation</a></div>` + verdictHtml(msgCheck(m.body), m.from === c.employer ? m.from : 0);
+  } else if (q.run) { const r = msgCheck(text, sender); top = fullView() ? verdictHtml(r) : publicVerdictHtml(r) + schoolForm(); }
   const form = `<form id="scamForm" class="card"><div class="form-field"><label for="c-text">The message</label><p class="hint">Paste the whole thing: text, email, LinkedIn or Handshake DM. Nothing is saved.</p>
 <textarea id="c-text" name="text" required maxlength="8000" placeholder="Hi! I'm Dr. Smith from the Psychology Department. I'm looking for a personal assistant, $400 weekly...">${esc(text)}</textarea></div>
 <div class="form-field"><label for="c-sender">Who sent it (optional)</label><p class="hint">The email address or name it came from. It helps spot fake FSU and company addresses.</p><input id="c-sender" name="sender" maxlength="200" value="${esc(sender)}" placeholder="e.g. careers.fsu.edu@gmail.com"></div>
@@ -2923,6 +2901,8 @@ function exportData() {
     assistant_chats: csChats().map(c => ({id: c.id, title: c.title, messages: c.msgs.map(m => ({role: m.role, text: m.text, feedback: m.feedback || 0}))})),
     assistant_memory: csMems(u.id).slice().reverse().map(m => ({fact: m.fact, chat_id: m.chat, created_at: new Date(m.at).toISOString()})),
     saved_jobs: S.savedJobs.filter(x => x.user === u.id).map(x => ({job_id: x.job, created_at: new Date(x.at).toISOString()})),
+    security_reports_opened: S.reportViews.filter(x => x.user === u.id).map(x => ({job_id: x.job, created_at: new Date(x.at).toISOString()})),
+    hidden_from_gallery: S.galleryHidden.filter(x => x.user === u.id).map(x => ({job_id: x.job, created_at: new Date(x.at).toISOString()})),
     follows: S.follows.filter(f => f.student === u.id).map(f => ({employer_id: f.employer, created_at: new Date(f.at).toISOString()})),
     events: S.events.filter(e => e.employer === u.id).map(e => ({id: e.id, title: e.title, kind: e.kind, starts_at: new Date(e.starts).toISOString(), status: e.status})),
     event_rsvps: S.rsvps.filter(r => r.student === u.id).map(r => ({event_id: r.event, status: r.status, created_at: new Date(r.at).toISOString()})),
@@ -2996,7 +2976,6 @@ P.privacy = () => `${pageHead("Privacy")}<div class="prose"><p>Short version: br
 <li><b>Connections and follows.</b> A connection is a mutual link between two students that shows as a count and as mutual connections on profiles. It doesn't let anyone message you. You can switch off connection requests and "People you may know" in your profile settings. Following a company adds its listings to a filter for you; the company sees how many students follow it, never who.</li></ul>
 <h3>Messages and the feed</h3><ul><li>Messages are only between students and approved employers, and every one is scanned when sent. Messages that match scam-only patterns are held for a reviewer.</li><li>Email notifications never include message text.</li><li>Only signed-in FSU students and approved employers can read or post on the feed.</li></ul>
 <h3>AI features</h3><ul><li>On the live site the assistant, resume tools and scam checker's second opinion can use Claude. Text is sent only when you use one of those features. This demo runs everything in your browser and sends nothing.</li></ul></div>`;
-P.report = () => `${pageHead("Report a listing")}<div class="prose"><p>See something that looks like a scam? Use the Report button on any message or feed post, or email the site operator with the listing title and company. Reports are reviewed by a person.</p><p>If you already sent money or personal information, contact your bank and report it to the FTC at reportfraud.ftc.gov.</p></div>`;
 
 
 // ---- sign in: one email box first, like Handshake (same as app.login_start) ----
@@ -3477,6 +3456,263 @@ P.aevents = () => {
     + (cards || '<div class="empty">No events waiting.</div>') + (rows ? `<h3 class="sec">Upcoming live events</h3><div class="card"><table class="t">${rows}</table></div>` : ""));
 };
 
+// ---------------- the Guardian: gallery, security report, scan (twins of guardian.py; styles from css_guardian.py) ----------------
+const GD_MODULES = [
+  ["language", "Language", "Language patterns", [], "No scam phrasing"],
+  ["payment", "Payment", "Payment requests", ["advance_fee", "money_mule", "irreversible_pay", "fake_check_funds", "startup_cost", "pay_to_work", "crypto_atm", "reship_home", "mule_combo", "task_scam", "app_boost_task", "mystery_shopping"], "No payment asks"],
+  ["contact", "Contact", "Contact channel", ["off_platform", "text_interview", "personal_channel", "brand_recruiter_text", "unsolicited_contact", "chat_link"], "No off-platform push"],
+  ["pay", "Pay", "Pay anomaly", ["pay_anomaly", "implied_hourly", "weekly_stipend", "too_good", "income_claim"], "No pay anomaly"],
+  ["identity", "Identity", "Identity & email", ["personal_email", "personal_sender", "fsu_lookalike", "display_spoof", "banking_pii", "pii_upfront", "new_domain", "unregistered_domain", "no_mail"], "No ID or bank asks"],
+  ["link", "Link", "Link forensics", ["short_link", "ip_link", "fsu_lookalike_link", "form_link", "lead_gen"], "Apply link clean"],
+  ["model", "Model", "Learned model", ["model_second_look"], ""]];
+const GD_OF = {}; GD_MODULES.forEach(([k, , , ids]) => ids.forEach(id => { GD_OF[id] = k; }));
+const GD_LEVELS = ["SECURE", "LOW", "ELEVATED", "CRITICAL"], GD_BAND = {clear: 0, caution: 1, review: 2, block: 3};
+const GD_SEV = {critical: "CRITICAL", warning: "WARNING", note: "NOTE"}, GD_ORDER = {critical: 0, warning: 1, note: 2};
+const GD_RULES = NCS_RULEPACK.rules.filter(r => (r.status || "active") === "active").length;
+const gdModuleOf = id => GD_OF[id || ""] || "language";
+const gdSort = fs => fs.slice().sort((a, b) => ((GD_ORDER[a.severity] ?? 3) - (GD_ORDER[b.severity] ?? 3)) || ((b.weight || 0) - (a.weight || 0)));
+const gdSevCls = f => f.severity === "critical" ? "r" : "w";
+const gdMatched = f => (f.matched || []).map(m => String(m || "").trim().replace(/^["“”]+|["“”]+$/g, "").trim()).filter(m => m && m !== "user-observed");
+function gdPayValue(c) {
+  c = c || {}; if (c.ratio_to_median) return `${c.ratio_to_median.toFixed(1)}× national median`;
+  return ({no_pay_found: "No pay figure stated", title_unmapped: "No pay benchmark for role"})[c.status] || "";
+}
+function gdModules(findings, linkRan, comp, employer) {
+  const out = [];
+  for (const [key, name, long, , clear] of GD_MODULES) {
+    const hits = gdSort(findings.filter(f => gdModuleOf(f.rule_id) === key));
+    if (key === "link" && !(linkRan || hits.length)) continue;
+    if (key === "model" && !hits.length) continue;
+    let st, value;
+    if (hits.length) { st = hits.some(f => f.severity === "critical") ? "r" : "w"; value = hits[0].title || ""; if (key === "pay" && (comp || {}).status === "flagged") value = gdPayValue(comp); }
+    else { st = "o"; value = key === "pay" ? (gdPayValue(comp) || clear) : clear; }
+    out.push({key, name, long, st, value, hits});
+  }
+  if (employer !== undefined && employer !== null) {
+    const [st, value] = ({approved: ["o", "Verified by a reviewer"], pending: ["w", "Employer not verified yet"]})[employer] || ["w", "No employer account"];
+    out.push({key: "employer", name: "Employer", long: "Employer record", st, value, hits: []});
+  }
+  return out;
+}
+const gdCode = (prefix, n) => ((String(prefix || "").match(/[A-Za-z]+/g) || []).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "NC") + "-" + String(n).padStart(4, "0");
+function gdCheckCode(text) { let h = 5381; for (const ch of String(text || "")) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0; return "CHK-" + (h & 0xffff).toString(16).toUpperCase().padStart(4, "0"); }
+function gdThreat(shown, level, verdict, n, strongest) {
+  const lit = shown ? Math.max(1, Math.round(shown / 100 * 11)) : 0;
+  const segs = [...Array(11).keys()].map(i => `<i${i < lit ? " class=on" : ""}></i>`).join("");
+  const meta = `<span>Matched <b>${n} signal${n !== 1 ? "s" : ""}</b></span>` + (strongest ? `<span>Strongest <b>${esc(strongest)}</b></span>` : "");
+  return `<div class="gd-threat lv${level}"><div class="gd-tnum"><b>${shown}</b><small>Risk / 100</small></div><div class="gd-tbody"><div class="gd-tlv">${level >= 2 ? "▲" : "●"} Threat level · ${GD_LEVELS[level]}</div><div class="gd-tcls">${esc(verdict)}</div>`
+    + `<div class="gd-lvl" aria-hidden="true">${segs}</div><div class="gd-tmeta">${meta}</div></div></div>`;
+}
+function gdMatrix(mods) {
+  const tiles = mods.map(m => `<div class="gd-mx ${m.st}"><div class="n">${esc(m.name)}<i class="dt" aria-hidden="true"></i><span class="sr"> · ${({r: "critical", w: "flag"})[m.st] || "clear"}</span></div><div class="v">${esc(m.value)}${m.hits.length > 1 ? ` <small>+${m.hits.length - 1}</small>` : ""}</div></div>`).join("");
+  return `<div class="gd-sech"><span>Detection matrix</span><span>${mods.length} module${mods.length !== 1 ? "s" : ""}</span></div><div class="gd-matrix">${tiles}</div>`;
+}
+function gdEvidence(findings, full, leadGen) {
+  const items = findings.slice(0, 8).map(f => { const m = full ? gdMatched(f) : [], code = m.slice(0, 3).map(x => `<code>“${esc(x)}”</code>`).join("");
+    return `<li><div class="gd-e ${gdSevCls(f)}"><span class="k">${GD_SEV[f.severity] || "NOTE"}</span><b>${esc(f.title)}</b>${code ? `<div class="gd-found"><span class="sr">Found: </span>${code}</div>` : ""}<p>${esc(f.why || "")}</p></div></li>`; });
+  if (leadGen && leadGen.flag && !findings.some(f => f.rule_id === "lead_gen") && items.length < 8)
+    items.push(`<li><div class="gd-e w"><span class="k">WARNING</span><b>Looks like a data-harvesting or aggregator ad</b><p>${full ? esc(leadGen.verdict || "") : ""}</p></div></li>`);
+  if (!items.length) items.push(`<li><div class="gd-e o"><span class="k">CLEAR</span><b>No scam patterns matched.</b><p>The detector checked ${GD_RULES} known student-scam patterns, the pay, the contact details and the links.</p></div></li>`);
+  return `<div class="gd-sech"><span>Evidence</span><span>${full ? "exact matches" : "top signals"}</span></div><ul class="reasons">${items.join("")}</ul>`;
+}
+const gdHud = (inner, cls, label) => `<section class="gd-hud ${cls || ""}"${label ? ` aria-label="${esc(label)}"` : ""}><i class="gd-c c1" aria-hidden="true"></i><i class="gd-c c2" aria-hidden="true"></i><i class="gd-c c3" aria-hidden="true"></i><i class="gd-c c4" aria-hidden="true"></i>${inner}</section>`;
+function gdReport(o) {
+  const top = gdSort(o.findings), verdict = top[0] ? top[0].title : "No known scam pattern", strongest = top[0] ? GD_SEV[top[0].severity] || "" : "";
+  const head = `<div class="gd-hh"><span>Security report · #${esc(o.code)}</span>${o.close || ""}</div><h1 class="gd-ht">${esc(o.title)}</h1><div class="gd-hs">${esc(o.sub)}</div>`;
+  const body = gdThreat(o.shown, o.level, verdict, o.findings.length, strongest) + (o.note || "") + gdMatrix(o.mods) + gdEvidence(top, o.full !== false, o.leadGen);
+  const foot = `<div class="gd-rf"><div class="gd-hash"><span>${esc(o.left)}</span><span>${esc(o.right)}</span></div>${o.actions ? `<div class="gd-acts">${o.actions}</div>` : ""}</div>`;
+  return gdHud(head + body + foot, "gd-report", "Security report");
+}
+function gdLog(findings, mods, ruleset) {
+  const out = [`&gt; <b>load</b> ruleset ${esc(ruleset || "?")} · ${GD_RULES} patterns`];
+  findings.slice().sort((a, b) => (GD_ORDER[a.severity] ?? 3) - (GD_ORDER[b.severity] ?? 3)).slice(0, 3).forEach(f => { const m = gdMatched(f);
+    out.push(`&gt; <b>match</b> ${m.length ? `“${esc(m[0].slice(0, 46))}”` : esc(gdModuleOf(f.rule_id))} · <span class="${gdSevCls(f)}">${esc((f.title || "").toLowerCase())}</span>`); });
+  const clear = mods.filter(m => m.st === "o").map(m => m.long);
+  if (clear.length) out.push(`&gt; <b>clear</b> <span class="o">${esc(clear.slice(0, 4).join(", ").toLowerCase())}</span>`);
+  out.push('&gt; <span class="g">compiling security report<i class="gd-cur">_</i></span>');
+  return out;
+}
+function gdScan(o) {
+  const blips = o.findings.slice(0, 6).map((f, i) => { const ang = (38 + i * 137.5) % 360, r = 24 + (i * 7) % 16, a = (ang - 90) * Math.PI / 180;
+    const x = Math.round((50 + r * Math.cos(a)) * 10) / 10, y = Math.round((50 + r * Math.sin(a)) * 10) / 10;
+    return `<span class="gd-blip ${gdSevCls(f)}" style="left:${x}%;top:${y}%;--d:${Math.round(ang / 360 * 1.6 * 100) / 100}s"><small>${esc((f.rule_id || "").replace(/_/g, " ").toUpperCase().slice(0, 18))}</small></span>`; }).join("");
+  const rows = o.mods.map((m, i) => { const n = m.hits.length, st = m.st === "o" ? "CLEAR" : n > 1 ? `${n} HITS` : m.st === "r" ? "CRITICAL" : "FLAG";
+    return `<div class="gd-mod" style="--i:${i}"><span>${esc(m.long)}</span><span class="pb"><i></i></span><span class="s ${m.st}">${st}</span></div>`; }).join("");
+  const logs = gdLog(o.findings, o.mods, o.ruleset).map((h, i) => `<div style="--i:${i}">${h}</div>`).join("");
+  const radar = `<div class="gd-radar"><div class="gd-tick"></div><div class="gd-ring r0"></div><div class="gd-ring r1"></div><div class="gd-ring r2"></div><div class="gd-cross"></div><div class="gd-beam"></div>${blips}<div class="gd-core">${crest(40)}</div></div>`;
+  return `<div class="gd-scan" aria-hidden="true"><i class="gd-c c1"></i><i class="gd-c c2"></i><i class="gd-c c3"></i><i class="gd-c c4"></i><div class="gd-hh"><span><i class="gd-led"></i>Guardian scan engine · active</span><span>REQ #${esc(o.code)}</span></div>`
+    + `<div class="gd-ht">${esc(o.title)}</div><div class="gd-hs">${esc(o.company)} · ${o.mods.length} detection modules running</div>${radar}<div class="gd-pct"><b></b><span>Analysis complete</span></div><div class="gd-mods">${rows}</div><div class="gd-log">${logs}</div></div>`;
+}
+const gdStage = (rep, scan) => scan ? `<div class="gd-stage anim">${scan}${rep}</div>` : `<div class="gd-stage">${rep}</div>`;
+const gdLeadGen = j => j.findings.some(f => f.rule_id === "lead_gen");
+const gdShown = j => shownScore(j.score, gdLeadGen(j));
+const gdLevel = j => j.scam_status === "held" ? 3 : Math.max(GD_BAND[j.band] || 0, j.scam_status === "flagged" ? 1 : 0);
+const gdOpened = uid => new Set(S.reportViews.filter(x => x.user === uid).map(x => x.job));
+const gdHidden = uid => new Set(S.galleryHidden.filter(x => x.user === uid).map(x => x.job));
+function gdChip(j, opened, link) {
+  if (link === undefined) link = true;
+  const sc = gdShown(j);
+  if (opened && !opened.has(j.id)) return scanChip("idle", 0, "Scam risk report · run scan", link ? `report?job=${j.id}&scan=1` : "");
+  return scanChip(scanState(j.scam_status), sc, `Scam risk ${sc} · ${j.scam_status}`, link ? `report?job=${j.id}` : "");
+}
+const gdEmployerState = j => !j.employer_id ? "none" : approvedEmp(j.employer_id) ? "approved" : "pending";
+function gdJobModules(j) { return gdModules(j.findings, !!j.apply_url, N.compensationInfo(j.title, j.description), gdEmployerState(j)); }
+function gdPostedOn(j) { const d = new Date(NOW() - (j.age_days || 0) * 86400e3); return d.toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"}); }
+function gdJobReport(j, viewer, animate, hidden) {
+  const mods = gdJobModules(j), code = gdCode(j.company, j.id);
+  const right = j.review_status === "approved" ? "Reviewed by a person before publishing" : j.review_status === "pending" ? "Waiting for a reviewer" : "Not on the board";
+  let close = "", actions;
+  if (viewer === "student") {
+    close = `<a class="gd-x" href="#" data-go="job?id=${j.id}" aria-label="Close the report and open the listing">✕ Close</a>`;
+    actions = `<a class="gd-btn g" href="#" data-go="report">Report this listing</a><button class="gd-btn o" type="button" data-do="${hidden ? "gd-unhide" : "gd-hide"}" data-id="${j.id}">${hidden ? "Show in my gallery again" : "Hide from my gallery"}</button>`;
+  } else if (viewer === "employer") actions = `<a class="gd-btn o" href="#" data-go="hjob?id=${j.id}">Back to your listing</a>`;
+  else actions = '<a class="gd-btn o" href="#" data-go="admin">Back to the review queue</a>';
+  const rep = gdReport({code, title: j.title, sub: `${j.company} · scanned when it was posted, ${gdPostedOn(j)}`, shown: gdShown(j), level: gdLevel(j), findings: j.findings, mods,
+    left: `Ruleset ${N.ruleset}`, right, actions, close});
+  return gdStage(rep, animate ? gdScan({code, title: j.title, company: j.company, findings: j.findings, mods, ruleset: N.ruleset}) : "");
+}
+function gdCheckReport(r, full) {
+  const listing = r.kind === "listing", mods = gdModules(r.findings, true, r.comp, null);
+  const subject = r.subject || (listing ? "A job listing you pasted" : "A message you pasted"), company = r.company || "";
+  const lg = r.lead_gen || {}, shown = shownScore(r.score, !!lg.flag);
+  const shownF = full ? r.findings : (r.findings.filter(f => f.severity !== "note").slice(0, 3).length ? r.findings.filter(f => f.severity !== "note").slice(0, 3) : r.findings.slice(0, 3));
+  let note = `<div class="gd-verdict ${esc(r.key)}"><span class="eyebrow">Verdict</span><b>${esc(r.title)}</b><p>${esc(r.advice)}</p></div>`;
+  if (r.from) note += `<p class="gd-plat">Sent through NoleCareerShield by <b>${esc(who(r.from)[0])}</b>, ${approvedEmp(r.from) ? "an employer our reviewers approved" : "an employer our reviewers have not approved"}.</p>`;
+  const all = gdSort(r.findings), verdict = all[0] ? all[0].title : "No known scam pattern", strongest = all[0] ? GD_SEV[all[0].severity] || "" : "";
+  const head = `<div class="gd-hh"><span>Security report · #${esc(gdCheckCode(r.digest || subject + company))}</span><span>${listing ? "Listing" : "Message"}</span></div><h2 class="gd-ht">${esc(subject)}</h2><div class="gd-hs">${esc((company ? company + " · " : "") + "checked just now")}</div>`;
+  const body = gdThreat(shown, r.level, verdict, r.findings.length, strongest) + note + gdMatrix(mods) + gdEvidence(gdSort(shownF), full, lg);
+  const foot = `<div class="gd-rf"><div class="gd-hash"><span>Ruleset ${esc(N.ruleset)}</span><span>Not on NoleCareerShield · ${r.url ? "SCANNED FROM YOUR LINK" : "SCANNED FROM YOUR TEXT"}</span></div></div>`;
+  return `<div class="gd-stage gd-check">${gdHud(head + body + foot, "gd-report", "Scam check result")}</div>`;
+}
+function msgCheck(text, sender) {   // N.check plus what the HUD shows (msgcheck.check's comp and digest)
+  const r = N.check(text, sender); r.comp = N.compensationInfo("", (text || "").trim() + (sender ? "\n" + sender : "")); r.digest = text + "\n" + (sender || ""); return r;
+}
+P.report = () => {
+  if (!S.route.q.job) return `${pageHead("Report a listing")}<div class="prose"><p>See something that looks like a scam? Use the Report button on any message or feed post, or email the site operator with the listing title and company. Reports are reviewed by a person.</p><p>If you already sent money or personal information, contact your bank and report it to the FTC at reportfraud.ftc.gov.</p></div>`;
+  const j = S.jobs.find(x => x.id === S.route.q.job);
+  let role = "";
+  if (isStudent() && visibleListing(j)) role = "student";
+  else if (isEmployer() && j && orgOf(j.employer_id || 0) === orgOf(me().id)) role = "employer";
+  else if (S.admin && j) role = "reviewer";
+  if (!role) { if (!me() && !S.admin) { go("start?next=jobs"); return null; } return '<p class="empty" style="margin:40px 0">That report isn\'t available.</p>'; }
+  let animate = !!S.route.q.scan, hidden = false;
+  if (role === "student") {
+    const seen = S.reportViews.some(x => x.user === me().id && x.job === j.id);
+    animate = animate || !seen; if (!seen) S.reportViews.push({user: me().id, job: j.id, at: NOW()});
+    hidden = gdHidden(me().id).has(j.id);
+  }
+  const back = {student: ["home", "← The gallery"], employer: [`hjob?id=${j.id}`, "← Your listing"], reviewer: ["admin", "← Review queue"]}[role];
+  return `<div class="gd-page"><a class="back" href="#" data-go="${back[0]}">${back[1]}</a>${takeFlash()}${gdJobReport(j, role, animate, hidden)}</div>`;
+};
+APP_PAGES.report = "jobs";
+
+// ---- The Gallery (twin of guardian.gallery) ----
+const GD_NUM = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"], GD_SIZE = 6;
+const GD_PAY = /\$\s?(\d[\d,]*(?:\.\d\d)?)(?:\s?(?:-|–|to)\s?\$?\s?(\d[\d,]*(?:\.\d\d)?))?\s*(?:\/|per\s+|an?\s+|each\s+)?\s*(hour|hr|week|wk|month|mo|year|yr)\b|\$\s?(\d[\d,]*)\s+(weekly|monthly|hourly|annually)/i;
+const GD_UNIT = {hour: "hour", hr: "hour", hourly: "hour", week: "week", wk: "week", weekly: "week", month: "month", mo: "month", monthly: "month", year: "year", yr: "year", annually: "year"};
+function gdPayOf(text) {
+  const m = GD_PAY.exec(text || ""); if (!m) return null;
+  if (m[4]) return ["$" + m[4], "/" + GD_UNIT[m[5].toLowerCase()]];
+  const trim = s => s.endsWith(".00") ? s.slice(0, -3) : s;
+  return [m[2] ? `$${trim(m[1])}–${trim(m[2])}` : `$${trim(m[1])}`, "/" + GD_UNIT[m[3].toLowerCase()]];
+}
+function gdTone(name) { let h = 0; for (const ch of String(name || "").toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 4; }
+function gdCurate(jobs, p, verified, hidden) {
+  const rich = jbHasProfile(p), scored = [];
+  for (const j of jobs) { if (hidden.has(j.id)) continue;
+    const f = rich ? N.fitScore(j, p) : null;
+    scored.push([(f ? f.score : 0) + (verified.has(j.employer_id) ? 12 : 0) + Math.max(0, 14 - (j.age_days || 0)), j, f]); }
+  scored.sort((a, b) => (b[0] - a[0]) || (b[1].id - a[1].id));
+  const picked = [], seen = new Set();
+  for (const second of [false, true]) for (const [, j, f] of scored) {
+    if (picked.length >= GD_SIZE) break;
+    const key = j.employer_id || (j.company || "").trim().toLowerCase();
+    if (picked.some(x => x.job.id === j.id) || (!second && seen.has(key))) continue;
+    picked.push({job: j, fit: f}); seen.add(key);
+  }
+  return picked;
+}
+function gdCard(j, f, verified, opened) {
+  const badge = verified ? verifiedBadge() : `<span class="unv">${j.employer_id ? "Employer not verified yet" : "No employer account"}</span>`;
+  const place = jbWhere(j), setting = cap(j.work_type), kinds = jbKinds(j).slice(0, 1).map(k => JB_KIND_LABEL[k]).join(", ");
+  const meta = [place, place === setting ? "" : setting, kinds].filter(Boolean).join(" · ");
+  const req = (f && f.requirements) || N.jobRequirements(j.title, j.description);
+  const skills = [...new Set((req.required || []).concat(req.preferred || []))].slice(0, 2);
+  const tags = skills.map(s => `<span class="tag">${esc(s)}</span>`).join("") + (f ? `<span class="tag m">${f.score}% match</span>` : "");
+  const pay = gdPayOf(j.description);
+  return `<article class="card gcard"><div class="hd"><span class="g-logo t${gdTone(j.company)}" aria-hidden="true">${initials(j.company)}</span><div class="g-who"><div class="co">${esc(j.company)}</div>${badge}</div></div>`
+    + `<h3><a class="g-link" href="#" data-go="job?id=${j.id}">${esc(j.title)}</a></h3><div class="meta">${esc(meta)}</div>${tags ? `<div class="tags">${tags}</div>` : ""}`
+    + `<div class="foot">${pay ? `<div class="pay">${esc(pay[0])}<small>${esc(pay[1])}</small></div>` : '<div class="pay none"></div>'}${gdChip(j, opened)}</div></article>`;
+}
+function gdThreats() {
+  const week = 7 * 86400e3;
+  const jobs = S.jobs.filter(j => ["held", "flagged"].includes(j.scam_status) && (j.age_days || 0) < 7 && (["rejected", "removed"].includes(j.review_status) || (j.review_status === "pending" && j.scam_status === "held"))).length;
+  const msgs = S.convos.reduce((n, c) => n + c.messages.filter(m => m.status === "held" && NOW() - m.at < week).length, 0);
+  return jobs + msgs;
+}
+function gdNextUp(uid) {
+  const iv = upcomingInterviews(uid)[0];
+  if (iv) { const s = iv.p.slots.find(x => x.id === iv.p.chosen), e = toET(s.at); return [`Interview ${IV_DAYS[e.wd]}`, ivHM(e, true), `messages?c=${iv.c.id}`]; }
+  const ev = S.rsvps.filter(r => r.student === uid && r.status === "going").map(r => S.events.find(e => e.id === r.event)).filter(e => e && e.status === "approved" && e.starts > NOW()).sort((a, b) => a.starts - b.starts)[0];
+  if (ev) { const e = toET(ev.starts); return [`Event ${IV_DAYS[e.wd]}`, ivHM(e, true), evPage(ev)]; }
+  return null;
+}
+function gdAttention(uid, n, ready) {
+  const out = [];
+  if (n) out.push([`${n} unread message${n !== 1 ? "s" : ""}`, "messages", "g"]);
+  S.ivs.filter(p => p.status === "open" && (S.convos.find(c => c.id === p.c) || {}).student === uid).slice(0, 2).forEach(p => { const c = S.convos.find(x => x.id === p.c);
+    out.push([`Pick a time for your interview with ${who(c.employer)[0]}`, `messages?c=${c.id}`, "g"]); });
+  const today = etISO(NOW()), tomorrow = etISO(NOW() + 86400e3);
+  S.rsvps.filter(r => r.student === uid && r.status === "going").map(r => S.events.find(e => e.id === r.event)).filter(e => e && e.status === "approved" && e.starts > NOW() && e.starts < NOW() + 3 * 86400e3)
+    .sort((a, b) => a.starts - b.starts).slice(0, 2).forEach(e => { const d = etISO(e.starts), when = d === today ? "today" : d === tomorrow ? "tomorrow" : "";
+      if (when) out.push([`${e.title} is ${when} at ${ivHM(toET(e.starts), true)} ET`, evPage(e), "o"]); });
+  const closed = S.apps.filter(a => a.student === uid && !visibleListing(S.jobs.find(j => j.id === a.job))).length;
+  if (closed) out.push([`${closed} listing${closed !== 1 ? "s" : ""} you applied to ${closed !== 1 ? "have" : "has"} closed`, "applications", ""]);
+  if (!ready) out.push(["Finish your profile so your matches get sharper", "setup?step=1", ""]);
+  return out;
+}
+function studentHome() {
+  const p = SP(me().id); if (!p || !p.setup_step) { go("setup?step=1"); return null; }
+  const uid = me().id, jobs = approvedJobs(), verified = new Set(jobs.filter(j => j.employer_id && approvedEmp(j.employer_id)).map(j => j.employer_id));
+  const hidden = gdHidden(uid), opened = gdOpened(uid), n = unread(uid), picks = gdCurate(jobs, p, verified, hidden), k = picks.length;
+  const nSaved = jbSaved(uid).filter(id => visibleListing(S.jobs.find(j => j.id === id))).length, nxt = gdNextUp(uid), att = gdAttention(uid, n, studentReady(p));
+  const first = (p.display_name || "").split(" ")[0], day = new Date().toLocaleDateString("en-US", {weekday: "long"}), whoEm = first ? `, <em>${esc(first)}.</em>` : ".";
+  let h1, sub;
+  if (k) { const w = GD_NUM[k] || String(k);
+    h1 = first ? `${w} role${k !== 1 ? "s" : ""} worth your time${whoEm}` : `${w} role${k !== 1 ? "s" : ""} worth <em>your time.</em>`;
+    sub = `Every one scam-scanned and approved by a person before it reached you. We'd rather show you ${w.toLowerCase()} real one${k !== 1 ? "s" : ""} than ${w.toLowerCase()} hundred maybes.`; }
+  else { h1 = first ? `The gallery is quiet${whoEm}` : "The gallery is <em>quiet.</em>";
+    sub = jobs.length ? "You've hidden every live listing. They're all still on the job board." : "No live listings right now. Reviewers approve new ones every day, and they show up here first."; }
+  const chips = [["All", "jobs", true], ["Internships", "jobs?kind=internship", false], ["Part-time", "jobs?kind=part-time", false], ["Remote", "jobs?work_type=remote", false]];
+  const bar = `<form class="gal-bar" id="galForm" role="search"><label class="sr" for="gal-q">Describe the role you want</label><div class="gal-search">${icon("search", 18)}<input id="gal-q" name="search" maxlength="200" autocomplete="off" placeholder="Describe the role you want, e.g. “paid data internship in Tallahassee”"><button type="submit">Search</button></div>`
+    + `<nav class="gal-chips" aria-label="Quick filters">${chips.map(([t, g, on]) => `<a class="gchip${on ? " on" : ""}" href="#" data-go="${g}">${t}</a>`).join("")}</nav></form>`;
+  const stats = [["Verified employers", verified.size, "g", "jobs"], ["Threats intercepted this week", gdThreats(), "r"], ["New messages", n, "", "messages"]];
+  if (nxt) stats.push([nxt[0], nxt[1], "", nxt[2]]);
+  stats.push(["Saved jobs", nSaved, "", "jobs?tab=saved"]);
+  const attHtml = att.length ? `<section class="gal-att" aria-label="Needs your attention"><span class="h">Needs your attention</span>${att.map(([x, g, t]) => `<a class="${t}" href="#" data-go="${esc(g)}"><i aria-hidden="true"></i>${esc(x)}</a>`).join("")}</section>` : "";
+  const nv = picks.filter(x => verified.has(x.job.employer_id)).length;
+  const note = `${nv} verified` + (k - nv ? ` · ${k - nv} awaiting verification` : "") + (hidden.size ? ` · ${hidden.size} hidden` : "");
+  const coll = k ? `<div class="gal-h"><h2>This week's collection</h2><span>${esc(note)}</span></div><div class="gal-grid">${picks.map(x => gdCard(x.job, x.fit, verified.has(x.job.employer_id), opened)).join("")}</div><p class="gal-more"><a href="#" data-go="jobs">See all jobs →</a></p>`
+    : `<div class="gal-empty card">${crest(44)}<h2>Nothing to show yet</h2><p>When a reviewer approves a listing that fits you, it lands here. Meanwhile you can check a listing you found elsewhere.</p><p class="row"><a class="b" href="#" data-go="jobs">Browse the job board</a><a class="b sec" href="#" data-go="scam">Scan a listing</a></p></div>`;
+  return `${takeFlash()}<section class="gal"><div class="gal-top"><div class="eyebrow">// ${esc(day)} · the curated gallery</div><h1>${h1}</h1><p class="sub">${esc(sub)}</p></div>${bar}${statRow(stats)}${attHtml}${coll}</section>`;
+}
+document.addEventListener("submit", e => {
+  if (e.target.id !== "galForm") return;
+  e.preventDefault();
+  const q = String(new FormData(e.target).get("search") || "").trim().slice(0, 200);
+  go(q ? "jobs?search=" + encodeURIComponent(q) : "jobs");
+});
+document.addEventListener("click", e => {
+  const d = e.target.closest('[data-do="gd-hide"],[data-do="gd-unhide"]'); if (!d || !isStudent()) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const id = Number(d.dataset.id), j = S.jobs.find(x => x.id === id); if (!visibleListing(j)) return;
+  const on = d.dataset.do === "gd-hide";
+  S.galleryHidden = S.galleryHidden.filter(x => !(x.user === me().id && x.job === id));
+  if (on) S.galleryHidden.push({user: me().id, job: id, at: NOW()});
+  flash("info", on ? "Hidden from your gallery. It stays on the job board." : "Back in your gallery.");
+  go("report?job=" + id);
+}, true);
+
 // ---------------- router ----------------
 function render(keepScroll) {
   nav();
@@ -3816,7 +4052,7 @@ document.addEventListener("submit", e => {
     S.posts = S.posts.filter(p => p.author !== uid); S.posts.forEach(p => { p.comments = p.comments.filter(c => c.author !== uid); });
     S.convos.forEach(c => { c.messages.forEach(m => { if (m.from === uid) { m.body = ""; m.status = "removed"; } }); if (c.student === uid || c.employer === uid) c.blocked_by = uid; });
     S.versions = S.versions.filter(v => v.user !== uid); S.apps = S.apps.filter(a => a.student !== uid && a.employer !== uid);
-    S.conns = S.conns.filter(c => c.a !== uid && c.b !== uid); S.follows = S.follows.filter(x => x.student !== uid && x.employer !== uid); S.savedJobs = S.savedJobs.filter(x => x.user !== uid); S.mems = (S.mems || []).filter(m => m.user !== uid);
+    S.conns = S.conns.filter(c => c.a !== uid && c.b !== uid); S.follows = S.follows.filter(x => x.student !== uid && x.employer !== uid); S.savedJobs = S.savedJobs.filter(x => x.user !== uid); S.reportViews = S.reportViews.filter(x => x.user !== uid); S.galleryHidden = S.galleryHidden.filter(x => x.user !== uid); S.mems = (S.mems || []).filter(m => m.user !== uid);
     const ivc = new Set(S.convos.filter(c => c.student === uid || c.employer === uid).map(c => c.id)); S.ivs = S.ivs.filter(p => !ivc.has(p.c)); S.ivEvents = S.ivEvents.filter(e => !ivc.has(e.c));
     S.companyViews = S.companyViews.filter(v => v.employer !== uid); S.companyViews.forEach(v => { if (v.viewer === uid) v.viewer = null; }); S.tpls = S.tpls.filter(t => t.emp !== uid); delete S.tplSeeded[uid]; S.session = null;
     flash("verified", "Your account is deleted. Your profile, resume, posts and comments are gone, and the messages you sent were blanked."); S.route = {name: "about", q: {}}; return render();

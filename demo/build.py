@@ -34,6 +34,7 @@ import css_employer  # noqa: E402,F401  (appends the employer dashboard styles t
 import css_events  # noqa: E402,F401  (appends the event styles to ui.CSS)
 import css_hiring  # noqa: E402,F401  (appends the applicant table and listing-control styles to ui.CSS)
 import css_team  # noqa: E402,F401  (appends the team page styles to ui.CSS)
+import css_guardian  # noqa: E402,F401  (appends the gallery, security report and scan styles to ui.THEME_CSS)
 
 TITLE = "NoleCareerShield Demo"
 

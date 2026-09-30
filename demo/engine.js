@@ -146,6 +146,23 @@
     return F("pay_anomaly", "warning", 17, "The stated pay is out of band", detail + ". Figures far above market for the described work are the hook.", [detail]);
   }
 
+  // The same check as a status for the security report's Pay tile (scam_detector/enrichment/compensation.py's result):
+  // {status: no_pay_found | title_unmapped | within_range | flagged, ratio_to_median}.
+  function compensationInfo(ttl, desc) {
+    const text = `${ttl}\n${desc}`; const pays = [];
+    for (const m of allMatches(PAYPAT, text)) {
+      const hi = parseFloat((m[2] || m[1]).replace(/,/g, "")); const u = m[3].toLowerCase();
+      pays.push(u === "hour" || u === "hr" ? hi * 2080 : u === "day" ? hi * 260 : u === "week" ? hi * 52 : u === "month" ? hi * 12 : hi);
+    }
+    if (!pays.length) return {status: "no_pay_found", ratio_to_median: null};
+    const adv = Math.max(...pays); const hay = `${ttl} ${desc}`.toLowerCase();
+    let best = null, bestLen = 0;
+    for (const k in BLS) for (const kw of BLS[k][2]) if (hay.includes(kw) && kw.length > bestLen) { best = BLS[k]; bestLen = kw.length; }
+    if (!best) return {status: "title_unmapped", ratio_to_median: null};
+    const ratio = Math.round(adv / best[1] * 100) / 100;
+    return {status: ratio >= 1.8 ? "flagged" : "within_range", ratio_to_median: ratio};
+  }
+
   // ---------------- email domains ----------------
   const FREE_MAIL = new Set(["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "aol.com", "protonmail.com", "proton.me", "mail.com", "yandex.com", "gmx.com", "icloud.com", "live.com", "msn.com"]);
   function emailDomains(text, company) {
@@ -1593,7 +1610,7 @@ majoring major majors minor degree hold holds certified certification certificat
     return (poster ? `Hi ${poster},` : "Hi,") + "\n\n" + body + (name ? "\n\n" + name : "");
   }
 
-  const NCS = {normalize, runTextRules, scorePosting, check, linkFindings, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
+  const NCS = {normalize, runTextRules, scorePosting, check, linkFindings, compensationInfo, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
     categoriesForMajor, KIND_WORDS, qualsOf, QUAL_KINDS, review, report, standOut, parseResume: parse, heading, buildResume, docText, docHtml, toPdf, standOutJob, coverNote, DOC_TITLES, addSkills, setSummary, missingProfileSkills, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;

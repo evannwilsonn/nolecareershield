@@ -156,7 +156,7 @@ def test_student_setup_flow_and_profile(net):
     assert "Jordan R." in page and "Statistics" in page and "Your profile is set up" in page
     assert "Python" in page and "Tableau" in page
     home = c.get("/")
-    assert home.status_code == 200 and "Recommended for you" in home.text and 'class="side"' in home.text
+    assert home.status_code == 200 and 'class="gal"' in home.text and 'class="side"' in home.text
     # Bad input is rejected with the reason, and nothing oversized is stored.
     t = ucsrf(c)
     r = c.post("/profile/setup/1", data={"csrf": t, "display_name": "<script>alert(1)</script>", "major": "Stats"})

@@ -159,7 +159,7 @@ def test_job_page_shows_fit_and_tailoring(net):
     assert r.status_code == 303 and "For Data Analyst Intern" in s.get("/resume?tab=versions").text
     # The list pages show the same fit number.
     home = s.get("/").text
-    assert re.search(r">Fit \d+<", home)
+    assert re.search(r">\d+% match<", home)                      # the gallery cards show the fit score as "N% match"
     # Visitors and employers don't get the panels.
     assert "Job match is" not in net.client().get(f"/job/{job}").text
     assert "Job match is" not in emp.get(f"/job/{job}").text

@@ -200,7 +200,8 @@ def check(text: str, sender: str = "", *, use_ai: bool = False, platform_employe
     key, title, advice = LEVELS[level]
     return {"level": level, "key": key, "title": title, "advice": advice, "score": score, "band": band,
             "findings": findings, "lead_gen": lead_gen, "ai": opinion, "platform_employer": platform_employer,
-            "ruleset": result.ruleset_version, "checked_at": time.time()}
+            "ruleset": result.ruleset_version, "checked_at": time.time(),
+            "comp": result.enrichment.get("compensation"), "digest": text + "\n" + sender}
 
 
 LISTING_LEVELS = [
@@ -249,7 +250,9 @@ def check_listing(title: str, description: str, company: str = "", url: str = ""
     steps = ([LEADGEN_STEP] if lead_gen.get("flag") else []) + LISTING_STEPS[level]
     return {"kind": "listing", "level": level, "key": key, "title": ttl, "advice": advice, "score": score, "band": band,
             "findings": findings, "lead_gen": lead_gen, "ai": None, "platform_employer": None, "steps": steps,
-            "ruleset": result.ruleset_version, "checked_at": time.time()}
+            "ruleset": result.ruleset_version, "checked_at": time.time(),
+            "subject": title, "company": company, "url": url, "comp": result.enrichment.get("compensation"),
+            "digest": "\n".join((title, company, description, url, contact))}
 
 
 NEXT_STEPS = {
@@ -285,59 +288,29 @@ PUBLIC_REASONS = 3
 
 
 def render_result(r: dict, full: bool = True) -> str:
+    """The verdict in the Security Report HUD (guardian.check_report), then the AI opinion and what to do next. Visitors get
+    the verdict and up to three plain reasons (no matched words); FSU students and approved employers get everything."""
+    import guardian
+    out = guardian.check_report(r, full)
     if not full:
-        return _render_public(r)
-    items = "".join(
-        f'<li><b>{ui.esc(f["title"])}</b> <span class="pill {"bad" if f["severity"] == "critical" else "warn" if f["severity"] == "warning" else ""}">'
-        f'{ {"critical": "strong signal", "warning": "warning", "note": "note"}[f["severity"]] }</span>'
-        f'<span class="ev">{ui.esc(f["why"])}</span>'
-        + (f'<span class="ev">Found: “{ui.esc("”, “".join(f.get("matched") or []))}”</span>' if f.get("matched") and f["matched"] != ["user-observed"] else "")
-        + "</li>" for f in r["findings"][:8])
-    if r.get("lead_gen", {}).get("flag"):
-        items += (f'<li><b>Looks like a data-harvesting or aggregator ad</b><span class="ev">{ui.esc(r["lead_gen"].get("verdict", ""))}</span></li>')
-    if not items:
-        items = '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns, the sender and every link.</span></li>'
-    platform = ""
-    if r.get("platform_employer"):
-        pe = r["platform_employer"]
-        platform = (f'<p class="small" style="margin-top:8px">Sent through NoleCareerShield by <b>{ui.esc(pe["company"])}</b>, '
-                    f'{"an employer our reviewers approved" if pe.get("status") == "approved" else "an employer our reviewers have not approved"}.</p>')
+        shown = [f for f in r["findings"] if f["severity"] != "note"][:PUBLIC_REASONS] or r["findings"][:PUBLIC_REASONS]
+        more = len(r["findings"]) - len(shown)
+        extra = f"{more} more signal{'s' if more != 1 else ''}, " if more > 0 else ""
+        out += ('<div class="banner info" style="margin-top:12px">FSU students see ' + extra + 'the exact words each signal caught and the '
+                'link and sender checks, and can check messages straight from their inbox. <a href="/login">Log in with your @fsu.edu email</a></div>')
     op = ""
-    if r.get("ai"):
+    if full and r.get("ai"):
         o = r["ai"]
         flags = "".join(f'<li><b>{ui.esc(x.get("flag", ""))}</b><span class="ev">“{ui.esc(x.get("evidence", ""))}”</span></li>'
                         for x in (o.get("red_flags") or [])[:6])
         greens = "".join(f'<span class="pill ok">{ui.esc(g)}</span> ' for g in (o.get("green_flags") or [])[:4])
         op = (f'<h3 class="sec">AI second opinion <small>{ui.esc(o.get("verdict", "")).title()} · '
               f'{round(100 * float(o.get("confidence") or 0))}% confident</small></h3>'
-              f'<div class="card"><p>{ui.esc(o.get("summary", ""))}</p>{f"<ul class=reasons>{flags}</ul>" if flags else ""}'
+              f'<div class="card"><p>{ui.esc(o.get("summary", ""))}</p>{f"<ul class=ai-flags>{flags}</ul>" if flags else ""}'
               f'{f"<p style=margin-top:10px>{greens}</p>" if greens else ""}'
               '<p class="small faint" style="margin-top:10px">The AI can make a verdict stricter, never softer. The verdict above always includes the rule check.</p></div>')
     steps = "".join(f"<li>{ui.esc(s)}</li>" for s in r.get("steps") or NEXT_STEPS[r["level"]])
-    icon = {"ok": "check", "caution": "shield", "warn": "flag", "bad": "flag"}[r["key"]]
-    return f"""<section class="verdict {r['key']}" aria-live="polite">
-<div class="eyebrow" style="color:inherit">Verdict</div>
-<h2>{ui.icon(icon, 22)}{ui.esc(r['title'])}</h2><p>{ui.esc(r['advice'])}</p>{platform}
-<ul class="reasons">{items}</ul></section>
-{op}<h3 class="sec">What to do next</h3><ol class="next">{steps}</ol>"""
-
-
-def _render_public(r: dict) -> str:
-    shown = [f for f in r["findings"] if f["severity"] != "note"][:PUBLIC_REASONS] or r["findings"][:PUBLIC_REASONS]
-    items = "".join(f'<li><b>{ui.esc(f["title"])}</b><span class="ev">{ui.esc(f["why"])}</span></li>' for f in shown)
-    if r.get("lead_gen", {}).get("flag") and len(shown) < PUBLIC_REASONS:
-        items += '<li><b>Looks like a data-harvesting or aggregator ad</b></li>'
-    if not items:
-        items = '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns.</span></li>'
-    more = len(r["findings"]) - len(shown)
-    steps = "".join(f"<li>{ui.esc(s)}</li>" for s in r.get("steps") or NEXT_STEPS[r["level"]])
-    icon = {"ok": "check", "caution": "shield", "warn": "flag", "bad": "flag"}[r["key"]]
-    return f"""<section class="verdict {r['key']}" aria-live="polite">
-<div class="eyebrow" style="color:inherit">Verdict</div>
-<h2>{ui.icon(icon, 22)}{ui.esc(r['title'])}</h2><p>{ui.esc(r['advice'])}</p>
-<ul class="reasons">{items}</ul></section>
-<div class="banner info" style="margin-top:12px">FSU students see {f"{more} more signal{'s' if more != 1 else ''}, " if more > 0 else ""}the exact words each signal caught and the link and sender checks, and can check messages straight from their inbox. <a href="/login">Log in with your @fsu.edu email</a></div>
-<h3 class="sec">What to do next</h3><ol class="next">{steps}</ol>"""
+    return f"""{out}{op}<h3 class="sec">What to do next</h3><ol class="next">{steps}</ol>"""
 
 
 def _school_form(done: str = "") -> str:

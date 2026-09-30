@@ -90,6 +90,7 @@ import network
 import employer_page
 import events
 import teams
+import guardian
 import sso
 import ai
 from ui import esc, EMBLEM, BASE_CSS, PAGE_SCRIPT, PAGE_SCRIPT_HASH, _viewer, shell
@@ -625,7 +626,9 @@ def jobs_feed(request: Request):
         return RedirectResponse(f"/job/{old}", status_code=301)
     # Query params are attacker-controlled input same as form fields: jobboard.parse_params drops anything unexpected.
     with store.db() as conn:
-        body = jobboard.board(conn, viewer, dict(request.query_params), query_public(), pill=_scan_chip, risk=_risk)
+        # Each card's scan chip links to the listing's security report; it shows the result once the student has opened it.
+        opened = guardian.opened_ids(conn, viewer["id"])
+        body = jobboard.board(conn, viewer, dict(request.query_params), query_public(), pill=lambda j: guardian.chip(j, opened), risk=_risk)
     return shell(body, title="Browse jobs — NoleCareerShield", active="/jobs")
 
 
@@ -644,7 +647,12 @@ def job_detail(job_id: int, request: Request):
         saved = (int(j["id"]) in jobboard.saved_ids(conn, viewer["id"])) if viewer["role"] == "student" else None
         if viewer["role"] == "student":
             after = jobfit.tailor_panel(j, prof)
-        body = '<div class="jb jb-page">' + jobboard.detail(conn, viewer, j, prof, pill=_score_pill, risk=_risk, next_=f"/job/{int(j['id'])}",
+            opened = guardian.opened_ids(conn, viewer["id"])
+            pill = lambda x: guardian.chip(x, opened)
+        else:
+            own = j.get("employer_id") == store.org_id(viewer)
+            pill = lambda x: guardian.chip(x, None, link=own)
+        body = '<div class="jb jb-page">' + jobboard.detail(conn, viewer, j, prof, pill=pill, risk=_risk, next_=f"/job/{int(j['id'])}",
                                                            record=True, saved=saved, extra=after) + "</div>"
     return shell(body, title=esc(j["title"]) + " — NoleCareerShield", active="/jobs", js=bool(after))
 
@@ -1014,7 +1022,7 @@ mailer.copy_hook = emails.keep
 
 for _r in (profile_page.router, profiles.router, messaging.router, msgcheck.router, learning.router, assistant.router, resume_tools.router,
            feed.router, admin_extra.router, hiring.router, easyapply.router, network.router, jobboard.router, emails.router,
-           events.router, teams.router):
+           events.router, teams.router, guardian.router):
     app.include_router(_r)
 
 

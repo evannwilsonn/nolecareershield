@@ -112,7 +112,7 @@ def test_signed_in_pages_carry_the_new_pieces(net):
     job = add_job(net, eid)
     s1.get(f"/job/{job}")
     home = s1.get("/").text
-    assert 'class="hello"' in home and 'class="kpi' in home and 'class="fitb' in home and "arch-074.webp" in home
+    assert 'class="gal"' in home and 'class="statrow"' in home and "% match" in home and "worth your time" in home     # The Gallery
     ehome = emp.get("/").text
     assert 'class="ed-hello"' in ehome and "Candidate pipeline" in ehome and "viewed" in ehome        # the hiring dashboard
     t = ucsrf(emp)

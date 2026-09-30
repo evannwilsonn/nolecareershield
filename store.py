@@ -318,6 +318,22 @@ CREATE TABLE IF NOT EXISTS saved_jobs (
     UNIQUE (user_id, job_id)
 );
 CREATE INDEX IF NOT EXISTS idx_saved_jobs_job ON saved_jobs (job_id);
+-- The Guardian (guardian.py): which listings' security reports a student has opened (their gallery chips show the result
+-- after that), and listings a student hid from their gallery. Both go with the listing and with the account.
+CREATE TABLE IF NOT EXISTS report_views (
+    user_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (user_id, job_id)
+);
+CREATE INDEX IF NOT EXISTS idx_report_views_job ON report_views (job_id);
+CREATE TABLE IF NOT EXISTS gallery_hidden (
+    user_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (user_id, job_id)
+);
+CREATE INDEX IF NOT EXISTS idx_gallery_hidden_job ON gallery_hidden (job_id);
 -- Career assistant chats (assistant.py). Only the student who owns a chat can read it. payload holds listing ids
 -- and follow-up chips, never listing text: cards are rebuilt from live, approved listings each time a chat is shown.
 CREATE TABLE IF NOT EXISTS assistant_chats (
@@ -522,7 +538,7 @@ def purge(conn) -> None:
     conn.execute("UPDATE messages SET body = '' WHERE status = 'removed' AND created_at < ?", (now - 30 * 86400,))
     conn.execute("DELETE FROM submitted_checks WHERE created_at < ?", (now - 365 * 86400,))
     # Listing stats and trackers go when their listing does; view counts are kept for 180 days.
-    for t in ("job_views", "job_apply_clicks", "candidates", "applications", "saved_jobs"):
+    for t in ("job_views", "job_apply_clicks", "candidates", "applications", "saved_jobs", "report_views", "gallery_hidden"):
         conn.execute(f"DELETE FROM {t} WHERE job_id NOT IN (SELECT id FROM jobs)")
     conn.execute("DELETE FROM job_views WHERE day < ?", (time.strftime("%Y-%m-%d", time.gmtime(now - 180 * 86400)),))
     conn.execute("DELETE FROM company_views WHERE day < ? OR employer_id NOT IN (SELECT user_id FROM employer_profiles)",
@@ -581,6 +597,8 @@ def delete_account(conn, user_id: int) -> None:
     conn.execute("DELETE FROM company_views WHERE employer_id = ?", (user_id,))
     conn.execute("UPDATE company_views SET viewer_id = NULL WHERE viewer_id = ?", (user_id,))   # the employer keeps the total, not the person
     conn.execute("DELETE FROM saved_jobs WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM report_views WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM gallery_hidden WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM emails WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_msgs WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM assistant_chats WHERE user_id = ?", (user_id,))
