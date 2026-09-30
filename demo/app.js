@@ -483,11 +483,11 @@ const APP_PAGES = {hiring: "hiring", hjob: "hiring", applicants: "hiring", hedit
 const P = {};
 P.home = () => {
   if (me()) return me().role === "student" ? studentHome() : employerHome();
-  const hero = NCS_BLOCKS.cineHero + NCS_BLOCKS.marquee + NCS_BLOCKS.nightCh + NCS_BLOCKS.scan + NCS_BLOCKS.howStudents + NCS_BLOCKS.fairCh;
+  const hero = NCS_BLOCKS.cineHero + NCS_BLOCKS.marquee + NCS_BLOCKS.proof + NCS_BLOCKS.nightCh + NCS_BLOCKS.scan + NCS_BLOCKS.checkTeaser + NCS_BLOCKS.howStudents + NCS_BLOCKS.fairCh;
   // Visitors see a teaser only: title, company, category. Listings are for signed-in FSU students and employers.
   const all = approvedJobs(), list = all.slice().reverse().slice(0, 3), emps = Object.values(S.employers).filter(p => p.status === "approved").length;
   const teaser = j => `<a class="job teaser" href="#" data-go="start?next=job-${j.id}"><div class="job-top"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="pill">${icon("shield", 13)} Log in to view</span></div><div class="job-meta"><span class="chip">${esc(j.category)}</span></div></a>`;
-  return {wide: true, hero, body: `<section class="home-list"><h2 class="display section-title rv">Latest listings.</h2><p class="muted" style="margin:0 0 18px">${all.length} verified listing${all.length !== 1 ? "s" : ""} from ${emps} approved employer${emps !== 1 ? "s" : ""}, every one scam-checked and approved by a person. Log in with your @fsu.edu email to see the details and apply.</p><div class="teasers">${list.map(teaser).join("")}</div><p style="margin:16px 0 8px"><a href="#" data-go="start?next=jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Log in to see all jobs →</a></p></section>`};
+  return {wide: true, hero, body: `<section class="home-list"><h2 class="display section-title rv">Latest listings.</h2><p class="muted" style="margin:0 0 18px">${all.length} verified listing${all.length !== 1 ? "s" : ""} from ${emps} approved employer${emps !== 1 ? "s" : ""}, every one scam-checked and approved by a person. Log in with your @fsu.edu email to see the details and apply.</p><div class="teasers">${list.map(teaser).join("")}</div><p style="margin:16px 0 8px"><a href="#" data-go="start?next=jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Log in to see all jobs →</a></p></section>${NCS_BLOCKS.empCta}`};
 };
 // ---------------- employer home: the hiring dashboard (twin of employer_dash.py) ----------------
 const ED_APPLICANT = ["applied", "messaged"], ED_ROWS = 8, ED_EXPIRY_DAYS = 7, MAJORS_MIN = 3;
@@ -2963,7 +2963,7 @@ P.employers = () => {
   if (isEmployer()) { go("hiring"); return null; }
   const hero = NCS_BLOCKS.empHero + NCS_BLOCKS.empGets + NCS_BLOCKS.howEmployers + NCS_BLOCKS.empCh;
   return {wide: true, hero, body: `<section class="home-list"><div class="card rv" style="margin:28px 0 40px"><h3 class="sec" style="margin-top:0">What students see about you</h3><p>Your company page shows your details, open listings and a trust score from 0 to 100 built from what we can check: reviewer approval, your email domain and website, how your listings were reviewed, how you answer students, and how complete your profile is. <a href="#" data-go="privacy">How we handle data</a>.</p>
-<p style="margin-top:12px"><a href="#" data-go="post" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Or write your first listing now and sign up when you send it →</a></p></div></section>`};
+<p style="margin-top:12px"><a href="#" data-go="post" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Or write your first listing now and sign up when you send it →</a></p></div></section>${NCS_BLOCKS.empVault}`};
 };
 P.about = () => `${pageHead("About NoleCareerShield")}<div class="prose"><p>Students get targeted by fake job offers constantly: check-cashing schemes, money-mule "recruiters", and pay-to-work training programs. NoleCareerShield is a job board built around one question: <b>is this safe to respond to?</b></p>
 <h3>How a listing gets on the board</h3><ul><li>Every submission is scored by an open, rule-based scam detector. Each rule that fires is explained in plain language, so the score is never a black box.</li><li>Every submission then waits for a human reviewer. Nothing is published automatically, no matter how clean the score.</li><li>Approved listings show their verdict. Listings that tripped signals are labeled and explain why.</li></ul>
@@ -2978,28 +2978,40 @@ P.privacy = () => `${pageHead("Privacy")}<div class="prose"><p>Short version: br
 <h3>AI features</h3><ul><li>On the live site the assistant, resume tools and scam checker's second opinion can use Claude. Text is sent only when you use one of those features. This demo runs everything in your browser and sends nothing.</li></ul></div>`;
 
 
-// ---- sign in: one email box first, like Handshake (same as app.login_start) ----
-const startShell = inner => `<div class="auth start"><div class="startmark" aria-hidden="true">${crest(56)}</div>${inner}</div>`;
+// ---- sign in: the vault (twins of public_ui.vault_card / email_field; the brand column comes from public_ui.vault_aside) ----
+// The fine print says only what is true of the demo: it runs in the browser and sends nothing.
+const VAULT_FINE = '<div class="vx-fine"><span><i class="led"></i>Runs in your browser</span><span>Nothing is sent</span><span>No trackers</span></div>';
+const vaultCard = (title, body, o = {}) => `<div class="vx-card">${NCS_BLOCKS["seal_" + (o.icon || "lock")] || NCS_BLOCKS.seal_lock}${o.kicker ? `<div class="vx-kick">${esc(o.kicker)}</div>` : ""}<h2 class="vx-title">${title}</h2>${o.sub ? `<p class="vx-sub">${o.sub}</p>` : ""}<div class="vx-body">${body}</div>${VAULT_FINE}</div>`;
+const vault = (card, role) => ({wide: true, body: `<section class="vx" aria-label="Sign in"><div class="vx-in">${role === "employer" ? NCS_BLOCKS.vaultEmployer : NCS_BLOCKS.vaultStudent}${card}</div></section>`});
+// The green check only for an address already checked (the start form validated it, or a failed log-in kept it).
+const fsuOk = e => EMAIL_RE.test(e || "") && String(e).toLowerCase().split("@").pop() === "fsu.edu";
+function emailField(value, o = {}) {
+  const fid = o.fid || "f-email", tip = o.verified ? `<span class="vx-hint ok" id="${fid}-hint">✓ FSU.EDU VERIFIED</span>` : o.hint ? `<span class="vx-hint" id="${fid}-hint">${esc(o.hint)}</span>` : "";
+  return `<div class="form-field"><label for="${fid}">${esc(o.label || "Email")}</label><div class="vx-inp${tip ? " hinted" : ""}"><input id="${fid}" type="email" name="email" required maxlength="254" autocomplete="username"${o.placeholder ? ` placeholder="${esc(o.placeholder)}"` : ""} value="${esc(value || "")}"${tip ? ` aria-describedby="${fid}-hint"` : ""}>${tip}</div></div>`;
+}
+const DEMO_ACCOUNTS = `<p class="fine">Demo accounts: <b>jordan@fsu.edu</b> (student) and <b>pat@garnetanalytics.example</b> (employer), password <b>${PW}</b>. Any new @fsu.edu address works too.</p>`;
+// ---- one email box first, like Handshake (same as app.login_start) ----
 P.start = () => {
   const nx = okNext(S.route.q.next);
-  return startShell(`<h2 class="auth-title">Log in or sign up</h2><p class="auth-sub">Students use their @fsu.edu address.</p>${nx.startsWith("job-") ? banner("info", "Log in with your FSU student account to see how to apply.") : ""}${takeFlash()}
-<form id="startForm" data-next="${nx}"><div class="form-field"><input id="s-email" type="email" name="email" required maxlength="254" autocomplete="username" aria-label="Email" placeholder="Email" value="${esc(S.startEmail || "")}"></div>
-<button class="submit-btn wide" type="submit">Continue with email</button></form><p class="start-foot">Hiring? <a href="#" data-go="employers">Employer log in or sign up →</a></p>
-<p class="fine" style="margin-top:14px">Demo accounts: <b>jordan@fsu.edu</b> (student) and <b>pat@garnetanalytics.example</b> (employer). Any new @fsu.edu address works too.</p>`);
+  return vault(vaultCard("Enter the vault", `${nx.startsWith("job-") ? banner("info", "Log in with your FSU student account to see how to apply.") : ""}${takeFlash()}
+<form id="startForm" data-next="${nx}">${emailField(S.startEmail, {label: "Email", fid: "s-email", hint: "Students: @fsu.edu", verified: fsuOk(S.startEmail), placeholder: "you@fsu.edu"})}
+<button class="submit-btn wide" type="submit">Continue with email</button></form><p class="start-foot">Hiring? <a href="#" data-go="employers">Employer log in or sign up →</a></p>${DEMO_ACCOUNTS}`,
+    {kicker: "Log in or sign up", sub: "Students use their @fsu.edu address."}), "student");
 };
 P.welcome = () => {
   const email = S.startEmail; if (!email) { go("start"); return null; }
   const nx = okNext(S.route.q.next);
-  return startShell(`<h2 class="auth-title">Welcome to NoleCareerShield</h2><p class="auth-sub">Use your FSU account to log in as<br><b>${esc(email)}</b> <a href="#" data-go="start${nx ? "?next=" + nx : ""}">Edit</a></p>
-<a class="submit-btn wide" href="#" data-go="ssodemo${nx ? "?next=" + nx : ""}">Continue to FSU single sign-on →</a>
-<p style="margin-top:12px"><a href="#" class="linkbtn" data-go="login?role=student${nx ? "&amp;next=" + nx : ""}">Log in another way</a></p>
-<p class="fine" style="margin-top:16px">You'll sign in on FSU's own page, with Duo if your account uses it. NoleCareerShield never sees your FSU password.</p>`);
+  return vault(vaultCard("Enter the vault", `<a class="submit-btn wide" href="#" data-go="ssodemo${nx ? "?next=" + nx : ""}">Continue to FSU single sign-on →</a>
+<div class="or"><span>or</span></div><a class="outline-btn" href="#" data-go="login?role=student${nx ? "&amp;next=" + nx : ""}">Log in another way</a>
+<p class="fine">You'll sign in on FSU's own page, with Duo if your account uses it. NoleCareerShield never sees your FSU password.</p>`,
+    {kicker: "Welcome to NoleCareerShield", sub: `Use your FSU account to log in as <b>${esc(email)}</b> <a href="#" data-go="start${nx ? "?next=" + nx : ""}">Edit</a>`}), "student");
 };
 // The demo can't send anyone to FSU, and it never imitates FSU's sign-in page. It says what would happen instead.
 P.ssodemo = () => {
   const email = S.startEmail; if (!email) { go("start"); return null; }
-  return startShell(`<h2 class="auth-title">Demo: FSU sign-in</h2><div class="banner info" style="text-align:left">On the live site, this step opens <b>FSU's own sign-in page</b> in this tab. You sign in there (and approve Duo), and FSU sends you back here already logged in. NoleCareerShield never sees your FSU password, and this demo never asks for it.</div>
-<button class="submit-btn wide" type="button" data-do="sso-finish">Finish demo sign-in as ${esc(email)}</button><p style="margin-top:12px"><a href="#" class="linkbtn" data-go="welcome">Back</a></p>`);
+  return vault(vaultCard("Demo: FSU sign-in", `<div class="banner info">On the live site, this step opens <b>FSU's own sign-in page</b> in this tab. You sign in there (and approve Duo), and FSU sends you back here already logged in. NoleCareerShield never sees your FSU password, and this demo never asks for it.</div>
+<button class="submit-btn wide" type="button" data-do="sso-finish">Finish demo sign-in as ${esc(email)}</button><div class="or"><span>or</span></div><a href="#" class="outline-btn" data-go="welcome">Back</a>`,
+    {kicker: "Single sign-on"}), "student");
 };
 
 // ---- accounts ----
@@ -3042,35 +3054,48 @@ const otherSide = role => role === "student" ? '<p class="start-foot" style="tex
   : '<p class="start-foot" style="text-align:center">Student? <a href="#" data-go="start">Log in with your @fsu.edu email →</a></p>';
 const pwField = (id, name, label, check, forgot) => `<div class="form-field"><div class="label-row"><label for="${id}">${label}</label>${forgot ? `<a class="forgot" href="#" data-go="forgot?role=${forgot}">Forgot password?</a>` : ""}</div><div class="pwbox"><input id="${id}" type="password" name="${name}" required maxlength="128"${check ? " data-pwcheck" : ""}><button type="button" class="showpw" data-do="show">Show</button></div></div>`;
 const RULES_LIST = `<ul class="rules" aria-label="Password requirements">${PW_CHECKS.map(c => `<li data-rule="${c[1]}">${c[0]}</li>`).join("")}</ul>`;
-const auth = (title, inner, sub) => `<div class="auth"><h2 class="auth-title">${title}</h2>${sub ? `<p class="auth-sub">${sub}</p>` : ""}${inner}</div>`;
+// Every other account page is the vault too (twin of app._auth_page): a card with a kicker, a title and a sub line.
+const auth = (title, inner, sub, o = {}) => vault(vaultCard(esc(title), inner, {sub, kicker: o.kicker, icon: o.icon}), o.role);
+const linkProblem = () => auth("Link not valid", banner("warning", "That link has expired or was already used.") + '<a class="outline-btn" href="#" data-go="start">Log in</a>', "", {kicker: "Link problem", icon: "alert"});
 P.login = () => {
   const q = S.route.q, role = q.role === "employer" ? "employer" : "student", next = okNext(q.next) || (role === "employer" && S.pendingDraft ? "post" : ""), nx = next ? "&amp;next=" + next : "";
   const note = S.flash ? takeFlash() : role === "employer" && S.pendingDraft ? banner("info", "Log in or create an employer account to send your listing. It's saved and sent for review automatically once you're in.") : "";
-  return auth(role === "student" ? "Student log in" : "Employer log in", `${note}<form id="loginForm" data-role="${role}" data-next="${next}">
-<div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required autocomplete="username" placeholder="${role === "student" ? "you@fsu.edu" : "you@company.com"}" value="${esc(S.startEmail || "")}"></div>${pwField("f-password", "password", "Password", false, role)}
-<button class="submit-btn wide" type="submit">Log in</button></form><div class="or"><span>Or</span></div><a class="outline-btn" href="#" data-go="signup?role=${role}${nx}">Create ${role === "student" ? "a student" : "an employer"} account</a>
-<p class="fine">Demo accounts: <b>jordan@fsu.edu</b> (student) and <b>pat@garnetanalytics.example</b> (employer), password <b>${PW}</b>.</p>${otherSide(role)}`);
+  const student = role === "student", ok = student && fsuOk(S.startEmail);
+  const field = student ? emailField(S.startEmail, {label: "University email", hint: "Use your @fsu.edu address", verified: ok, placeholder: "you@fsu.edu"})
+    : emailField(S.startEmail, {label: "Work email", placeholder: "you@company.com"});
+  const sso = ok ? `<a class="vx-sso" href="#" data-go="ssodemo${next ? "?next=" + next : ""}">Continue with FSU single sign-on</a>` : "";
+  return vault(vaultCard("Enter the vault", `${note}<form id="loginForm" data-role="${role}" data-next="${next}">
+${field}${pwField("f-password", "password", "Password", false, role)}
+<button class="submit-btn wide" type="submit">Sign in securely</button></form><div class="or"><span>or</span></div>${sso}<a class="outline-btn" href="#" data-go="signup?role=${role}${nx}">Create ${student ? "a student" : "an employer"} account</a>
+${otherSide(role)}${DEMO_ACCOUNTS}`, {kicker: student ? "Student log in" : "Employer log in", sub: student ? "Sign in with your Florida State account." : "Sign in with your work email."}), role);
 };
 P.signup = () => {
   const q = S.route.q, role = q.role === "employer" ? "employer" : "student", next = okNext(q.next) || (role === "employer" && S.pendingDraft ? "post" : ""), nx = next ? "&amp;next=" + next : "";
+  const field = role === "student" ? emailField("", {label: "University email", hint: "Use your @fsu.edu address", placeholder: "you@fsu.edu"}) : emailField("", {label: "Work email", placeholder: "you@company.com"});
   return auth(role === "student" ? "Create your student account" : "Create your employer account", `${takeFlash()}<form id="signupForm" data-role="${role}" data-next="${next}">
-<div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required autocomplete="username" placeholder="${role === "student" ? "you@fsu.edu" : "you@company.com"}"></div>
+${field}
 ${pwField("f-password", "password", "Password", true)}${RULES_LIST}${pwField("f-password2", "password2", "Confirm password")}
-<button class="submit-btn wide" type="submit">Create account</button></form><div class="or"><span>Or</span></div><a class="outline-btn" href="#" data-go="login?role=${role}${nx}">I already have an account</a>${otherSide(role)}`,
-    role === "student" ? "Use your @fsu.edu email. We send a link to confirm it." : "Any email works. We send a link to confirm it before you can post.");
+<button class="submit-btn wide" type="submit">Create account</button></form><div class="or"><span>or</span></div><a class="outline-btn" href="#" data-go="login?role=${role}${nx}">I already have an account</a>${otherSide(role)}`,
+    role === "student" ? "Use your @fsu.edu email. We send a link to confirm it." : "Any email works. We send a link to confirm it before you can post.",
+    {role, kicker: role === "student" ? "Student sign-up" : "Employer sign-up", icon: "key"});
 };
-P.checkmail = () => auth("Check your email", `${banner("info", `If that address can receive an account, we just sent a confirmation link to ${esc(S.route.q.email || "")}. It works for 24 hours.`, true)}<a class="outline-btn" href="#" data-go="inbox">Open the demo inbox</a><p class="fine">On the real site it lands in your own mailbox.</p>`);
+P.checkmail = () => auth("Check your email", `${banner("info", `If that address can receive an account, we just sent a confirmation link to ${esc(S.route.q.email || "")}. It works for 24 hours.`, true)}<a class="outline-btn" href="#" data-go="inbox">Open the demo inbox</a><p class="fine">On the real site it lands in your own mailbox.</p>`, "",
+  {kicker: "One more step", icon: "mail", role: /@fsu\.edu$/i.test(S.route.q.email || "") ? "student" : "employer"});
 P.verify = () => {
   const rec = S.tokens[S.route.q.t];
-  if (!rec || rec.used || rec.purpose !== "verify") return auth("Link not valid", banner("warning", "That link has expired or was already used.") + '<a class="outline-btn" href="#" data-go="login">Log in</a>');
-  return auth("Confirm your email", `${takeFlash()}<form id="verifyForm" data-t="${esc(S.route.q.t)}">${pwField("f-password", "password", "Password")}<button class="submit-btn wide" type="submit">Confirm my email</button></form>`, "Enter the password you chose when you signed up. This makes sure the account is really yours.");
+  if (!rec || rec.used || rec.purpose !== "verify") return linkProblem();
+  return auth("Confirm your email", `${takeFlash()}<form id="verifyForm" data-t="${esc(S.route.q.t)}">${pwField("f-password", "password", "Password")}<button class="submit-btn wide" type="submit">Confirm my email</button></form>`, "Enter the password you chose when you signed up. This makes sure the account is really yours.",
+    {kicker: "Almost in", icon: "mail", role: (U(rec.uid) || {}).role});
 };
 P.forgot = () => { const role = S.route.q.role === "employer" ? "employer" : "student";
-  return auth("Forgot password", `<form id="forgotForm" data-role="${role}"><div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required autocomplete="username"></div><button class="submit-btn wide" type="submit">Send reset link</button></form><p class="fine"><a href="#" data-go="login?role=${role}">Back to log in</a></p>`, "Enter your email and we will send a link to choose a new password."); };
+  const field = emailField("", {label: role === "student" ? "University email" : "Work email", placeholder: role === "student" ? "you@fsu.edu" : "you@company.com"});
+  return auth("Forgot password", `<form id="forgotForm" data-role="${role}">${field}<button class="submit-btn wide" type="submit">Send reset link</button></form><p class="fine"><a href="#" data-go="login?role=${role}">Back to log in</a></p>`, "Enter your email and we will send a link to choose a new password.",
+    {role, kicker: role === "student" ? "Student account" : "Employer account", icon: "key"}); };
 P.reset = () => {
   const rec = S.tokens[S.route.q.t];
-  if (!rec || rec.used || rec.purpose !== "reset") return auth("Link not valid", banner("warning", "That link has expired or was already used.") + '<a class="outline-btn" href="#" data-go="login">Log in</a>');
-  return auth("Choose a new password", `${takeFlash()}<form id="resetForm" data-t="${esc(S.route.q.t)}">${pwField("f-password", "password", "New password", true)}${RULES_LIST}${pwField("f-password2", "password2", "Confirm new password")}<button class="submit-btn wide" type="submit">Save new password</button></form>`);
+  if (!rec || rec.used || rec.purpose !== "reset") return linkProblem();
+  return auth("Choose a new password", `${takeFlash()}<form id="resetForm" data-t="${esc(S.route.q.t)}">${pwField("f-password", "password", "New password", true)}${RULES_LIST}${pwField("f-password2", "password2", "Confirm new password")}<button class="submit-btn wide" type="submit">Save new password</button></form>`, "",
+    {kicker: "Password reset", icon: "key", role: (U(rec.uid) || {}).role});
 };
 P.inbox = () => pageHead("Demo inbox", "On the real site these go to the person's own mailbox. Here they're shown so you can click the links.", "Demo") +
   (S.inbox.map(m => `<div class="card"><div class="small faint">To: ${esc(m.to)}</div><b>${esc(m.subject)}</b><pre style="white-space:pre-wrap;font:13px/1.55 var(--mono);background:var(--sunk);padding:10px 12px;border-radius:8px;margin:10px 0">${esc(m.body)}</pre>${m.link ? `<a class="b sm" href="#" data-go="${esc(m.link.go)}">${esc(m.link.label)}</a>` : ""}</div>`).join("") || '<div class="empty">No mail yet. Create an account and the confirmation email appears here.</div>');
@@ -3940,7 +3965,7 @@ document.addEventListener("submit", e => {
   }
   if (id === "loginForm") {
     const role = f.dataset.role, u = findUser(g("email").toLowerCase(), role);
-    if (!u || u.pw !== fd.get("password")) { flash("warning", "The email or password is incorrect."); return go(`login?role=${role}&next=${f.dataset.next}`); }
+    if (!u || u.pw !== fd.get("password")) { S.startEmail = g("email").toLowerCase(); flash("warning", "The email or password is incorrect."); return go(`login?role=${role}&next=${f.dataset.next}`); }
     if (!u.verified) { flash("warning", `Confirm your email first. We sent you a link when you signed up. <button type="button" class="linkbtn" data-do="resend" data-role="${role}" data-email="${esc(u.email)}">Send me a new confirmation email</button>`, true); return go(`login?role=${role}&next=${f.dataset.next}`); }
     S.session = u; S.chat = null; S.chatId = null; return afterLogin(f.dataset.next);
   }

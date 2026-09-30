@@ -68,6 +68,7 @@ import mailer
 import security
 import store
 import ui
+import public_ui
 import web
 import matching
 import profiles
@@ -596,8 +597,8 @@ def landing(request: Request):
                 return RedirectResponse("/profile/setup", status_code=303)
         return HTMLResponse(shell(profiles.dashboard(user), title="Home — NoleCareerShield", active="/", js=True))
     night, fair = ui.students_chapters()
-    hero = (ui.cine_hero() + ui.marquee_block() + night
-            + ui.scan_block('<a href="/check">Check one you found →</a>') + ui.how_students() + fair)
+    hero = (ui.cine_hero() + ui.marquee_block() + public_ui.proof() + night
+            + ui.scan_block('<a href="/check">Check one you found →</a>') + public_ui.check_teaser() + ui.how_students() + fair)
     jobs = query_public()
     if jobs:
         with store.db() as conn:
@@ -610,7 +611,7 @@ def landing(request: Request):
                 '<p style="margin:16px 0 40px"><a href="/login?next=/jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Log in to see all jobs →</a></p>')
     else:
         body = '<div class="empty" style="margin:32px 0 48px">No approved listings yet. <a href="/employers" style="color:var(--accent-ink);font-weight:600">Hiring? Post the first one.</a></div>'
-    return shell(f'<section class="home-list">{body}</section>', hero=hero, wide=True)
+    return shell(f'<section class="home-list">{body}</section>{public_ui.employer_cta()}', hero=hero, wide=True)
 
 
 @app.get("/jobs", response_class=HTMLResponse)
@@ -1047,7 +1048,8 @@ def employers_landing(request: Request):
     hero = ui.employer_hero(reach=reach) + ui.employer_gets() + ui.how_employers() + ui.employer_chapter()
     body = """<div class="card rv" style="margin:28px 0 40px"><h3 class="sec" style="margin-top:0">What students see about you</h3><p>Your company page shows your details, open listings and a trust score from 0 to 100 built from what we can check: reviewer approval, your email domain and website, how your listings were reviewed, how you answer students, and how complete your profile is. <a href="/privacy">How we handle data</a>.</p>
 <p style="margin-top:12px"><a href="/post" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Or write your first listing now and sign up when you send it →</a></p></div>"""
-    return shell(f'<section class="home-list">{body}</section>', hero=hero, title="For employers — NoleCareerShield", wide=True)
+    return shell(f'<section class="home-list">{body}</section>{public_ui.employer_vault()}', hero=hero,
+                 title="For employers — NoleCareerShield", wide=True)
 
 
 @app.get("/about", response_class=HTMLResponse)
@@ -1159,9 +1161,41 @@ def _turnstile_widget() -> str:
     return f'<div class="cf-turnstile" data-sitekey="{esc(security.TURNSTILE_SITE_KEY)}" style="margin-bottom:14px"></div>'
 
 
-def _auth_page(heading: str, body: str, *, title: str | None = None, status: int = 200, sub: str = "") -> HTMLResponse:
-    inner = f'<div class="auth"><h2 class="auth-title">{heading}</h2>{sub}{body}</div>'
-    return HTMLResponse(shell(inner, title=(title or heading) + " — NoleCareerShield", scripts=True), status_code=status)
+def _vault_fine() -> list[str]:
+    """The fine print under the sign-in card: only what this site actually does. HTTPS is claimed only in production
+    (HSTS is sent there); passwords are scrypt-hashed (accounts.hash_password); sessions end after
+    accounts.SESSION_TTL; the privacy page promises no analytics, advertising or trackers."""
+    days = accounts.SESSION_TTL // 86400
+    return (["HTTPS"] if IS_PROD else []) + ["Passwords hashed", f"{days}-day sessions", "No trackers"]
+
+
+def _vault_response(card: str, title: str, role: str = "student", status: int = 200) -> HTMLResponse:
+    return HTMLResponse(shell(public_ui.vault(card, role), title=title + " — NoleCareerShield", scripts=True, wide=True),
+                        status_code=status)
+
+
+def _auth_page(heading: str, body: str, *, title: str | None = None, status: int = 200, sub: str = "",
+               role: str = "student", kicker: str = "", icon: str = "lock") -> HTMLResponse:
+    """Every account page is the vault: the brand column on the left, this card on the right. `sub` is HTML."""
+    card = public_ui.vault_card(esc(heading), body, kicker=kicker, sub=sub, icon=icon,
+                                fine=public_ui.fine_print(_vault_fine()))
+    return _vault_response(card, title or heading, role, status)
+
+
+def _sso_button(email: str = "", next_: str = "") -> str:
+    """FSU single sign-on, only when it is configured (sso.enabled)."""
+    if not sso.enabled():
+        return ""
+    return (f'<form method="post" action="/sso/start" class="vx-alt">{_csrf_input()}<input type="hidden" name="email" value="{esc(email)}">'
+            f'<input type="hidden" name="next" value="{esc(next_)}"><button class="vx-sso" type="submit">Continue with {esc(sso.NAME)} single sign-on</button></form>')
+
+
+def _fsu_ok(email: str) -> bool:
+    """True only for a value the server has checked is an @fsu.edu address (the field's green check)."""
+    try:
+        return accounts.is_fsu_email(accounts.normalize_email(email))
+    except ValueError:
+        return False
 
 
 def _other_side(role: str) -> str:
@@ -1287,33 +1321,37 @@ def _resume_draft(request: Request, user: dict, background: BackgroundTasks) -> 
 
 # --- one place to start: email first, like Handshake ---
 
-def _start_shell(inner: str, title: str, status: int = 200) -> HTMLResponse:
-    return HTMLResponse(shell(f'<div class="auth start"><div class="startmark" aria-hidden="true">{ui.crest(56)}</div>{inner}</div>',
-                              title=title + " — NoleCareerShield", scripts=True), status_code=status)
-
-
 def _start_page(email: str = "", error: str = "", next_: str = "", status: int = 200) -> HTMLResponse:
+    """Step one of signing in: just the email. The address decides the path (see login_start)."""
     err = f'<div class="banner warning" role="alert">{esc(error)}</div>' if error else ""
     note = ('<div class="banner info">Log in with your FSU student account to see how to apply.</div>'
             if next_.startswith("/job/") else "")
-    inner = f"""<h2 class="auth-title">Log in or sign up</h2><p class="auth-sub">Students use their @fsu.edu address.</p>{note}{err}
-<form method="post" action="/login">{_csrf_input()}<input type="hidden" name="next" value="{esc(next_)}">
-<div class="form-field"><input id="s-email" type="email" name="email" required maxlength="254" autocomplete="username" aria-label="Email"
-placeholder="Email" value="{esc(email)}" autofocus></div>
+    sso_btn = _sso_button(next_=next_)
+    field = public_ui.email_field(email, label="Email", fid="s-email", hint="Students: @fsu.edu",
+                                  verified=bool(email) and _fsu_ok(email), placeholder="you@fsu.edu", autofocus=True)
+    body = f"""{note}{err}<form method="post" action="/login">{_csrf_input()}<input type="hidden" name="next" value="{esc(next_)}">
+{field}
 <button class="submit-btn wide" type="submit">Continue with email</button></form>
+{f'<div class="or"><span>or</span></div>{sso_btn}' if sso_btn else ""}
 <p class="start-foot">Hiring? <a href="/employers">Employer log in or sign up →</a></p>"""
-    return _start_shell(inner, "Log in or sign up", status)
+    card = public_ui.vault_card("Enter the vault", body, kicker="Log in or sign up",
+                                sub="Students use their @fsu.edu address.",
+                                fine=public_ui.fine_print(_vault_fine()))
+    return _vault_response(card, "Log in or sign up", "student", status)
 
 
 def _sso_welcome(email: str, next_: str) -> HTMLResponse:
     hidden = f'{_csrf_input()}<input type="hidden" name="email" value="{esc(email)}"><input type="hidden" name="next" value="{esc(next_)}">'
-    inner = f"""<h2 class="auth-title">Welcome to NoleCareerShield</h2>
-<p class="auth-sub">Use your {esc(sso.NAME)} account to log in as<br><b>{esc(email)}</b> <a href="/login{"?next=" + esc(next_) if next_ else ""}">Edit</a></p>
-<form method="post" action="/sso/start">{hidden}<button class="submit-btn wide" type="submit">Continue to {esc(sso.NAME)} single sign-on →</button></form>
-<form method="post" action="/login" style="margin-top:12px;text-align:center">{hidden}<input type="hidden" name="how" value="password">
-<button class="linkbtn" type="submit">Log in another way</button></form>
-<p class="fine" style="margin-top:16px">You'll sign in on {esc(sso.NAME)}'s own page, with Duo if your account uses it. NoleCareerShield never sees your {esc(sso.NAME)} password.</p>"""
-    return _start_shell(inner, "Welcome")
+    body = f"""<form method="post" action="/sso/start">{hidden}<button class="submit-btn wide" type="submit">Continue to {esc(sso.NAME)} single sign-on →</button></form>
+<div class="or"><span>or</span></div>
+<form method="post" action="/login" class="vx-alt">{hidden}<input type="hidden" name="how" value="password">
+<button class="outline-btn" type="submit">Log in another way</button></form>
+<p class="fine">You'll sign in on {esc(sso.NAME)}'s own page, with Duo if your account uses it. NoleCareerShield never sees your {esc(sso.NAME)} password.</p>"""
+    sub = (f'Use your {esc(sso.NAME)} account to log in as <b>{esc(email)}</b> '
+           f'<a href="/login{"?next=" + esc(next_) if next_ else ""}">Edit</a>')
+    card = public_ui.vault_card("Enter the vault", body, kicker="Welcome to NoleCareerShield", sub=sub,
+                                fine=public_ui.fine_print(_vault_fine()))
+    return _vault_response(card, "Welcome")
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1388,15 +1426,21 @@ def _login_page(role: str, email: str = "", error: str = "", notice: str = "", n
         resend = (f'<form method="post" action="/resend/{role}" class="inline-form">{_csrf_input()}'
                   f'<input type="hidden" name="email" value="{esc(email)}">'
                   '<button class="linkbtn" type="submit">Send me a new confirmation email</button></form>')
-    ph = "you@fsu.edu" if role == "student" else "you@company.com"
-    a_an = "a student" if role == "student" else "an employer"
+    student = role == "student"
+    a_an = "a student" if student else "an employer"
+    field = (public_ui.email_field(email, label="University email", hint="Use your @fsu.edu address",
+                                   verified=bool(email) and _fsu_ok(email), placeholder="you@fsu.edu") if student
+             else public_ui.email_field(email, label="Work email", placeholder="you@company.com"))
+    sso_btn = _sso_button(email if _fsu_ok(email) else "", next_) if student else ""
     body = f"""{note}{err}{resend}
 <form method="post" action="/login/{role}">{_csrf_input()}<input type="hidden" name="next" value="{esc(next_)}">
-<div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="{ph}" value="{esc(email)}"></div>
+{field}
 {_pw_field(forgot_role=role)}
-{_turnstile_widget()}<button class="submit-btn wide" type="submit">Log in</button></form>
-<div class="or"><span>Or</span></div><a class="outline-btn" href="/signup/{role}{"?next=" + esc(next_) if next_ else ""}">Create {a_an} account</a>{_other_side(role)}"""
-    return _auth_page("Student log in" if role == "student" else "Employer log in", body, status=status)
+{_turnstile_widget()}<button class="submit-btn wide" type="submit">Sign in securely</button></form>
+<div class="or"><span>or</span></div>{sso_btn}<a class="outline-btn" href="/signup/{role}{"?next=" + esc(next_) if next_ else ""}">Create {a_an} account</a>{_other_side(role)}"""
+    kicker = "Student log in" if student else "Employer log in"
+    sub = "Sign in with your Florida State account." if student else "Sign in with your work email."
+    return _auth_page("Enter the vault", body, title=kicker, kicker=kicker, sub=sub, role=role, status=status)
 
 
 @app.get("/login/{role}", response_class=HTMLResponse)
@@ -1479,20 +1523,22 @@ def logout(request: Request, csrf: str = Form("")):
 def _signup_page(role: str, email: str = "", error: str = "", next_: str = "", status: int = 200) -> HTMLResponse:
     err = f'<div class="banner warning" role="alert">{esc(error)}</div>' if error else ""
     if role == "student":
-        sub = '<p class="auth-sub">Use your @fsu.edu email. We send a link to confirm it.</p>'
-        ph = "you@fsu.edu"
+        sub = "Use your @fsu.edu email. We send a link to confirm it."
+        field = public_ui.email_field(email, label="University email", hint="Use your @fsu.edu address",
+                                      verified=bool(email) and _fsu_ok(email), placeholder="you@fsu.edu")
     else:
-        sub = '<p class="auth-sub">Any email works. We send a link to confirm it before you can post.</p>'
-        ph = "you@company.com"
+        sub = "Any email works. We send a link to confirm it before you can post."
+        field = public_ui.email_field(email, label="Work email", placeholder="you@company.com")
     body = f"""{err}
 <form method="post" action="/signup/{role}">{_csrf_input()}<input type="hidden" name="next" value="{esc(next_)}">
 <div class="hp" aria-hidden="true"><label for="f-website">Leave this empty</label><input id="f-website" name="website" tabindex="-1" autocomplete="off"></div>
-<div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="{ph}" value="{esc(email)}"></div>
+{field}
 {_pw_field(autocomplete="new-password", check=True)}{_RULES_LIST}
 {_pw_field(fid="f-password2", name="password2", label="Confirm password", autocomplete="new-password")}
 {_turnstile_widget()}<button class="submit-btn wide" type="submit">Create account</button></form>
-<div class="or"><span>Or</span></div><a class="outline-btn" href="/login/{role}{"?next=" + esc(next_) if next_ else ""}">I already have an account</a>{_other_side(role)}"""
-    return _auth_page("Create your student account" if role == "student" else "Create your employer account", body, sub=sub, status=status)
+<div class="or"><span>or</span></div><a class="outline-btn" href="/login/{role}{"?next=" + esc(next_) if next_ else ""}">I already have an account</a>{_other_side(role)}"""
+    return _auth_page("Create your student account" if role == "student" else "Create your employer account", body, sub=sub,
+                      status=status, role=role, kicker="Student sign-up" if role == "student" else "Employer sign-up", icon="key")
 
 
 @app.get("/signup/{role}", response_class=HTMLResponse)
@@ -1504,7 +1550,7 @@ def _check_your_email(email: str, role: str) -> HTMLResponse:
     body = (f'<div class="banner info">If that address can receive an account, we just sent a confirmation link to '
             f'<b>{esc(email)}</b>. It works for 24 hours. Check your spam folder if it does not arrive in a few minutes.</div>'
             f'<p class="fine">Wrong address? <a href="/signup/{role}">Start over</a>.</p>')
-    return _auth_page("Check your email", body, title="Check your email")
+    return _auth_page("Check your email", body, title="Check your email", role=role, kicker="One more step", icon="mail")
 
 
 @app.post("/signup/{role}")
@@ -1570,7 +1616,7 @@ def resend_confirmation(role: str, request: Request, background: BackgroundTasks
                     background.add_task(_mail_verify, addr, role, token)
     body = ('<div class="banner info">If that address has an account waiting for confirmation, we sent a new link. '
             'It works for 24 hours.</div>')
-    return _auth_page("Check your email", body, title="Check your email")
+    return _auth_page("Check your email", body, title="Check your email", role=role, kicker="One more step", icon="mail")
 
 
 # --- confirm email ---
@@ -1578,7 +1624,7 @@ def resend_confirmation(role: str, request: Request, background: BackgroundTasks
 def _link_problem(kind: str) -> HTMLResponse:
     body = (f'<div class="banner warning">That link has expired or was already used.</div>'
             f'<p class="fine"><a href="/login">Log in</a> to ask for a new {kind}.</p>')
-    return _auth_page("Link not valid", body, status=400)
+    return _auth_page("Link not valid", body, status=400, kicker="Link problem", icon="alert")
 
 
 @app.get("/verify", response_class=HTMLResponse)
@@ -1594,12 +1640,12 @@ def verify_page(token: str = ""):
 
 def _confirm_page(token: str, error: str = "", status: int = 200) -> HTMLResponse:
     err = f'<div class="banner warning" role="alert">{esc(error)}</div>' if error else ""
-    body = (f'<p class="auth-sub">Enter the password you chose when you signed up. This makes sure the account is really yours.</p>{err}'
-            f'<form method="post" action="/verify">{_csrf_input()}<input type="hidden" name="token" value="{esc(token)}">'
+    body = (f'{err}<form method="post" action="/verify">{_csrf_input()}<input type="hidden" name="token" value="{esc(token)}">'
             f'{_pw_field(label="Password")}'
             '<button class="submit-btn wide" type="submit">Confirm my email</button></form>'
             '<p class="fine">Don\'t remember it? Sign up again with the same email to set a new one.</p>')
-    return _auth_page("Confirm your email", body, status=status)
+    return _auth_page("Confirm your email", body, status=status, kicker="Almost in", icon="mail",
+                      sub="Enter the password you chose when you signed up. This makes sure the account is really yours.")
 
 
 @app.post("/verify")
@@ -1641,7 +1687,7 @@ def verify_submit(request: Request, background: BackgroundTasks, token: str = Fo
         cta = '<a class="apply-btn" href="/profile/setup">Set up my profile</a>'
     body = f'<div class="banner verified">Email confirmed. You are logged in. {esc(msg)}</div>{cta}'
     _viewer.set({"user": user, "token": session})       # this response is the first page they see logged in
-    resp = _auth_page("You're in", body, title="Email confirmed")
+    resp = _auth_page("You're in", body, title="Email confirmed", role=user["role"], kicker="Email confirmed", icon="check")
     if sent:
         _clear_draft_cookie(resp)
     return _login_cookie(resp, session)
@@ -1652,12 +1698,13 @@ def verify_submit(request: Request, background: BackgroundTasks, token: str = Fo
 @app.get("/forgot/{role}", response_class=HTMLResponse)
 def forgot_form(role: str):
     _role(role)
-    body = (f'<p class="auth-sub">Enter your email and we will send a link to choose a new password.</p>'
-            f'<form method="post" action="/forgot/{role}">{_csrf_input()}'
-            '<div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required maxlength="254" autocomplete="username"></div>'
+    field = public_ui.email_field(label="University email" if role == "student" else "Work email",
+                                  placeholder="you@fsu.edu" if role == "student" else "you@company.com")
+    body = (f'<form method="post" action="/forgot/{role}">{_csrf_input()}{field}'
             f'{_turnstile_widget()}<button class="submit-btn wide" type="submit">Send reset link</button></form>'
             f'<p class="fine"><a href="/login/{role}">Back to log in</a></p>')
-    return _auth_page("Forgot password", body)
+    return _auth_page("Forgot password", body, role=role, kicker="Student account" if role == "student" else "Employer account",
+                      icon="key", sub="Enter your email and we will send a link to choose a new password.")
 
 
 @app.post("/forgot/{role}")
@@ -1666,7 +1713,8 @@ def forgot_submit(role: str, request: Request, background: BackgroundTasks, emai
     _role(role)
     enforce_rate_limit(request, signup_limiter, "forgot")
     if not verify_csrf(csrf, "form") or not security.verify_turnstile(cf_token, security.client_ip(request)):
-        return _auth_page("Forgot password", '<div class="banner warning">That did not go through. Please go back and try again.</div>', status=400)
+        return _auth_page("Forgot password", '<div class="banner warning">That did not go through. Please go back and try again.</div>',
+                          status=400, role=role, icon="key")
     try:
         addr = accounts.normalize_email(email)
     except ValueError:
@@ -1679,7 +1727,7 @@ def forgot_submit(role: str, request: Request, background: BackgroundTasks, emai
                 background.add_task(_mail_reset, addr, token)
     body = ('<div class="banner info">If that address has an account, we sent a reset link. It works for one hour. '
             'Check your spam folder if it does not arrive.</div>')
-    return _auth_page("Check your email", body, title="Check your email")
+    return _auth_page("Check your email", body, title="Check your email", role=role, kicker="Reset link sent", icon="mail")
 
 
 def _reset_page(token: str, error: str = "", status: int = 200) -> HTMLResponse:
@@ -1688,7 +1736,7 @@ def _reset_page(token: str, error: str = "", status: int = 200) -> HTMLResponse:
             f'{_pw_field(autocomplete="new-password", label="New password", check=True)}{_RULES_LIST}'
             f'{_pw_field(fid="f-password2", name="password2", label="Confirm new password", autocomplete="new-password")}'
             '<button class="submit-btn wide" type="submit">Save new password</button></form>')
-    return _auth_page("Choose a new password", body, status=status)
+    return _auth_page("Choose a new password", body, status=status, kicker="Password reset", icon="key")
 
 
 @app.get("/reset", response_class=HTMLResponse)
@@ -1721,7 +1769,7 @@ def reset_submit(request: Request, token: str = Form(""), password: str = Form("
         accounts.mark_verified(db, user["id"])          # the link proved they control this mailbox
     body = (f'<div class="banner verified">Password updated. Every device was logged out.</div>'
             f'<a class="apply-btn" href="/login/{user["role"]}">Log in</a>')
-    return _auth_page("Password updated", body)
+    return _auth_page("Password updated", body, role=user["role"], kicker="All set", icon="check")
 
 
 # ---------- admin (review queue) ----------

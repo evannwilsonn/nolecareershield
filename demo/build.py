@@ -35,6 +35,8 @@ import css_events  # noqa: E402,F401  (appends the event styles to ui.CSS)
 import css_hiring  # noqa: E402,F401  (appends the applicant table and listing-control styles to ui.CSS)
 import css_team  # noqa: E402,F401  (appends the team page styles to ui.CSS)
 import css_guardian  # noqa: E402,F401  (appends the gallery, security report and scan styles to ui.THEME_CSS)
+import css_public  # noqa: E402,F401  (appends the sign-in vault and landing styles to ui.THEME_CSS)
+import public_ui  # noqa: E402  (the sign-in vault and landing sections, shared with the site)
 
 TITLE = "NoleCareerShield Demo"
 
@@ -85,13 +87,19 @@ def build() -> tuple[Path, Path]:
     safe = lambda obj: json.dumps(obj, separators=(",", ":")).replace("</", "<\\/")
     # The landing-page blocks are the site's own markup; links point at the demo's router instead.
     L = {"join": 'href="#" data-go="start"', "check": 'href="#" data-go="scam"', "check_msg": 'href="#" data-go="scam?kind=message"',
-         "emp_signup": 'href="#" data-go="signup?role=employer"', "emp_login": 'href="#" data-go="login?role=employer"'}
+         "emp_signup": 'href="#" data-go="signup?role=employer"', "emp_login": 'href="#" data-go="login?role=employer"',
+         "employers": 'href="#" data-go="employers"'}
     night, fair = ui.students_chapters(L)
     blocks = {"marquee": ui.marquee_block(),
               "scan": ui.scan_block('<a href="#" data-go="scam">Check one you found →</a>'),
               "howStudents": ui.how_students(), "howEmployers": ui.how_employers(),
               "cineHero": ui.cine_hero(L), "nightCh": night, "fairCh": fair,
-              "empHero": ui.employer_hero(L), "empGets": ui.employer_gets(), "empCh": ui.employer_chapter(L)}
+              "empHero": ui.employer_hero(L), "empGets": ui.employer_gets(), "empCh": ui.employer_chapter(L),
+              # the public pages in the elite look (public_ui.py): landing sections and the sign-in vault's brand column
+              "proof": public_ui.proof(L), "checkTeaser": public_ui.check_teaser(L), "empCta": public_ui.employer_cta(L),
+              "empVault": public_ui.employer_vault(L),
+              "vaultStudent": public_ui.vault_aside("student"), "vaultEmployer": public_ui.vault_aside("employer")}
+    blocks.update({"seal_" + k: public_ui.seal(k) for k in public_ui.SEALS})
     # Footage and photos are embedded too. The hero's frames go in NCS_FRAMES, which static/fx.js reads.
     media = ROOT / "static" / "media"
     uri = lambda name: "data:image/webp;base64," + base64.b64encode((media / name).read_bytes()).decode()

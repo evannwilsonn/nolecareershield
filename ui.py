@@ -1421,7 +1421,7 @@ def how_employers() -> str:
 # `links` maps a name to the attributes of each link, so the demo can point them at its own router.
 
 SITE_LINKS = {"join": 'href="/login"', "check": 'href="/check"', "check_msg": 'href="/check?kind=message"',
-              "emp_signup": 'href="/signup/employer"', "emp_login": 'href="/login/employer"'}
+              "emp_signup": 'href="/signup/employer"', "emp_login": 'href="/login/employer"', "employers": 'href="/employers"'}
 RULE_COUNT = len(json.loads((Path(__file__).resolve().parent / "scam_detector" / "rulepack" / "core.json").read_text())["rules"])
 CINE_FRAMES = 75          # static/media/arch-000.webp .. arch-074.webp, 1280x720
 MEDIA_VERSION = "1"       # app.py sets this from the files, so browsers can cache them for good
@@ -1446,10 +1446,11 @@ def cine_hero(links: dict | None = None) -> str:
 <div class="cine-stage"><div class="cine-media" aria-hidden="true"><div class="pan" data-pan>
 <img src="{media_url("arch-000.webp")}" width="1280" height="720" alt="" fetchpriority="high"><canvas></canvas></div></div><div class="scrim"></div>
 <div class="cine-copy">
-<div class="cap c0"><div class="eyebrow">For FSU students</div>
+<div class="cap c0">{crest(64, key="cine")}<div class="eyebrow">// Florida State University · private access</div>
 <h1 class="display"><span class="ln"><span>Student jobs.</span></span><span class="ln"><span><em>Checked</em> for scams<span class="dot">.</span></span></span></h1>
 <p>Every listing is scanned, then approved by a professional, before an FSU student ever sees it.</p>
-<div class="cta"><a class="primary" {L["join"]}>Join with your FSU email</a><a class="secondary" {L["check"]}>Try the scam check</a></div></div>
+<div class="cta"><a class="primary" {L["join"]}>Enter the vault</a><a class="secondary" {L.get("employers", 'href="/employers"')}>For employers</a></div>
+<p class="cine-alt"><a {L["check"]}>Or try the scam check first →</a></p></div>
 <div class="cap c1"><p class="display big">Scanned for<br><em>scam signals</em><span class="dot">.</span></p>
 <p class="note">Fake checks, gift-card pay, look-alike school emails: {RULE_COUNT} patterns in all.</p></div>
 <div class="cap c2"><p class="display big">Then approved<br>by a <em>professional</em><span class="dot">.</span></p>
@@ -1460,11 +1461,11 @@ def cine_hero(links: dict | None = None) -> str:
 
 
 def chapter(photo: str, eyebrow: str, title_html: str, text: str, cta_html: str = "", focus: str = "62%",
-            top: bool = False) -> str:
+            top: bool = False, mark: str = "") -> str:
     """A full-bleed photo with big type over it. `top` makes it the page's first section (with the h1)."""
     h = "h1" if top else "h2"
     return (f'<section class="chapter{" top" if top else ""}"><div class="ch-media" aria-hidden="true"><div class="pan"{" data-pan" if top else ""}>'
-            f'{_photo(photo, focus, eager=top)}</div><div class="scrim"></div></div><div class="ch-copy">'
+            f'{_photo(photo, focus, eager=top)}</div><div class="scrim"></div></div><div class="ch-copy">{mark}'
             f'<div class="eyebrow">{esc(eyebrow)}</div><{h} class="display">{title_html}</{h}><p>{esc(text)}</p>'
             f'{f"<div class=cta>{cta_html}</div>" if cta_html else ""}</div></section>')
 
@@ -1485,11 +1486,11 @@ def students_chapters(links: dict | None = None) -> tuple[str, str]:
 
 def employer_hero(links: dict | None = None, reach: str = "") -> str:
     L = links or SITE_LINKS
-    return chapter("office", "For employers",
+    return chapter("office", "// Employer access · verified organizations",
                    '<span class="ln"><span>Hire FSU students.</span></span><span class="ln"><span>On a board they <em>trust</em><span class="dot">.</span></span></span>',
                    f"{reach}Every student is a confirmed @fsu.edu account, and every employer and listing is reviewed by a person.",
                    f'<a class="primary" {L["emp_signup"]}>Create an employer account</a><a class="secondary" {L["emp_login"]}>Employer log in</a>',
-                   focus="66%", top=True)
+                   focus="66%", top=True, mark=crest(64, key="emphero"))
 
 
 def employer_gets() -> str:
