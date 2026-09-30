@@ -10,20 +10,21 @@ Anyone may BROWSE. Students (confirmed @fsu.edu email) log in to see how to appl
 employers (any confirmed email) log in to submit. Only an admin can approve postings.
 Posting is account-gated and approval-gated, not open-publish.
 
+STUDENT NETWORK (profiles.py, messaging.py, feed.py, assistant.py, resume_tools.py, msgcheck.py):
+  Profiles after sign-up, student <-> approved-employer messaging with every message
+  scam-scanned, an FSU-only feed, the job assistant, resume studio and the message scam
+  checker. Employers are reviewed by a person before they can message students or post.
+
 PRIVACY BY DESIGN:
-  Accounts hold an email, a role and a password hash: no names, resumes or profiles
-  (see accounts.py). Storage otherwise holds what an employer types into the post form
-  plus the scam score and review status. No analytics, no trackers, no third-party
-  fonts; a third-party script only if Cloudflare Turnstile is configured. Cookies are
-  login sessions, a short saved-listing cookie and the reviewer session. Outbound calls:
-  SMTP mail, optional Turnstile check, and optional RDAP/DNS enrichment (OFF by default).
-  The `contact` field is
-  shown publicly and is optional; the form warns the poster.
+  Browsing listings is anonymous. Accounts hold an email and a password hash; students may
+  add a profile and a resume, and choose whether approved employers can find them. No
+  analytics, no trackers, no third-party fonts. AI features are optional (ANTHROPIC_API_KEY)
+  and send text to Anthropic only when a signed-in person uses one. Outbound calls: SMTP
+  mail, optional Turnstile, optional Anthropic API, optional RDAP/DNS enrichment (off).
 
   Admin auth is a single shared password read from the ADMIN_PASSWORD
   environment variable. In production (ENV=production) the app refuses to
   start without a strong ADMIN_PASSWORD, a SECRET_KEY and a CONTACT_EMAIL.
-  It gates the review queue only and stores no personal data.
 
 TRADEMARK NOTE:
   Original emblem and the garnet/gold color family only. No FSU seal or logos.
@@ -55,7 +56,7 @@ from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Cookie, Response, Request, HTTPException, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, Response, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from scam_detector.scorer import score_posting
@@ -63,6 +64,19 @@ import accounts
 import backup
 import mailer
 import security
+import store
+import ui
+import web
+import matching
+import profiles
+import messaging
+import msgcheck
+import assistant
+import resume_tools
+import feed
+import admin_extra
+import ai
+from ui import esc, EMBLEM, BASE_CSS, PAGE_SCRIPT, PAGE_SCRIPT_HASH, _viewer, shell
 from security import (
     enforce_rate_limit, login_limiter, submit_limiter, general_limiter,
     clean_text, clean_url, clean_choice, ValidationError, MAX_LEN,
@@ -108,11 +122,8 @@ async def lifespan(_app):
 app = FastAPI(title="NoleCareerShield", lifespan=lifespan,
               docs_url=None, redoc_url=None, openapi_url=None)
 
-CATEGORIES = [
-    "Data & Analytics", "Admin & Office", "Customer Service",
-    "Marketing", "Finance & Accounting", "Operations & Warehouse", "Other",
-]
-WORK_TYPES = ["remote", "hybrid", "on-site"]
+CATEGORIES = matching.CATEGORIES
+WORK_TYPES = matching.WORK_TYPES
 
 
 # ---------- database ----------
@@ -152,6 +163,7 @@ def init_db():
         """)
         _ensure_columns(db)
         accounts.init_account_tables(db)
+        store.init(db)
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_review ON jobs (review_status, created_at)")
         db.execute("PRAGMA journal_mode=WAL")
         db.commit()
@@ -168,6 +180,7 @@ def purge_old():
                    (_cutoff(PURGE_REJECTED_DAYS),))
         db.commit()
         accounts.purge_expired(db)
+        store.purge(db)
 
 
 def add_job(data: dict, employer_id: int | None = None) -> dict:
@@ -303,203 +316,7 @@ def pending_count() -> int:
         return db.execute("SELECT COUNT(*) FROM jobs WHERE review_status='pending'").fetchone()[0]
 
 
-# ---------- markup ----------
-
-def esc(s: str) -> str:
-    return (s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
-
-
-EMBLEM = """<svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true">
-<circle cx="20" cy="20" r="19" fill="var(--garnet)"/>
-<path d="M20 7 L23 17 L33 20 L23 23 L20 33 L17 23 L7 20 L17 17 Z" fill="var(--gold)"/>
-<circle cx="20" cy="20" r="3" fill="var(--garnet)"/>
-</svg>"""
-
-BASE_CSS = """
-:root{--bg:#FAF8F4;--ink:#1C1A18;--soft:#6E6862;--line:#E6E1D8;--card:#FFF;
---garnet:#782F40;--garnet-dk:#5E2432;--gold:#CEB888;--gold-dk:#B79F6B;
---green:#2F7D5B;--amber:#B0721A;--red:#B23A2E;--green-bg:#EAF4EF;--amber-bg:#FBF2E2;--red-bg:#F8ECEA;}
-*{box-sizing:border-box;margin:0}
-body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
-a{color:inherit}
-.wrap{max-width:900px;margin:0 auto;padding:0 20px}
-header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
-.nav{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;max-width:900px;margin:0 auto}
-.brand{display:flex;align-items:center;gap:10px;text-decoration:none}
-.brand-name{font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:20px;color:var(--garnet);letter-spacing:-.01em}
-.brand-name b{color:var(--gold-dk)}
-.nav-actions{display:flex;gap:4px 8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.nav a.ghost{text-decoration:none;color:var(--soft);font-size:14px;font-weight:600;padding:9px 12px}
-.nav a.btn{background:var(--garnet);color:#fff;text-decoration:none;padding:9px 16px;border-radius:7px;font-size:14px;font-weight:600}
-.nav a.btn:hover{background:var(--garnet-dk)}
-@media(max-width:560px){.nav{padding:12px 16px;gap:6px}.brand-name{font-size:18px}.nav a.ghost,.nav .ghostbtn{padding:8px 8px}.nav a.btn{padding:8px 12px}}
-.hero{background:linear-gradient(160deg,var(--garnet) 0%,var(--garnet-dk) 100%);color:#fff;padding:56px 20px 60px;text-align:center;position:relative;overflow:hidden}
-.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 20%,rgba(206,184,136,.18),transparent 55%);pointer-events:none}
-.hero h1{font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:38px;line-height:1.15;letter-spacing:-.02em;max-width:16ch;margin:0 auto 14px}
-.hero p{font-size:17px;color:rgba(255,255,255,.85);max-width:52ch;margin:0 auto 26px}
-.hero .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-.hero .cta a{text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:600;font-size:15px}
-.cta .primary{background:var(--gold);color:var(--garnet-dk)}
-.cta .primary:hover{background:#dcc99e}
-.cta .secondary{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3)}
-.cta .secondary:hover{background:rgba(255,255,255,.2)}
-.hero .count{margin-top:22px;font-size:13px;color:rgba(255,255,255,.7)}
-.how{background:var(--card);border-bottom:1px solid var(--line);padding:26px 20px}
-.how-inner{max-width:900px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-@media(max-width:640px){.how-inner{grid-template-columns:1fr;gap:14px}}
-.how-item{font-size:14px}
-.how-item .n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--garnet);color:#fff;font-size:12px;font-weight:700;margin-right:8px}
-.how-item b{font-weight:600}
-.how-item p{color:var(--soft);font-size:13px;margin-top:4px;margin-left:32px}
-.controls{margin:28px 0 8px}
-.searchbar{display:flex;gap:8px;margin-bottom:16px}
-.searchbar input{flex:1;border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-family:inherit;font-size:15px;background:var(--card)}
-.searchbar input:focus{outline:none;border-color:var(--garnet)}
-.searchbar button{background:var(--garnet);color:#fff;border:none;border-radius:8px;padding:0 22px;font-weight:600;font-size:14px;cursor:pointer}
-.filter-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
-.filter-row .label{font-size:12px;color:var(--soft);font-weight:600;align-self:center;margin-right:4px;text-transform:uppercase;letter-spacing:.04em}
-.chipf{border:1px solid var(--line);background:var(--card);color:var(--soft);padding:6px 13px;border-radius:18px;font-size:13px;text-decoration:none;font-weight:500}
-.chipf.active{background:var(--garnet);color:#fff;border-color:var(--garnet)}
-.results-head{font-size:13px;color:var(--soft);margin:18px 0 12px}
-.job{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:12px;text-decoration:none;color:inherit;display:block;transition:border-color .15s,box-shadow .15s}
-.job:hover{border-color:var(--gold);box-shadow:0 2px 10px rgba(120,47,64,.06)}
-.job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.job-title{font-weight:600;font-size:17px;color:var(--garnet)}
-.job-co{color:var(--soft);font-size:14px;margin-top:2px}
-.job-meta{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
-.chip{font-size:12px;padding:3px 9px;border-radius:5px;background:#F2EEE7;color:var(--soft);font-weight:500}
-.badge{font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;white-space:nowrap}
-.badge.verified{background:var(--green-bg);color:var(--green)}
-.badge.warning{background:var(--amber-bg);color:var(--amber)}
-.badge.held{background:var(--red-bg);color:var(--red)}
-.empty{text-align:center;color:var(--soft);padding:56px 20px;font-size:15px;background:var(--card);border:1px solid var(--line);border-radius:10px}
-h2.page{font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:28px;letter-spacing:-.02em;margin:28px 0 6px;color:var(--garnet)}
-.lead{color:var(--soft);font-size:15px;margin-bottom:24px;max-width:56ch}
-.form-field{margin-bottom:18px}
-label{display:block;font-size:14px;font-weight:600;margin-bottom:5px}
-.hint{font-size:13px;color:var(--soft);margin-bottom:7px}
-input,textarea,select{width:100%;border:1px solid var(--line);border-radius:7px;padding:11px 13px;font-family:inherit;font-size:14px;background:var(--card);color:var(--ink)}
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--garnet)}
-textarea{min-height:150px;resize:vertical}
-.submit-btn{background:var(--garnet);color:#fff;border:none;border-radius:7px;padding:13px 28px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
-.submit-btn:hover{background:var(--garnet-dk)}
-.banner{border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:14px}
-.banner.verified{background:var(--green-bg);color:var(--green)}
-.banner.warning{background:var(--amber-bg);color:var(--amber)}
-.banner.held{background:var(--red-bg);color:var(--red)}
-.banner.info{background:#EEF2F6;color:#3A4756}
-.detail-desc{white-space:pre-wrap;margin:18px 0;font-size:15px;line-height:1.7}
-.apply-btn{display:inline-block;background:var(--garnet);color:#fff;text-decoration:none;padding:12px 26px;border-radius:7px;font-weight:600;font-size:15px}
-.apply-btn:hover{background:var(--garnet-dk)}
-.finding{border-left:3px solid var(--line);padding:6px 0 6px 12px;margin:8px 0;font-size:13px}
-.finding.critical{border-color:var(--red)}.finding.warning{border-color:var(--amber)}.finding.note{border-color:var(--soft)}
-.finding b{font-weight:600}
-.back{color:var(--soft);text-decoration:none;font-size:14px;display:inline-block;margin:24px 0 8px}
-.rev-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:14px}
-.rev-score{display:inline-block;font-weight:700;padding:3px 10px;border-radius:6px;font-size:13px}
-.rev-score.clear{background:var(--green-bg);color:var(--green)}
-.rev-score.flagged{background:var(--amber-bg);color:var(--amber)}
-.rev-score.held{background:var(--red-bg);color:var(--red)}
-.rev-actions{display:flex;gap:8px;margin-top:14px}
-.rev-actions button{border:none;border-radius:7px;padding:9px 18px;font-weight:600;font-size:14px;cursor:pointer;font-family:inherit}
-.btn-approve{background:var(--green);color:#fff}
-.btn-reject{background:#eee;color:var(--red)}
-footer{color:var(--soft);font-size:12px;border-top:1px solid var(--line);margin-top:52px;padding:22px;text-align:center;line-height:1.7}
-footer .tm{display:block;margin-top:6px;font-size:11px;opacity:.8}
-footer a{color:var(--soft)}
-.hp{position:absolute;left:-9999px;height:0;overflow:hidden}
-.navform{display:inline;margin:0}
-.nav .ghostbtn{background:none;border:none;color:var(--soft);font:inherit;font-size:14px;font-weight:600;padding:9px 12px;cursor:pointer}
-.nav .ghostbtn:hover{color:var(--garnet)}
-.auth{max-width:440px;margin:36px auto 12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:30px 28px}
-.auth-title{font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:28px;text-align:center;color:var(--garnet);margin-bottom:6px}
-.auth-sub{text-align:center;color:var(--soft);font-size:14px;margin-bottom:18px}
-.tabs{display:flex;gap:4px;background:#F2EEE7;border-radius:9px;padding:4px;margin:16px 0 22px}
-.tabs a{flex:1;text-align:center;text-decoration:none;color:var(--soft);font-size:14px;font-weight:600;padding:8px 10px;border-radius:6px}
-.tabs a.active{background:var(--card);color:var(--garnet);box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.label-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-.forgot{font-size:14px;color:#1F5FBF;margin-bottom:5px}
-.pwbox{position:relative}
-.pwbox input{padding-right:64px}
-.showpw{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--soft);font:inherit;font-size:14px;font-weight:600;cursor:pointer;padding:6px 8px}
-.rules{list-style:none;padding:0;margin:-6px 0 16px;font-size:13px;color:var(--soft);display:grid;grid-template-columns:1fr 1fr;gap:2px 12px}
-.rules li::before{content:"○ ";color:var(--soft)}
-.rules li.ok{color:var(--green)}.rules li.ok::before{content:"✓ ";color:var(--green)}
-.submit-btn.wide,.outline-btn{display:block;width:100%;text-align:center;text-decoration:none}
-.fine{font-size:13px;color:var(--soft);text-align:center;margin-top:10px}
-.or{display:flex;align-items:center;gap:12px;color:var(--soft);font-size:14px;margin:20px 0}
-.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
-.outline-btn{border:1px solid var(--line);border-radius:7px;padding:12px 16px;font-weight:600;font-size:15px;color:var(--ink);background:var(--card)}
-.outline-btn:hover{border-color:var(--garnet);color:var(--garnet)}
-.choose{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:8px 0 24px}
-@media(max-width:640px){.choose{grid-template-columns:1fr}.auth{padding:24px 18px}}
-.choose .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px}
-.choose h3{font-family:Georgia,'Times New Roman',serif;color:var(--garnet);font-size:20px;margin-bottom:6px}
-.choose p{color:var(--soft);font-size:14px;margin-bottom:16px}
-.choose .row{display:flex;gap:8px;flex-wrap:wrap}
-.choose .row a{text-decoration:none;font-size:14px;font-weight:600;padding:9px 16px;border-radius:7px}
-.choose .row a.pri{background:var(--garnet);color:#fff}.choose .row a.sec{border:1px solid var(--line);color:var(--ink)}
-.linkbtn{background:none;border:none;color:var(--garnet);text-decoration:underline;cursor:pointer;font:inherit;padding:0}
-.inline-form{margin:0 0 14px;display:block}
-.prose p{margin:0 0 14px;max-width:62ch}.prose h3{margin:26px 0 8px;font-size:16px;color:var(--garnet)}.prose ul{margin:0 0 14px 20px;max-width:62ch}
-"""
-
-# The only script the site ever runs, and only on the sign-up and log-in pages: the Show/Hide
-# button on password fields and the live checklist under a new password. The page policy allows
-# exactly this text by hash, so nothing else can run.
-PAGE_SCRIPT = (
-    "(function(){"
-    "document.querySelectorAll('[data-showpw]').forEach(function(b){b.hidden=false;"
-    "b.addEventListener('click',function(){var i=document.getElementById(b.getAttribute('data-showpw'));"
-    "var s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'Hide':'Show';"
-    "b.setAttribute('aria-pressed',s?'true':'false');});});"
-    "var pw=document.querySelector('[data-pwcheck]');"
-    "if(pw){var R=[['len',function(v){return v.length>=8}],['upper',function(v){return /[A-Z]/.test(v)}],"
-    "['num',function(v){return /[0-9]/.test(v)}],['sym',function(v){return /[!-\\/:-@\\[-`{-~]/.test(v)}]];"
-    "var u=function(){R.forEach(function(r){var e=document.querySelector('[data-rule=\"'+r[0]+'\"]');"
-    "if(e){e.className=r[1](pw.value)?'ok':''}})};pw.addEventListener('input',u);u();}"
-    "})();"
-)
-PAGE_SCRIPT_HASH = "sha256-" + base64.b64encode(hashlib.sha256(PAGE_SCRIPT.encode()).digest()).decode()
-
-_viewer: contextvars.ContextVar = contextvars.ContextVar("viewer", default=None)
-
-
-def _nav_links(admin: bool) -> str:
-    v = _viewer.get() or {}
-    user = v.get("user")
-    extra = '<a class="ghost" href="/admin">Review queue</a>' if admin else ''
-    browse = '<a class="ghost" href="/jobs">Browse jobs</a>'
-    if user:
-        post = '<a class="btn" href="/post">Post a job</a>' if user["role"] == "employer" else ''
-        out = (f'<form class="navform" method="post" action="/logout">'
-               f'<input type="hidden" name="csrf" value="{make_csrf("user:" + v["token"])}">'
-               f'<button class="ghostbtn" type="submit">Log out</button></form>')
-        return extra + browse + out + post
-    return extra + browse + '<a class="ghost" href="/login">Log in</a><a class="btn" href="/post">Post a job</a>'
-
-
-def shell(body: str, title: str = "NoleCareerShield", hero: str = "", admin: bool = False, scripts: bool = False) -> str:
-    nav_links = _nav_links(admin)
-    tail = ""
-    if scripts:
-        if security.turnstile_enabled():
-            tail += '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>'
-        tail += f"<script>{PAGE_SCRIPT}</script>"
-    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>
-<style>{BASE_CSS}</style></head><body>
-<header><div class="nav">
-<a class="brand" href="/">{EMBLEM}<span class="brand-name">Nole<b>CareerShield</b></span></a>
-<div class="nav-actions">{nav_links}</div>
-</div></header>
-{hero}
-<div class="wrap">{body}</div>
-<footer>Every listing is scanned for scam signals and reviewed by a human before it appears. A verified badge is not a guarantee — always confirm an employer through their own website before sharing personal information.
-<span class="tm"><a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="/report">Report a listing</a></span>
-<span class="tm">An independent student project. Not affiliated with, sponsored by, or endorsed by Florida State University; uses no university trademarks or logos.</span></footer>
-{tail}</body></html>"""
-
+# ---------- markup (the design system lives in ui.py) ----------
 
 def _job_card(j: dict) -> str:
     badge = ('<span class="badge verified">✓ Verified</span>' if j["scam_status"]=="clear"
@@ -514,8 +331,8 @@ def _job_card(j: dict) -> str:
 
 # ---------- public routes ----------
 
-_script_src = f"'{PAGE_SCRIPT_HASH}'" + (" https://challenges.cloudflare.com" if security.turnstile_enabled() else "")
-CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
+_script_src = f"'self' '{PAGE_SCRIPT_HASH}'" + (" https://challenges.cloudflare.com" if security.turnstile_enabled() else "")
+CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; "
        f"script-src {_script_src}; "
        + ("frame-src https://challenges.cloudflare.com; " if security.turnstile_enabled() else "")
        + "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
@@ -531,7 +348,11 @@ async def security_headers(request: Request, call_next):
             user = accounts.session_user(db, raw)
     request.state.user = user
     request.state.utoken = raw if user else None
-    marker = _viewer.set({"user": user, "token": raw if user else None})
+    extra = {}
+    if user and not request.url.path.startswith(("/static/", "/api/")):
+        with store.db() as conn:
+            extra["unread"] = store.unread_count(conn, user["id"])
+    marker = _viewer.set({"user": user, "token": raw if user else None, "extra": extra})
     try:
         response = await call_next(request)
     finally:
@@ -545,10 +366,16 @@ async def security_headers(request: Request, call_next):
     h["Cross-Origin-Opener-Policy"] = "same-origin"
     if IS_PROD:
         h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    if request.url.path.startswith("/admin"):
+    path = request.url.path
+    if path.startswith(_PRIVATE_PREFIXES):
         h["Cache-Control"] = "no-store"
         h["X-Robots-Tag"] = "noindex, nofollow"
+    elif user and "Cache-Control" not in h:
+        h["Cache-Control"] = "private, no-store"     # signed-in pages show personal data
     return response
+
+
+_PRIVATE_PREFIXES = ("/admin", "/messages", "/api/", "/profile", "/resume", "/u/", "/talent", "/feed", "/assistant", "/check")
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
@@ -560,7 +387,19 @@ def healthz():
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
-    return "User-agent: *\nDisallow: /admin\nDisallow: /post\n"
+    return ("User-agent: *\nDisallow: /admin\nDisallow: /post\nDisallow: /messages\nDisallow: /profile\n"
+            "Disallow: /resume\nDisallow: /u/\nDisallow: /company/\nDisallow: /talent\nDisallow: /feed\n"
+            "Disallow: /assistant\nDisallow: /api/\n")
+
+
+_APP_JS = (Path(__file__).resolve().parent / "static" / "app.js").read_bytes()
+ui.APP_JS_VERSION = hashlib.sha256(_APP_JS).hexdigest()[:10]
+
+
+@app.get("/static/app.js")
+def static_app_js():
+    return Response(_APP_JS, media_type="text/javascript; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 _ERROR_TEXT = {
@@ -589,6 +428,22 @@ def _http_exception_handler(request: Request, exc: StarletteHTTPException):
     )
 
 
+@app.exception_handler(web.LoginRequired)
+def _login_required(request: Request, exc: web.LoginRequired):
+    nx = _safe_next(exc.next) or ""
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"error": "Please log in again."}, status_code=401)
+    return RedirectResponse(f"/login/{exc.role}" + (f"?next={nx}" if nx else ""), status_code=303)
+
+
+@app.exception_handler(web.Forbidden)
+def _forbidden(request: Request, exc: web.Forbidden):
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"error": exc.message}, status_code=403)
+    body = ui.page_head("Not available") + ui.banner("info", exc.message) + '<a class="b sec" href="/">Home</a>'
+    return web.page(body, "Not available", active="", status=403)
+
+
 @app.exception_handler(RequestValidationError)
 def _validation_handler(request: Request, exc: RequestValidationError):
     # A malformed URL parameter or a form missing fields: friendly page, no internals echoed.
@@ -599,26 +454,40 @@ def _validation_handler(request: Request, exc: RequestValidationError):
 
 
 @app.get("/", response_class=HTMLResponse)
-def landing():
+def landing(request: Request):
+    user = getattr(request.state, "user", None)
+    if user:
+        # Signed in: the bento home. New students go through profile setup first.
+        if user["role"] == "student":
+            with store.db() as conn:
+                p = store.student_profile(conn, user["id"])
+            if not p or not p.get("setup_step"):
+                return RedirectResponse("/profile/setup", status_code=303)
+        return HTMLResponse(shell(profiles.dashboard(user), title="Home — NoleCareerShield", active="/", js=True))
     n = public_count()
     count_line = f"{n} approved listing{'s' if n != 1 else ''} live right now" if n else "Approved listings will appear here"
-    hero = f"""<section class="hero">
-<h1>Student jobs, checked for scams before you see them</h1>
-<p>A curated job board for FSU students. Every listing is scam-scanned and reviewed by a human before it goes live — only vetted postings make it to the feed.</p>
-<div class="cta"><a class="primary" href="/jobs">Browse jobs</a><a class="secondary" href="/post">Post a job</a></div>
-<div class="count">{count_line}</div>
-</section>
+    hero = f"""<section class="hero"><div class="hero-in"><div>
+<div class="eyebrow">For FSU students · Scam-checked</div>
+<h1>Student jobs, <em>checked for scams</em> before you see them.</h1>
+<p>Every listing is scanned and approved by a person. Build a profile, message verified employers, get matched by the job assistant and sharpen your resume, all in one place.</p>
+<div class="cta"><a class="primary" href="/signup/student">Join with your @fsu.edu email</a><a class="secondary" href="/jobs">Browse jobs</a></div>
+<div class="count">{count_line}</div></div>
+<div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
+<b style="font-family:var(--serif);font-weight:500;font-size:19px">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</b>
+<div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
+<div class="mini"><b>{ui.icon("spark", 15)} Job assistant</b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
+</div></div></section>
 <section class="how"><div class="how-inner">
-<div class="how-item"><b><span class="n">1</span>Employers submit</b><p>Anyone can submit a listing — but submitting isn't publishing.</p></div>
-<div class="how-item"><b><span class="n">2</span>Scanned &amp; reviewed</b><p>The scam scanner scores it, then a human approves or rejects it.</p></div>
-<div class="how-item"><b><span class="n">3</span>Students browse safely</b><p>Only approved listings appear, each with its verdict shown.</p></div>
+<div class="how-item"><b><span class="n">01</span>Only vetted listings</b><p>Every posting is scam-scanned, then a person approves it. Employers are reviewed before they can message you.</p></div>
+<div class="how-item"><b><span class="n">02</span>Tools that work for you</b><p>A job assistant that knows your skills, a resume reviewer and tailorer, and a checker for any suspicious message.</p></div>
+<div class="how-item"><b><span class="n">03</span>An FSU-only feed</b><p>Only verified students and approved employers post, and employer posts must be opportunities or advice for FSU students.</p></div>
 </div></section>"""
     jobs = query_public()[:3]
     if jobs:
         cards = "".join(_job_card(j) for j in jobs)
-        body = f'<div class="results-head">Latest approved listings</div>{cards}<p style="margin:16px 0 40px"><a href="/jobs" style="color:var(--garnet);font-weight:600;text-decoration:none">See all jobs →</a></p>'
+        body = f'<h3 class="sec">Latest approved listings</h3>{cards}<p style="margin:16px 0 40px"><a href="/jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">See all jobs →</a></p>'
     else:
-        body = '<div class="empty" style="margin:32px 0 48px">No approved listings yet. <a href="/post" style="color:var(--garnet);font-weight:600">Submit the first one.</a></div>'
+        body = '<div class="empty" style="margin:32px 0 48px">No approved listings yet. <a href="/post" style="color:var(--accent-ink);font-weight:600">Submit the first one.</a></div>'
     return shell(body, hero=hero)
 
 
@@ -658,7 +527,8 @@ def jobs_feed(request: Request, search: str = "", category: str = "", work_type:
         body = controls + head + "".join(_job_card(j) for j in jobs)
     else:
         body = controls + '<div class="empty">No listings match. Try clearing filters or a different search.</div>'
-    return shell(body, title="Browse jobs — NoleCareerShield")
+    head = ui.page_head("Jobs", "Every listing here was scam-scanned and approved by a person.", num="Jobs") if getattr(request.state, "user", None) else ""
+    return shell(head + body, title="Browse jobs — NoleCareerShield", active="/jobs")
 
 
 @app.get("/job/{job_id}", response_class=HTMLResponse)
@@ -693,14 +563,31 @@ def job_detail(job_id: int, request: Request):
     elif j["contact"]:
         apply = f'<p style="font-size:14px;color:var(--soft)">Contact: {esc(j["contact"])}</p>'
 
+    extras = ""
+    if viewer and viewer["role"] == "student":
+        with store.db() as conn:
+            prof = store.student_profile(conn, viewer["id"])
+            emp_ok = bool(j.get("employer_id")) and store.employer_approved(conn, j["employer_id"])
+        btns = [f'<a class="b sec" href="/resume?tab=tailor&amp;job={int(j["id"])}">{ui.icon("file", 16)} Tailor my resume</a>']
+        if emp_ok:
+            btns.insert(0, f'<a class="b ghost" href="/messages/new?to={int(j["employer_id"])}&amp;job={int(j["id"])}">{ui.icon("chat", 16)} Message the employer</a>')
+            btns.append(f'<a class="b sec" href="/company/{int(j["employer_id"])}">Company profile</a>')
+        fit = ""
+        if prof and (prof.get("skills") or prof.get("resume_text")):
+            r = matching.rank_jobs([j], prof, limit=1)
+            if r:
+                reasons = "".join(f"<li>{esc(x)}</li>" for x in r[0]["reasons"][:3])
+                fit = (f'<div class="card" style="margin:14px 0"><div class="row between"><b>How you fit</b><span class="pill accent">{r[0]["score"]}% match</span></div>'
+                       + (f'<ul class="small muted" style="margin:8px 0 0 18px">{reasons}</ul>' if reasons else "") + "</div>")
+        extras = fit + f'<div class="row" style="margin:14px 0">{"".join(btns)}</div>'
     loc = esc(j["location"]) if j["location"] else ""
     body = f"""<a class="back" href="/jobs">← All jobs</a>
 {banner}
 <h2 class="page" style="margin-top:8px">{esc(j['title'])}</h2>
 <p class="job-co" style="font-size:16px">{esc(j['company'])}</p>
 <div class="job-meta" style="margin:14px 0"><span class="chip">{esc(j['category'])}</span><span class="chip">{esc(j['work_type'].title())}</span>{f'<span class="chip">{loc}</span>' if loc else ''}</div>
-{findings_html}<div class="detail-desc">{esc(j['description'])}</div>{apply}"""
-    return shell(body, title=esc(j["title"]) + " — NoleCareerShield")
+{findings_html}{extras}<div class="detail-desc">{esc(j['description'])}</div>{apply}"""
+    return shell(body, title=esc(j["title"]) + " — NoleCareerShield", active="/jobs")
 
 
 def _post_form_page(values: dict | None = None, error: str = "", status: int = 200) -> HTMLResponse:
@@ -734,7 +621,7 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
 <div class="form-field"><label for="f-apply_url">Apply URL</label><p class="hint">Where applicants should go. The scanner checks this link too.</p><input id="f-apply_url" name="apply_url" maxlength="2000" placeholder="https://..." value="{val('apply_url')}"></div>
 <div class="form-field"><label for="f-contact">Contact (optional)</label><p class="hint">Shown publicly if approved. Use a role or company address, not a personal one.</p><input id="f-contact" name="contact" maxlength="200" placeholder="careers@company.com" value="{val('contact')}"></div>
 <button class="submit-btn" type="submit">Submit for review</button>{under}</form>"""
-    return HTMLResponse(shell(body, title="Submit a job — NoleCareerShield"), status_code=status)
+    return HTMLResponse(shell(body, title="Submit a job — NoleCareerShield", active="/post"), status_code=status)
 
 
 @app.get("/post", response_class=HTMLResponse)
@@ -807,6 +694,13 @@ def post_submit(
     return HTMLResponse(shell(_SUBMITTED_BODY))
 
 
+# ---------- student network ----------
+
+for _r in (profiles.router, messaging.router, msgcheck.router, assistant.router, resume_tools.router,
+           feed.router, admin_extra.router):
+    app.include_router(_r)
+
+
 # ---------- trust pages ----------
 
 def _contact_line() -> str:
@@ -825,6 +719,13 @@ def about():
 <li>Every submission then waits for a human reviewer. Nothing is published automatically, no matter how clean the score.</li>
 <li>Approved listings show their verdict. Listings that tripped signals are labeled and explain why.</li>
 <li>Listings expire automatically, and any listing can be removed at any time.</li></ul>
+<h3>Beyond the board</h3>
+<ul><li><b>Profiles</b> that students control, including whether approved employers can find them.</li>
+<li><b>Messaging</b> between students and reviewed employers, with every message scanned for scam signs.</li>
+<li><b>A job assistant</b> that answers in plain words and only suggests listings that passed review.</li>
+<li><b>A resume studio</b> that scores a resume, rewrites weak lines without inventing anything, and tailors it to a job.</li>
+<li><b>A scam checker</b> for any message a student receives, here or anywhere else.</li>
+<li><b>An FSU-only feed</b> where employer posts must be opportunities or advice for FSU students.</li></ul>
 <h3>What this is not</h3>
 <p>A verified badge is not a guarantee. Always confirm an employer through their own website before sharing personal information. This is an independent student project and is not affiliated with Florida State University.</p></div>"""
     return shell(body, title="About — NoleCareerShield")
@@ -834,25 +735,45 @@ def about():
 def privacy():
     bot = ("<li>The sign-up and log-in pages load a bot check from Cloudflare (Turnstile), which sees your IP address and browser details.</li>"
            if security.turnstile_enabled() else "")
+    ai_on = ai.enabled()
+    ai_block = ("""<h3>AI features</h3>
+<ul><li>The job assistant, resume review, resume tailoring, the scam checker's second opinion and feed moderation can use Claude, made by Anthropic.</li>
+<li>Text is sent to Anthropic only when you use one of those features: your question, your resume or profile summary, the job you picked, or the message you asked us to check. Anthropic processes it to answer and, under its commercial terms, does not use it to train models.</li>
+<li>Nothing is sent for browsing, messaging or anything you don't ask the AI to do. Each account has a daily limit.</li></ul>""" if ai_on else
+                """<h3>AI features</h3><ul><li>AI features are currently off. The job assistant, resume tools and scam checker run entirely on this site's own rules, so nothing is sent to an AI provider.</li></ul>""")
     body = f"""<a class="back" href="/">← Home</a><h2 class="page">Privacy</h2>
-<div class="prose"><p>Short version: browsing is anonymous. Accounts hold an email address and a password, and nothing else.</p>
+<div class="prose"><p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, and you can download or delete everything at any time.</p>
 <h3>Anyone browsing</h3>
-<ul><li>You can read every approved listing without an account. No cookies are set for browsing or searching.</li>
-<li>No analytics, advertising, trackers, resumes or messaging. Pages load only from this site, with no third-party fonts.</li></ul>
+<ul><li>You can read every approved listing and use the scam checker without an account. No cookies are set for browsing or searching.</li>
+<li>No analytics, advertising or trackers. Pages load only from this site, with no third-party fonts.</li></ul>
 <h3>Students</h3>
-<ul><li>A student account needs an @fsu.edu email address, confirmed by a link we send, and a password. It is used to show you how to apply to a listing.</li>
-<li>We store the email address, a salted hash of the password (never the password itself) and when you confirmed. No name, no student ID, no grades, no resume, and no record of which listings you open or apply to.</li>
-<li>Accounts that never confirm their email are deleted after 7 days. To delete your account, contact {_contact_line()}.</li></ul>
+<ul><li>A student account needs an @fsu.edu email address, confirmed by a link we send, and a password. We store the address and a salted hash of the password, never the password itself.</li>
+<li>Your profile holds what you type in: the name you choose to show, major, graduation term, headline, skills, interests and optional links. We never ask for a student ID, date of birth or SSN.</li>
+<li>If you add a resume, we keep its text (not the file) and any versions you save. Only you can see it unless you turn on "share my resume with approved employers".</li>
+<li>Other students can see your name, major, class year, headline and skills. Employers see your profile only if our reviewers approved them and you either turned on "let approved employers find me" or are already talking with them.</li>
+<li>We don't record which listings you open or apply to.</li></ul>
+<h3>Messages</h3>
+<ul><li>Messages are only between students and employers our reviewers approved. Every message is scanned for scam signs when it is sent. Messages that match a pattern only scams use are held for a reviewer instead of being delivered; others may be delivered with a warning.</li>
+<li>Reviewers read a message only when it was held by the scanner or reported by someone in the conversation.</li>
+<li>Email notifications say only that a message is waiting, never what it says.</li></ul>
+<h3>The FSU feed</h3>
+<ul><li>Only signed-in FSU students and approved employers can read or post. Employer posts are reviewed before they appear and must be relevant to FSU students.</li>
+<li>Anyone can report a post; reported posts are checked by a reviewer. Rejected and removed posts are deleted after 30 days.</li></ul>
+<h3>Scam checker</h3>
+<ul><li>Messages you paste into the scam checker are not saved, unless you press "send to reviewers" to help improve the detector. Those are kept for up to a year.</li></ul>
+{ai_block}
 <h3>People who post a job</h3>
-<ul><li>You need an employer account: an email address (confirmed by a link) and a password, stored the same way as above.</li>
-<li>We store exactly what you type into the form (title, company, description, location, apply link, optional contact), the account that sent it, the automated scam score and the review decision.</li>
-<li>The contact field is shown publicly if the listing is approved. Use a role or company address.</li>
-<li>Rejected and removed submissions are deleted automatically after {PURGE_REJECTED_DAYS} days. Approved listings stop showing after {LISTING_TTL_DAYS} days.</li>
+<ul><li>You need an employer account: an email address (confirmed by a link) and a password, stored the same way as above, plus a company profile that a reviewer approves before you can message students or post to the feed.</li>
+<li>We store what you type into the listing form, the account that sent it, the automated scam score and the review decision. The contact field is shown publicly if the listing is approved.</li>
+<li>Rejected and removed listings are deleted automatically after {PURGE_REJECTED_DAYS} days. Approved listings stop showing after {LISTING_TTL_DAYS} days.</li>
 <li>If you fill in the form before logging in, the listing is kept for up to 3 days so it can be sent when you finish, then deleted.</li></ul>
+<h3>Your data</h3>
+<ul><li>On your profile page you can download everything we store about your account as a file, and delete your account. Deleting removes your profile, resume, versions, posts and comments, and blanks the messages you sent.</li>
+<li>Accounts that never confirm their email are deleted after 7 days. Questions: {_contact_line()}.</li></ul>
 <h3>Cookies and logs</h3>
 <ul><li>Logging in sets one session cookie (HttpOnly, 7 days). Sending a listing before you log in sets a short-lived cookie that holds only a random reference to your saved listing.</li>
 {bot}<li>Server logs may briefly hold IP addresses for security and abuse prevention. IP addresses are also held in memory, temporarily, to enforce rate limits.</li>
-<li>We send email only for account confirmation, password reset and a receipt when you submit a listing. No marketing.</li></ul>
+<li>We send email only for account confirmation, password reset, listing receipts and "you have a new message" notices. No marketing.</li></ul>
 <h3>Reviewers</h3>
 <p>The review queue uses a separate session cookie, set only after a reviewer signs in, marked HttpOnly and expired after 8 hours.</p></div>"""
     return shell(body, title="Privacy — NoleCareerShield")
@@ -911,7 +832,11 @@ _RULES_LIST = ('<ul class="rules" aria-label="Password requirements"><li data-ru
 def _safe_next(value: str) -> str:
     """Only a few fixed on-site destinations are allowed, so a link can never bounce someone to another site."""
     value = (value or "").strip()
-    return value if re.fullmatch(r"/job/\d{1,9}|/post|/jobs", value) else ""
+    return value if _NEXT_OK.fullmatch(value) else ""
+
+
+_NEXT_OK = re.compile(r"/job/\d{1,9}|/post|/jobs|/feed(?:/\d{1,9})?|/assistant|/resume|/check|/talent|/profile(?:/setup(?:/\d)?)?"
+                      r"|/messages(?:/\d{1,9})?|/messages/new\?to=\d{1,9}(?:&job=\d{1,9})?|/u/\d{1,9}|/company/\d{1,9}")
 
 
 def _has_draft(request: Request) -> bool:
@@ -1070,8 +995,20 @@ def login_submit(role: str, request: Request, background: BackgroundTasks, email
         resp = RedirectResponse("/submitted", status_code=303)
         _clear_draft_cookie(resp)
     else:
-        resp = RedirectResponse(nx or "/", status_code=303)
+        resp = RedirectResponse(nx or _home_for(user), status_code=303)
     return _login_cookie(resp, token)
+
+
+def _home_for(user: dict) -> str:
+    """Where someone lands after logging in: profile setup until it is done, then home."""
+    with store.db() as conn:
+        if user["role"] == "student":
+            p = store.student_profile(conn, user["id"])
+            done = bool(p and p.get("setup_step"))
+        else:
+            p = store.employer_profile(conn, user["id"])
+            done = bool(p and p.get("company"))
+    return "/" if done else "/profile/setup"
 
 
 @app.post("/logout")
@@ -1239,12 +1176,13 @@ def verify_submit(request: Request, background: BackgroundTasks, token: str = Fo
         session = accounts.create_session(db, uid)
     sent = _resume_draft(request, user, background)
     if user["role"] == "employer":
-        msg = ("Your listing was sent for review. A person checks every listing before it appears." if sent
-               else "You can post a job now.")
-        cta = '<a class="apply-btn" href="/">Back to home</a>' if sent else '<a class="apply-btn" href="/post">Post a job</a>'
+        msg = ("Your listing was sent for review. A person checks every listing before it appears. "
+               "Next, tell students about your organization." if sent
+               else "Next, set up your company profile. A reviewer approves it before you can message students or post to the feed.")
+        cta = '<a class="apply-btn" href="/profile/setup">Set up company profile</a>'
     else:
-        msg = "You can now log in to see how to apply to any listing."
-        cta = '<a class="apply-btn" href="/jobs">Browse jobs</a>'
+        msg = "Next, set up your profile. It takes about two minutes and powers your job matches."
+        cta = '<a class="apply-btn" href="/profile/setup">Set up my profile</a>'
     body = f'<div class="banner verified">Email confirmed. You are logged in. {esc(msg)}</div>{cta}'
     _viewer.set({"user": user, "token": session})       # this response is the first page they see logged in
     resp = _auth_page("You're in", body, title="Email confirmed")
@@ -1394,7 +1332,7 @@ def admin_home(session: str | None = Cookie(default=None)):
         pct = round(100 * st["agree"] / st["n"])
         stats_html = (f'<p class="lead" style="font-size:13px">Detector vs your decisions: agreed on {pct}% of {st["n"]}. '
                       f'Missed {st["missed"]} listing(s) you rejected as bad; flagged {st["false_alarm"]} you approved.</p>')
-    body = (f'<h2 class="page">Review queue</h2>{stats_html}<p class="lead">{len(pending)} submission{"s" if len(pending)!=1 else ""} waiting. '
+    body = (f'<h2 class="page">Review queue</h2>{admin_extra.tabs("/admin")}{stats_html}<p class="lead">{len(pending)} submission{"s" if len(pending)!=1 else ""} waiting. '
             f'The scam score is advisory — you decide what publishes. '
             f'<a href="/admin/live">Live listings</a></p><div class="lead" style="margin-top:-12px">'
             f'<form method="post" action="/admin/logout" style="display:inline">{csrf}<button style="background:none;border:none;color:var(--garnet);text-decoration:underline;cursor:pointer;font:inherit">Sign out</button></form></div>{inner}')

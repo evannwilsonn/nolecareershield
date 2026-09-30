@@ -8,6 +8,10 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Everything that reads settings at import time, so each test gets a fresh copy.
+LOCAL_MODULES = ("security", "app", "ui", "web", "store", "accounts", "mailer", "ai", "matching", "resume_engine",
+                 "profiles", "messaging", "msgcheck", "assistant", "resume_tools", "feed", "admin_extra")
+
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
@@ -19,7 +23,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("OUTBOX_LOG", str(tmp_path / "outbox.log"))
     for k in ("SMTP_HOST", "SMTP_FROM", "TURNSTILE_SITE_KEY", "TURNSTILE_SECRET"):
         monkeypatch.delenv(k, raising=False)
-    for m in ("security", "app"):
+    for m in LOCAL_MODULES:
         sys.modules.pop(m, None)
     import security, app as appmod, accounts, mailer
     from fastapi.testclient import TestClient
@@ -243,7 +247,7 @@ def test_prod_accepts_good_config_and_sets_secure_cookie(tmp_path, monkeypatch):
     monkeypatch.setenv("SMTP_FROM", "NoleCareerShield <no-reply@example.org>")
     monkeypatch.delenv("TURNSTILE_SITE_KEY", raising=False)
     monkeypatch.delenv("TURNSTILE_SECRET", raising=False)
-    for m in ("security", "app"):
+    for m in LOCAL_MODULES:
         sys.modules.pop(m, None)
     import app as appmod
     from fastapi.testclient import TestClient
@@ -334,7 +338,7 @@ def test_old_database_is_migrated(tmp_path, monkeypatch):
                    " VALUES ('t','c','remote','d',0,'clear','clear','approved','2026-01-01T00:00:00')")
     monkeypatch.setenv("ENV", "development"); monkeypatch.setenv("SECRET_KEY", "x" * 40)
     monkeypatch.setenv("DB_PATH", str(old)); monkeypatch.setenv("CONTACT_EMAIL", "ops@example.org")
-    for m in ("security", "app"):
+    for m in LOCAL_MODULES:
         sys.modules.pop(m, None)
     import app as appmod
     appmod.init_db()
@@ -569,11 +573,11 @@ def test_forgot_and_reset_password(client):
 def test_reset_logs_out_other_devices(client):
     make_verified(client, "student", "jane@fsu.edu")
     assert user_login(client, "student", "jane@fsu.edu").status_code == 303
-    assert "Log out" in client.get("/").text
+    assert "Log out" in client.get("/jobs").text
     with closing(sqlite3.connect(client.appmod.DB_PATH)) as db:
         uid = client.accounts.get_user(db, "jane@fsu.edu", "student")["id"]
         client.accounts.set_password(db, uid, "N3w!Password")
-    assert "Log out" not in client.get("/").text and "Log in" in client.get("/").text
+    assert "Log out" not in client.get("/jobs").text and "Log in" in client.get("/jobs").text
 
 
 def test_tokens_and_sessions_are_stored_hashed(client):
@@ -589,17 +593,17 @@ def test_tokens_and_sessions_are_stored_hashed(client):
 def test_logout_needs_its_own_token(client):
     make_verified(client, "student", "jane@fsu.edu"); user_login(client, "student", "jane@fsu.edu")
     client.post("/logout", data={"csrf": "forged"})
-    assert "Log out" in client.get("/").text
-    tok = csrf_from(client.get("/").text)
+    assert "Log out" in client.get("/jobs").text
+    tok = csrf_from(client.get("/jobs").text)
     r = client.post("/logout", data={"csrf": tok})
-    assert r.status_code == 303 and "Log out" not in client.get("/").text
+    assert r.status_code == 303 and "Log out" not in client.get("/jobs").text
 
 
 def test_next_parameter_cannot_leave_the_site(client):
     make_verified(client, "student", "jane@fsu.edu")
     for bad in ("https://evil.example", "//evil.example", "/admin", "javascript:alert(1)"):
         r = user_login(client, "student", "jane@fsu.edu", next=bad)
-        assert r.status_code == 303 and r.headers["location"] == "/", bad
+        assert r.status_code == 303 and r.headers["location"] in ("/", "/profile/setup"), bad
         client.cookies.clear()
     r = user_login(client, "student", "jane@fsu.edu", next="/job/7")
     assert r.headers["location"] == "/job/7"
@@ -703,7 +707,7 @@ def test_signed_in_student_sees_the_apply_link(client):
 
 def test_only_the_hashed_script_can_run_and_only_on_account_pages(client):
     csp = client.get("/").headers["content-security-policy"]
-    assert f"script-src '{client.appmod.PAGE_SCRIPT_HASH}'" in csp and "unsafe-inline'" in csp.split("style-src")[1].split(";")[0]
+    assert f"script-src 'self' '{client.appmod.PAGE_SCRIPT_HASH}'" in csp and "unsafe-inline'" in csp.split("style-src")[1].split(";")[0]
     assert "script-src 'unsafe" not in csp
     for path in ("/", "/jobs", "/post", "/about", "/privacy"):
         assert "<script" not in client.get(path).text, path
@@ -744,7 +748,7 @@ def test_expired_draft_is_not_sent(client):
     client.post("/post", data=_post_data(client))
     with closing(sqlite3.connect(client.appmod.DB_PATH)) as db:
         db.execute("UPDATE drafts SET expires_at = ?", (time.time() - 5,)); db.commit()
-    assert user_login(client, "employer", "hr@acme.example").headers["location"] == "/"
+    assert user_login(client, "employer", "hr@acme.example").headers["location"] in ("/", "/profile/setup")
     assert client.appmod.pending_count() == 0
 
 
@@ -752,7 +756,7 @@ def test_turnstile_is_off_by_default_and_enforced_when_configured(tmp_path, monk
     monkeypatch.setenv("ENV", "development"); monkeypatch.setenv("SECRET_KEY", "x" * 40)
     monkeypatch.setenv("DB_PATH", str(tmp_path / "ts.db")); monkeypatch.setenv("OUTBOX_LOG", str(tmp_path / "o.log"))
     monkeypatch.setenv("TURNSTILE_SITE_KEY", "site-key"); monkeypatch.setenv("TURNSTILE_SECRET", "secret")
-    for m in ("security", "app"):
+    for m in LOCAL_MODULES:
         sys.modules.pop(m, None)
     import security, app as appmod
     from fastapi.testclient import TestClient

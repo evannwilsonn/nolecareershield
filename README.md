@@ -23,11 +23,41 @@ Accounts keep bots and scrapers away from student contact details and give every
 listing an owner. They do not replace review: gating by *who someone is* is not the
 same as vetting *what they post*, so every listing is still scanned and approved.
 
+## The student network
+
+Signed-in students and employers get an app layout (sidebar, bento home) with:
+
+| Feature | Where | What it does |
+|---|---|---|
+| Profile setup | `/profile/setup` | 3 steps for students (about, skills and goals, resume and privacy), 2 for employers. New accounts land here after confirming their email. |
+| Profiles | `/profile`, `/u/{id}`, `/company/{id}` | Students choose whether approved employers can find them and whether their resume is shared. Employers are reviewed by a person before they can message students or post. |
+| Find students | `/talent` | Approved employers search students who opted in. |
+| Messaging | `/messages` | Student ↔ approved employer only. Every message is scanned when sent: scam-only patterns are held for a reviewer, suspicious ones are delivered with a warning and a link to the full check. Links aren't clickable; block and report on every thread; emails never contain message text. |
+| Scam check | `/check` | Paste any message (or open one from your inbox) and get one of four verdicts with the evidence and next steps. Rules decide the verdict; the optional AI opinion can only add caution. |
+| Job assistant | `/assistant` | Plain-language job search and "what fits my resume?", in the style of Indeed's Job Scout. It only ever shows approved listings: the AI cites listing IDs and the server drops any that aren't live. Pasted messages go to the scam check. |
+| Resume studio | `/resume` | Score (six categories), line-by-line rewrites that never add facts, an editor, tailoring to any listing or pasted job, saved versions, .docx download. |
+| FSU feed | `/feed` | Only confirmed FSU students and approved employers can read or post. Employer posts must pass an FSU-relevance check (ads rejected on the spot) and a reviewer. Student posts with scam signals are held. Three reports hide a post. |
+| Reviewer queues | `/admin/*` | Listings, employers, feed posts, held messages, reports, and messages students sent in from the checker. |
+
+**AI is optional.** Set `ANTHROPIC_API_KEY` to use Claude for the assistant, resume
+review and tailoring, the scam checker's second opinion and feed moderation. Without
+it, every feature runs on the built-in engines (`matching.py`, `resume_engine.py`,
+the scam detector). Per-account and site-wide daily caps bound the cost, and all
+user-written text goes to the model as tagged data, never as instructions.
+
+**How consistent is the scam check?** The same text always gets the same rule verdict.
+On the 103 hand-labeled real listings in `scam_detector/data/field_2026_09.jsonl`:
+35 of 42 scams get "likely a scam" or "scam", 41 of 42 get at least "be careful",
+and none of the 49 legitimate listings get any warning. Most of those scams were
+university email templates, so treat this as a sanity check, not a promise.
+
 ## Privacy by design
 
 An account stores an email address, the role (student or employer) and a salted
-scrypt password hash. No name, resume, profile, messaging, analytics, ad tech,
-third-party fonts, and no third-party scripts unless you turn on Cloudflare Turnstile.
+scrypt password hash, plus whatever the person adds to their profile. Students
+control who sees their profile and resume, can download everything as JSON and can
+delete their account from `/profile`. No analytics, ad tech, third-party fonts, and
+no third-party scripts unless you turn on Cloudflare Turnstile.
 Cookies: a login cookie (`usession`, 7 days), a short-lived saved-listing cookie
 (`draft`, 3 days, only while a logged-out poster signs in) and the reviewer session
 cookie; all HttpOnly, Secure in production. Confirmation and reset tokens and login
@@ -169,6 +199,12 @@ Run the tests: `pip install -r requirements-dev.txt && python -m pytest -q`
 - Aggregator / lead-generation listings are largely identified by the link and the
   apply flow, not the text; from a pasted description alone most are invisible.
 - No audit log of reviewer actions yet.
+- Messaging updates by polling every 8 seconds, not live sockets. Fine for a
+  campus-sized site.
+- The built-in job assistant is keyword and skill matching. It's useful, but the
+  plain-language experience really needs the AI key.
+- The scam check can't see what happens off the platform (a real company's
+  recruiter who later asks for money). It warns, it doesn't guarantee.
 - Email confirmation proves a mailbox, not a person: employer accounts are not
   identity-checked; the review step is what vets them.
 - No "Continue with Google" button (needs a Google OAuth client registered to the

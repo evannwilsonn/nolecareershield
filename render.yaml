@@ -34,3 +34,9 @@ services:
         sync: false
       - key: SMTP_PASSWORD
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AI_DAILY_LIMIT
+        value: "40"
+      - key: AI_SITE_DAILY_LIMIT
+        value: "3000"

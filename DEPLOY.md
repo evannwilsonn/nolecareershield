@@ -32,6 +32,7 @@ FSU mail is strict. Send only from a domain whose SPF and DKIM records are verif
 - Log in at `/admin` and approve it. It should appear on the board, and the Apply link should show only while you're logged in as a student.
 
 ## 4. Optional
+- **AI features:** create a key at console.anthropic.com, set a monthly spend limit there, and add it as `ANTHROPIC_API_KEY`. `AI_DAILY_LIMIT` (per person, default 40) and `AI_SITE_DAILY_LIMIT` (default 3000) cap usage. Without a key everything still works on the built-in engines.
 - **Bot check:** create a Cloudflare Turnstile widget for your hostname and add `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET`.
 - **Custom domain:** add it in Render → Settings → Custom Domains, then update `BASE_URL`.
 
