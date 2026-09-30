@@ -1696,6 +1696,12 @@ const pageHead = (t, lede, num) => `<div class="page-head">${num ? `<div class="
 const takeFlash = () => { const f = S.flash; S.flash = null; return f ? banner(f.kind, f.text, f.raw) : ""; };
 const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
 
+// The scam score only counts scam rules; a listing flagged by the separate aggregator check says so (same as app._score_pill).
+function scorePill(j) {
+  const lg = j.findings.some(f => f.rule_id === "lead_gen");
+  return lg && j.score < 15 ? "Aggregator · flagged" : `Scam score ${j.score} · ${j.scam_status}` + (lg ? " · aggregator" : "");
+}
+
 // ---------------- job cards ----------------
 function jobCard(j, match) {
   const badge = j.scam_status === "clear" ? '<span class="badge verified">✓ Verified</span>' : '<span class="badge warning">⚠ Check carefully</span>';
@@ -2576,7 +2582,7 @@ P.admin = () => {
   const rows = S.jobs.filter(j => ["legit", "scam", "lead_gen"].includes(j.review_label) && !j.seedApproved);
   let agree = 0, missed = 0, fa = 0; rows.forEach(j => { const flagged = j.scam_status !== "clear", bad = j.review_label !== "legit"; if (flagged === bad) agree++; else if (bad) missed++; else fa++; });
   const stats = rows.length ? `<p class="lead" style="font-size:13px">Detector vs your decisions: ${rows.length} labeled${rows.length < 10 ? " so far. Too few to judge; every decision is training data for the next rule update." : `, agreed on ${Math.round(100 * agree / rows.length)}%. Missed ${missed}; flagged ${fa} you approved.`}</p>` : "";
-  return adminPage("Review queue", "admin", `${stats}<p class="lead">${plural(list.length, "submission")} waiting. The scam score is advisory; you decide what publishes.</p>` + (list.map(j => `<div class="rev-card"><div class="row between" style="align-items:flex-start"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="rev-score ${esc(j.scam_status)}">Score ${j.score} · ${esc(j.scam_status)}</span></div>
+  return adminPage("Review queue", "admin", `${stats}<p class="lead">${plural(list.length, "submission")} waiting. The scam score is advisory; you decide what publishes.</p>` + (list.map(j => `<div class="rev-card"><div class="row between" style="align-items:flex-start"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="rev-score ${esc(j.scam_status)}">${esc(scorePill(j))}</span></div>
 <div class="job-meta" style="margin-top:10px"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>
 ${findingsHtml(j.findings) ? `<div style="margin:12px 0">${findingsHtml(j.findings)}</div>` : '<p class="small muted" style="margin:10px 0">No scam signals fired.</p>'}
 <div class="detail-desc" style="font-size:14px;max-height:140px;overflow:auto;background:var(--sunk);padding:10px 12px;border-radius:8px">${esc(j.description)}</div>${j.apply_url ? `<p class="small muted" style="word-break:break-all">Apply: ${esc(j.apply_url)}</p>` : ""}
