@@ -63,9 +63,14 @@ def tabs(active: str, title: str = "") -> str:
         c = counts(conn)
         c["listings"] = conn.execute("SELECT COUNT(*) FROM jobs WHERE review_status = 'pending'").fetchone()[0]
         c["live"] = conn.execute("SELECT COUNT(*) FROM jobs WHERE review_status = 'approved'").fetchone()[0]
+        import defense
+        try:
+            c["intel"] = sum(1 for a in defense.alerts(conn) if a["level"] != "info")
+        except Exception:                                   # noqa: BLE001 - tables not there yet
+            c["intel"] = 0
     items = [("/admin", "Listings", "listings"), ("/admin/employers", "Employers", "employers"), ("/admin/posts", "Feed", "posts"),
              ("/admin/messages", "Held messages", "messages"), ("/admin/reports", "Reports", "reports"),
-             ("/admin/checks", "Label queue", "checks"), ("/admin/model", "Model", "model"), ("/admin/schools", "School requests", "schools"),
+             ("/admin/checks", "Label queue", "checks"), ("/admin/model", "Model", "model"), ("/admin/intel", "Intel", "intel"), ("/admin/schools", "School requests", "schools"),
              ("/admin/events", "Events", "events"), ("/admin/live", "Live listings", "live")]
     return ui.desk(title or next((t for h, t, _ in items if h == active), "Review queue"),
                    [(h, t, c[k], h == active) for h, t, k in items])

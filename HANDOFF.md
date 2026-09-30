@@ -145,6 +145,41 @@ stand, what was decided and why, and what's next.
 - **Server requirement:** it needs scikit-learn on the server (in requirements.txt). The live model is saved
   next to the database on the Render disk.
 
+## Scam detector: beyond wording (Sept 30)
+
+Scammers rewrite their messages; these catch what they can't easily change. Everything only makes a verdict stricter.
+- **Contact-detail memory (`defense.py`):** phones, emails, domains, Telegram handles, Cash App tags and crypto wallets
+  from every sent-in check and board listing are stored as keyed hashes (`INDICATOR_KEY`, else derived from
+  `SECRET_KEY`). Once a reviewer confirms a scam, any check reusing one of those details gets "Uses contact details
+  from confirmed scams". Reports that share details are joined into rings on the label queue and `/admin/intel`.
+- **Copies of real listings:** approved listings carry an invisible fingerprint in their description. A pasted copy
+  with swapped contact details is "A copy of a real listing with different contact details".
+- **Outside intel (`scam_detector/intel/`):** look-alike domains of FSU and approved employers, domain age, missing
+  SPF/DMARC, shortened links (expanded), and URLhaus/Spamhaus/Chainabuse/Twilio when their keys are set. Network
+  lookups run only with `INTEL_NETWORK=1` (on by default when `ENV=production`). A daily job watches certificate
+  logs for new FSU look-alike domains.
+- **The scam check:** a third tab, "A conversation", reads a whole pasted thread and shows which step of a known
+  script it's at and what usually comes next (`scam_detector/conversation.py`). The message tab takes an
+  attachment (offer-letter PDF, check photo, QR screenshot; `scam_detector/artifacts.py`). Every result lists
+  "What they're asking you to do" (`scam_detector/asks.py`) and, when risky, where to report it. During the scam
+  calendar's windows the check shows a notice.
+- **`/admin/intel`:** drift alerts (confirmed scams the rules missed, waves the rules call safe, rising AI-only or
+  ask-only catches, model uncertainty), repeated contact details (masked), rings, look-alike domains, the calendar
+  editor and which outside checks are on.
+- **Forward-by-email:** point a mail provider's inbound parse (SendGrid/Mailgun) at
+  `/inbound/email?token=<INBOUND_EMAIL_TOKEN>`. The student gets the verdict by email; the message is kept for
+  reviewers without their address.
+- **Partner schools:** `/api/indicators` (header `X-Share-Key: <SHARE_FEED_KEY>`) serves confirmed-scam details as
+  HMAC hashes under `SHARE_HMAC_KEY`, which partners must share. `PEER_FEEDS` pulls theirs daily.
+- **Decoy desk (`/admin/decoys`):** off unless `DECOY_ENABLED=1`, which needs FSU legal sign-off first. Text-only
+  invented personas; a reviewer pastes the conversation in, nothing is ever sent from the site, money is never
+  moved. The scammer's messages go into the label queue.
+- **Red team:** `python -m scam_detector.tools.redteam [--ai]` rewrites holdout scams to dodge filters and writes
+  `models/REDTEAM_REPORT.md`. The variants are never trained on. First run: dollar amounts removed and "every 7
+  days" instead of "weekly" slip past rules that catch the original.
+- **Model uncertainty:** the model now carries class-conditional conformal values; "uncertain" cases go first in
+  the label queue.
+
 ## Next / waiting on someone
 
 1. **FSU single sign-on:** ask FSU ITS to register NoleCareerShield in FSU's Microsoft Entra tenant with redirect URI

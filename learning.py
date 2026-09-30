@@ -93,6 +93,8 @@ def add_submission(conn, *, body: str, sender: str = "", band: str = "", user_la
     cur = conn.execute("""INSERT INTO submitted_checks (user_id, body, sender, band, user_label, created_at, kind, title, company, url,
                           source, campaign) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                        (user_id, body, sender[:200], band, user_label, now, kind, title[:200], company[:200], url[:2000], source, campaign))
+    import defense
+    defense.index_check(conn, cur.lastrowid, "\n".join((title, company, body, sender, url)))
     return cur.lastrowid
 
 
@@ -215,6 +217,62 @@ def maybe_retrain() -> None:
 
 # ---------- reviewer pages ----------
 
+def prioritize(groups: dict, rings: dict, scam_styles: list) -> list:
+    """Active learning: show the items whose labels teach the model the most first. Uncertain model calls, disagreement
+    between the detector, the student and the AI, new patterns, and rings; every fifth slot is a random pick so obvious
+    but new scams aren't starved. Returns [(group key, rows, reasons)]."""
+    import random
+    from scam_detector.scorer import score_posting
+    m = ml.load()
+    scored = []
+    for k, rs in groups.items():
+        r = rs[0]
+        why, score = [], 0.3 * min(4, len(rs))
+        if m:
+            res = score_posting(r["title"], r["body"], r["company"], run_network=False)
+            p = m.predict(r["title"], r["body"], r["company"], r["url"], res.findings, res.score)
+            closeness = 1 - min(1.0, abs(p["probability"] - m.threshold) / 0.5)
+            score += closeness
+            if p.get("uncertain"):
+                score += 1
+                why.append("Model unsure")
+        said = {x["user_label"] for x in rs}
+        if ("scam" in said and r["band"] in ("clear", "caution")) or ("legit" in said and r["band"] in ("review", "block")):
+            score += 1
+            why.append("Student and detector disagree")
+        if any(x["source"] == "ai_novel" for x in rs):
+            score += 1
+        if len(rs) == 1 and not rings.get(k):
+            score += 0.5
+        if rings.get(k) and rings[k]["labels"].get("scam"):
+            score += 0.5
+        sv = defense_style(r)
+        for sid, camp, vec in scam_styles:
+            if camp != k and defense_cosine(sv, vec) >= 0.8:
+                why.append(f"Writes like confirmed scam #{sid}")
+                score += 0.5
+                break
+        scored.append((score, k, rs, why))
+    scored.sort(key=lambda x: -x[0])
+    rnd = random.Random(time.strftime("%Y-%m-%d"))
+    rest = scored[:]
+    out = []
+    while rest:
+        pick = rest.pop(rnd.randrange(len(rest))) if len(out) % 5 == 4 else rest.pop(0)
+        out.append((pick[1], pick[2], pick[3] + (["Random pick"] if len(out) % 5 == 4 else [])))
+    return out
+
+
+def defense_style(r) -> dict:
+    import defense
+    return defense.style_vector(f"{r['title']}\n{r['body']}")
+
+
+def defense_cosine(a, b) -> float:
+    import defense
+    return defense.cosine(a, b)
+
+
 def pending_count(conn) -> int:
     return conn.execute("SELECT COUNT(*) FROM submitted_checks WHERE review_label IS NULL").fetchone()[0]
 
@@ -239,8 +297,14 @@ def label_queue(session: str | None = Cookie(default=None)):
                 prior[k] = store.rows(conn, "SELECT review_label, COUNT(*) AS n FROM submitted_checks WHERE (campaign = ? OR id = ?) "
                                             "AND review_label IS NOT NULL GROUP BY review_label", (k, k))
         recent = store.rows(conn, "SELECT * FROM submitted_checks WHERE review_label IS NOT NULL ORDER BY reviewed_at DESC LIMIT 12")
+        import defense
+        ring_map = defense.rings(conn)
+        rings = {k: defense.ring_summary(conn, rs[0]["id"], ring_map) for k, rs in groups.items()}
+        scams = store.rows(conn, "SELECT id, campaign, title, body FROM submitted_checks WHERE review_label = 'scam' ORDER BY reviewed_at DESC LIMIT 200")
+    scam_styles = [(s["id"], s["campaign"] or s["id"], defense.style_vector(f"{s['title']}\n{s['body']}")) for s in scams]
+    ordered = prioritize(groups, rings, scam_styles)
     cards = ""
-    for k, rs in sorted(groups.items(), key=lambda kv: (-len(kv[1]), -kv[1][0]["created_at"])):
+    for k, rs, why in ordered:
         r = rs[0]
         says = {}
         for x in rs:
@@ -250,6 +314,11 @@ def label_queue(session: str | None = Cookie(default=None)):
         if any(x["source"] == "ai_novel" for x in rs):
             tags += '<span class="pill warn">AI flagged a pattern the rules missed</span>'
         wave = (f'<span class="pill bad">Wave: {len(rs)} near-copies</span>' if len(rs) > 1 else "")
+        ring = rings.get(k)
+        if ring:
+            lab = ", ".join(f"{n} {esc(l)}" for l, n in ring["labels"].items())
+            wave += f'<span class="pill bad">Ring: shares contact details with {ring["size"] - 1} other report{"s" if ring["size"] != 2 else ""}{" (" + lab + ")" if lab else ""}</span>'
+        tags += "".join(f'<span class="pill info">{esc(w)}</span>' for w in why)
         earlier = "".join(f'<span class="pill">{int(p["n"])} earlier labeled {esc(p["review_label"])}</span>' for p in prior.get(k, []))
         what = (f'<b>{esc(r["title"])}</b>' + (f' · {esc(r["company"])}' if r["company"] else "") if r["kind"] == "listing"
                 else f'<b>Message</b>{(" from " + esc(r["sender"])) if r["sender"] else ""}')

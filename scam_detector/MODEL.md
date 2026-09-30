@@ -76,6 +76,22 @@ The loop runs on the live site. Nobody has to remember to retrain.
 
 `export_labeled.py` includes confirmed label-queue items, with email addresses and phone numbers masked.
 
+## Uncertainty (conformal prediction)
+
+Training also stores class-conditional conformal values (`"conformal"` in the model file), computed from the
+cross-validation probabilities so each class keeps about 90% coverage on its own. `predict()` returns the set of
+labels that can't be ruled out, and `uncertain` when that set disagrees with the threshold (a scam it can't rule
+out while the threshold says no flag). Uncertain cases don't change any verdict; they go first in the label queue
+and count toward the drift alert on `/admin/intel`.
+
+## Red team
+
+`python -m scam_detector.tools.redteam` rewrites the holdout and archive scams the way a scammer dodging filters
+would (synonyms, leetspeak, zero-width characters, a friendly tone, no dollar amounts; `--ai` adds AI paraphrases)
+and writes `models/REDTEAM_REPORT.md`. The variants in `data/redteam_eval.jsonl` are an evaluation set only and are
+never trained on. First run: leetspeak and zero-width tricks are all still caught; removing dollar amounts and
+"every 7 days" instead of "weekly" slip past rules that catch the original.
+
 ## Status (Sept 30, 2026): shipped, version in models/scam_model.json
 
 | Run | Training rows | Holdout scams caught (rules alone: 15/28) | New false alarms | Gate |

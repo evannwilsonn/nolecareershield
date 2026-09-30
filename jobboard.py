@@ -29,6 +29,7 @@ import matching
 import network
 import quals
 import security
+import defense
 import store
 import ui
 import web
@@ -520,6 +521,6 @@ def detail(conn, viewer: dict, j: dict, profile: dict | None, *, pill, risk, nex
            f'<div class="jd-co">{co}</div><h1 class="jd-title">{esc(j["title"])}</h1><div class="jd-sub">{esc(sub)}</div>'
            f'{f"<div class=jd-trust>{trust}</div>" if trust else ""}</div></div>{own}<div class="jd-acts">{acts}</div>{note}{banner}</div>')
     side = f'<aside class="jd-side" aria-label="Scam check and fit">{scam_block(j, pill(j), risk(j))}{match}{q}{poster_block(conn, viewer, j, emp_ok)}</aside>'
-    body = (f'<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">{esc(j["description"])}</div></section>'
+    body = (f'<div class="jd-body"><section class="jd-desc"><h2>About the job</h2><div class="detail-desc">{esc(defense.with_fingerprint(j["description"], j["id"]))}</div></section>'
             f'{glance(j)}{extra}</div>')
     return (f'<a class="back jd-back" href="/jobs">← All jobs</a><article class="jd {verdict_class(j)}">{top}{side}{body}</article>')

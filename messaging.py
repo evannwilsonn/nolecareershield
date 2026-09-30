@@ -140,6 +140,7 @@ def can_send(conn, c: dict, user: dict) -> tuple[bool, str]:
 
 def add_message(conn, c: dict, sender: dict, body: str) -> dict:
     r = msgcheck.check(body)
+    msgcheck.enrich(r, text=body)            # contact details from confirmed scams, cloned listings, look-alike links
     band = r["band"]
     status = "held" if band == "block" else "delivered"
     findings = [{"title": f["title"], "why": f["why"], "severity": f["severity"]} for f in r["findings"][:5]]

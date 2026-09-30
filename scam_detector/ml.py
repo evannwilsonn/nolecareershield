@@ -108,7 +108,15 @@ class Model:
         logit, parts = self.contributions(title, description, company, url, findings, score)
         p = 1.0 / (1.0 + math.exp(-max(-40.0, min(40.0, logit))))
         top = sorted((x for x in parts if x[2] > 0), key=lambda x: -x[2])[:5]
+        conf = self.spec.get("conformal") or {}
+        if conf:
+            pset = ([] if 1 - p > conf.get("q_scam", 1) else ["scam"]) + ([] if p > conf.get("q_legit", 1) else ["legit"])
+        else:
+            pset = ["scam"] if p >= self.threshold else ["legit"]
         return {"probability": round(p, 4), "flag": p >= self.threshold, "threshold": self.threshold,
+                # Uncertain: the 90%-coverage conformal set can't settle it the way the threshold did (a scam it can't rule
+                # out while the threshold says no flag, or an empty/both set). Only used to send cases to a person first.
+                "set": pset, "uncertain": len(pset) != 1 or (("scam" in pset) != (p >= self.threshold)),
                 "version": self.version, "because": [{"kind": k, "name": n, "weight": round(w, 3)} for k, n, w in top]}
 
 

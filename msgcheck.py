@@ -23,7 +23,7 @@ import re
 import time
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 import ai
@@ -35,6 +35,7 @@ from scam_detector.rules import FREE_MAIL
 from scam_detector.scorer import score_posting
 from scam_detector import ml
 import learning
+import defense
 
 router = APIRouter()
 
@@ -356,7 +357,7 @@ def _form(text: str = "", sender: str = "", ai_on: bool = False) -> str:
         ai_box = (f'<label class="toggle"><input type="checkbox" name="ai" value="1"{" checked" if ai_on else ""}>'
                   '<span><b>Add an AI second opinion.</b> Sends the message to Claude (Anthropic) for a written analysis. '
                   'It can only make the verdict stricter.</span></label>')
-    return f"""<form method="post" action="/check" class="card">
+    return f"""<form method="post" action="/check" class="card" enctype="multipart/form-data">
 <input type="hidden" name="csrf" value="{security.make_csrf('form')}">
 <div class="form-field"><label for="c-text">The message</label>
 <p class="hint">Paste the whole thing: text, email, LinkedIn or Handshake DM. Nothing is saved unless you choose to send it to reviewers.</p>
@@ -364,17 +365,25 @@ def _form(text: str = "", sender: str = "", ai_on: bool = False) -> str:
 <div class="form-field"><label for="c-sender">Who sent it (optional)</label>
 <p class="hint">The email address or name it came from. It helps spot fake FSU and company addresses.</p>
 <input id="c-sender" name="sender" maxlength="200" value="{ui.esc(sender)}" placeholder="e.g. careers.fsu.edu@gmail.com"></div>
+<div class="form-field"><label for="c-file">Attachment (optional)</label>
+<p class="hint">An offer letter PDF, a photo of a check they sent, or a screenshot with a QR code. We read it once and don't keep it.</p>
+<input id="c-file" name="file" type="file" accept=".pdf,image/png,image/jpeg,image/webp"></div>
 {ai_box}<button class="submit-btn" type="submit">Check this message</button></form>"""
 
 
 def _kind_tabs(kind: str) -> str:
     return ('<div class="seg" role="tablist" style="margin-bottom:16px">'
             f'<a href="/check"{" class=on aria-current=page" if kind == "listing" else ""}>A job listing</a>'
-            f'<a href="/check?kind=message"{" class=on aria-current=page" if kind == "message" else ""}>A message</a></div>')
+            f'<a href="/check?kind=message"{" class=on aria-current=page" if kind == "message" else ""}>A message</a>'
+            f'<a href="/check?kind=thread"{" class=on aria-current=page" if kind == "thread" else ""}>A conversation</a></div>')
 
 
 def _page(inner: str, status: int = 200, kind: str = "message") -> HTMLResponse:
-    if kind == "listing":
+    if kind == "thread":
+        head = ui.page_head("Is this conversation a scam?",
+                            "Paste the whole thread. Job scams follow a script over several messages; we show which step you're at and what usually comes next.",
+                            num="Scam check")
+    elif kind == "listing":
         head = ui.page_head("Is this job listing a scam?",
                             "Found a job on Handshake, LinkedIn, Indeed, Instagram or a flyer? Paste it and get the same scam check every listing on NoleCareerShield goes through.",
                             num="Scam check")
@@ -382,7 +391,7 @@ def _page(inner: str, status: int = 200, kind: str = "message") -> HTMLResponse:
         head = ui.page_head("Is this message a scam?",
                             "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.",
                             num="Scam check")
-    return web.page(head + _kind_tabs(kind) + inner, "Scam check", active="/check", js=True, status=status)
+    return web.page(head + _kind_tabs(kind) + season_html() + inner, "Scam check", active="/check", js=True, status=status)
 
 
 def _listing_form(v: dict | None = None) -> str:
@@ -402,6 +411,8 @@ def _listing_form(v: dict | None = None) -> str:
 @router.get("/check", response_class=HTMLResponse)
 def check_form(request: Request, m: int = 0, kind: str = "listing"):
     security.enforce_rate_limit(request, security.general_limiter, "check_page")
+    if kind == "thread":
+        return _page(_thread_form(), kind="thread")
     if kind != "message" and not m:
         return _page(_listing_form(), kind="listing")          # a job listing is the default tab
     user = web.current_user(request)
@@ -422,7 +433,8 @@ def check_form(request: Request, m: int = 0, kind: str = "listing"):
 
 
 @router.post("/check", response_class=HTMLResponse)
-def check_submit(request: Request, text: str = Form(""), sender: str = Form(""), csrf: str = Form(""), ai_: str = Form("", alias="ai")):
+async def check_submit(request: Request, text: str = Form(""), sender: str = Form(""), csrf: str = Form(""), ai_: str = Form("", alias="ai"),
+                       file: UploadFile | None = File(None)):
     security.enforce_rate_limit(request, security.check_limiter, "check")
     user = web.current_user(request)
     if not user:
@@ -430,6 +442,14 @@ def check_submit(request: Request, text: str = Form(""), sender: str = Form(""),
     if not security.verify_csrf(csrf, "form"):
         return _page(ui.banner("warning", "That page had been open too long. Your text is still here; press Check again.") + _form(text[:8000], sender[:200]), 400)
     text = security._CONTROL_CHARS_RE.sub("", text or "").strip()
+    art, art_note = None, ""
+    if file is not None and file.filename:
+        from scam_detector import artifacts
+        data = await file.read(8 * 1024 * 1024 + 1)
+        art = artifacts.analyze_upload(data, file.filename, file.content_type or "")
+        art_note = "".join(ui.banner("info", n) for n in art.get("notes", []))
+        if art.get("text") and len(text) < 15:
+            text = art["text"][:8000]
     if len(text) < 15:
         return _page(ui.banner("warning", "Paste the message you want checked (at least a sentence).") + _form(text, sender), 400)
     if len(text) > 8000 or len(sender) > 200:
@@ -442,6 +462,10 @@ def check_submit(request: Request, text: str = Form(""), sender: str = Form(""),
                 use_ai = False
     r = check(text, sender, use_ai=use_ai)
     novel = is_novel(r)
+    if novel:
+        defense.bump("ai_only_scam")
+    enrich(r, text=text + ("\n" + art["text"][:8000] if art and art.get("text") and art["text"][:200] not in text else ""), sender=sender,
+           extra=(art or {}).get("findings") or [], url=" ".join((art or {}).get("urls") or []))
     lead = ('<div class="banner warning" style="margin:0 0 10px"><b>This may be a new kind of scam.</b> The AI flagged it, but none of our '
             'rules caught it. Sending it to our reviewers is how the detector learns to catch the next one.</div>' if novel else "")
     report = f"""<details class="card" style="margin-top:22px"{" open" if novel else ""}><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
@@ -452,7 +476,31 @@ def check_submit(request: Request, text: str = Form(""), sender: str = Form(""),
 <div class="row"><button class="b sm" name="label" value="scam">It was a scam</button><button class="b sm sec" name="label" value="unsure">Not sure</button>
 <button class="b sm ghost" name="label" value="legit">It was real</button></div></form></details>"""
     extra = "" if user else _school_form()
-    return _page(render_result(r, full) + report + extra + '<h3 class="sec">Check another message</h3>' + _form(text, sender, use_ai))
+    return _page(art_note + render_result(r, full) + asks_html(r) + report_html(r) + report + extra + '<h3 class="sec">Check another message</h3>' + _form(text, sender, use_ai))
+
+
+@router.post("/check/thread", response_class=HTMLResponse)
+def check_thread(request: Request, text: str = Form(""), me: str = Form(""), csrf: str = Form("")):
+    security.enforce_rate_limit(request, security.check_limiter, "check")
+    user = web.current_user(request)
+    if not user:
+        security.enforce_rate_limit(request, security.public_check_limiter, "check_public")
+    text = security._CONTROL_CHARS_RE.sub("", text or "").strip()
+    me = security._CONTROL_CHARS_RE.sub("", me or "").strip()[:120]
+    if not security.verify_csrf(csrf, "form"):
+        return _page(ui.banner("warning", "That page had been open too long. Your text is still here; press Check again.") + _thread_form(text[:20000], me), 400, kind="thread")
+    if len(text) < 40:
+        return _page(ui.banner("warning", "Paste the conversation (at least a couple of messages).") + _thread_form(text, me), 400, kind="thread")
+    if len(text) > 20000:
+        return _page(ui.banner("warning", "That's longer than 20,000 characters. Paste the most recent part of the conversation.") + _thread_form(text[:20000], me), 400, kind="thread")
+    from scam_detector.conversation import analyze_thread
+    a = analyze_thread(text, me=me or None)
+    theirs = "\n".join(t["text"] for t in a.get("turns", []) if t.get("speaker") != "me") or text
+    r = check(theirs[:8000], "")
+    enrich(r, text=theirs, extra=a.get("findings") or [])
+    full = full_view(user)
+    return _page(render_result(r, full) + thread_html(a) + asks_html(r) + report_html(r)
+                 + '<h3 class="sec">Check another conversation</h3>' + _thread_form(text, me), kind="thread")
 
 
 @router.post("/check/school", response_class=HTMLResponse)
@@ -487,6 +535,7 @@ def check_listing_submit(request: Request, title: str = Form(""), company: str =
     if v["url"] and not v["url"].lower().startswith(("http://", "https://")):
         v["url"] = "https://" + v["url"]
     r = check_listing(v["title"], v["description"], v["company"], v["url"], v["contact"])
+    enrich(r, text=v["description"] + ("\n" + v["contact"] if v["contact"] else ""), title=v["title"], company=v["company"], url=v["url"], listing=True)
     full = full_view(user)
     report = f"""<details class="card" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600">Send this to our reviewers</summary>
 <p class="small muted" style="margin:8px 0 12px">Helps the detector learn. We save the listing and your answer, never your name.</p>
@@ -496,7 +545,7 @@ def check_listing_submit(request: Request, title: str = Form(""), company: str =
 <div class="row"><button class="b sm" name="label" value="scam">It was a scam</button><button class="b sm sec" name="label" value="unsure">Not sure</button>
 <button class="b sm ghost" name="label" value="legit">It was real</button></div></form></details>"""
     extra = "" if user else _school_form()
-    return _page(render_result(r, full) + report + extra + '<h3 class="sec">Check another listing</h3>' + _listing_form(v), kind="listing")
+    return _page(render_result(r, full) + asks_html(r) + report_html(r) + report + extra + '<h3 class="sec">Check another listing</h3>' + _listing_form(v), kind="listing")
 
 
 @router.post("/check/submit", response_class=HTMLResponse)
@@ -514,3 +563,115 @@ def check_contribute(request: Request, text: str = Form(""), sender: str = Form(
                                 kind="listing" if kind == "listing" else "message", title=clean(title, 200), company=clean(company, 200),
                                 url=clean(url, 2000), source="ai_novel" if source == "ai_novel" else "student")
     return _page(ui.banner("verified", "Thanks. A reviewer will look at it, and it helps the detector catch the next one.") + _form())
+
+
+# ---------- beyond wording: identifiers, clones, outside intel, asks, conversations, attachments (defense.py) ----------
+
+REPORT_LINKS = [
+    ("Report fraud to the FTC", "https://reportfraud.ftc.gov/"),
+    ("Lost money? File with the FBI's IC3", "https://www.ic3.gov/"),
+    ("Scam text? Forward it to 7726 (SPAM)", "https://www.ctia.org/news/report-spam-text-messages"),
+    ("Found it on Handshake? Use its Report button", "https://support.joinhandshake.com/hc/en-us/articles/360036464793"),
+]
+
+
+def enrich(r: dict, *, text: str, sender: str = "", title: str = "", company: str = "", url: str = "",
+           listing: bool = False, extra: list | None = None) -> dict:
+    """Add the findings that don't depend on wording, and the student-facing asks. The verdict can only get stricter."""
+    from scam_detector.asks import extract_asks, MONEY_ASKS
+    found = defense.extra_findings(text, sender=sender, title=title, company=company, url=url) + list(extra or [])
+    r["asks"] = extract_asks("\n".join(x for x in (title, text) if x))
+    _rescore(r, found, listing)
+    money = [a for a in r["asks"] if a["ask"] in MONEY_ASKS]
+    if money and r["band"] in ("clear", "caution"):
+        _rescore(r, [{"rule_id": "money_ask", "severity": "warning", "weight": 25, "title": "It asks you for money or financial details",
+                      "why": f"It asks you to {money[0]['label'].lower()}. Real employers pay you; they don't ask you to pay, "
+                             "move money or hand over bank or ID details before a real offer.",
+                      "matched": [a["evidence"][:90] for a in money[:3]]}], listing)
+        defense.bump("ask_only_scam")
+    if any(f["rule_id"] == "known_scam_identifier" for f in r["findings"]):
+        defense.bump("known_identifier")
+    if listing:
+        defense.bump("listing_checks")
+        m = ml.load()
+        if m:
+            p = m.predict(title, text, company, url, r["findings"], r["score"])
+            if p.get("uncertain"):
+                defense.bump("model_uncertain")
+    return r
+
+
+def _rescore(r: dict, extra: list, listing: bool) -> None:
+    if not extra:
+        return
+    best = {f["rule_id"]: f for f in r["findings"]}
+    for f in extra:
+        if f["rule_id"] not in best or f["weight"] > best[f["rule_id"]]["weight"]:
+            best[f["rule_id"]] = f
+    findings = sorted(best.values(), key=lambda f: ({"critical": 0, "warning": 1, "note": 2}[f["severity"]], -f["weight"]))
+    score = min(100, sum(f["weight"] for f in findings))
+    critical = any(f["severity"] == "critical" for f in findings)
+    band = "block" if critical or score >= 65 else "review" if score >= 35 else "caution" if score >= 15 else "clear"
+    if BAND_LEVEL[band] < BAND_LEVEL.get(r["band"], 0):
+        band = r["band"]
+    level = max(r["level"], BAND_LEVEL[band])
+    key, title, advice = (LISTING_LEVELS if listing else LEVELS)[level]
+    r.update({"findings": findings, "score": max(score, r["score"]), "band": band, "level": level, "key": key, "title": title, "advice": advice})
+    if listing:
+        r["steps"] = ([LEADGEN_STEP] if (r.get("lead_gen") or {}).get("flag") else []) + LISTING_STEPS[level]
+
+
+def asks_html(r: dict) -> str:
+    asks = r.get("asks") or []
+    if not asks:
+        return ""
+    items = "".join(f'<li><b>{ui.esc(a["label"])}</b><span class="ev">“{ui.esc(a["evidence"][:120])}”</span></li>' for a in asks[:8])
+    return f'<h3 class="sec">What they\'re asking you to do</h3><ul class="reasons card">{items}</ul>'
+
+
+def report_html(r: dict) -> str:
+    if r.get("level", 0) < 2:
+        return ""
+    links = "".join(f'<li><a href="{u}" rel="noopener" target="_blank">{ui.esc(t)}</a></li>' for t, u in REPORT_LINKS)
+    return f'<h3 class="sec">Report it</h3><ul class="card small">{links}</ul>'
+
+
+def season_html() -> str:
+    try:
+        with store.db() as conn:
+            w = defense.active_windows(conn)
+    except Exception:                                   # noqa: BLE001
+        return ""
+    return (f'<div class="banner info" style="margin-bottom:14px"><b>Scam season: {ui.esc(w[0]["name"])}.</b> {ui.esc(w[0]["note"])}</div>' if w else "")
+
+
+def _thread_form(text: str = "", me: str = "") -> str:
+    return f"""<form method="post" action="/check/thread" class="card">
+<input type="hidden" name="csrf" value="{security.make_csrf('form')}">
+<div class="form-field"><label for="t-text">The whole conversation</label>
+<p class="hint">Paste every message in order: an email chain, a text or WhatsApp export, LinkedIn or Handshake DMs. Scams follow a script over several messages, so the whole thread shows where you are in it and what usually comes next. Nothing is saved unless you send it to reviewers.</p>
+<textarea id="t-text" name="text" required maxlength="20000" data-count style="min-height:260px" placeholder="Recruiter: Hi! You've been selected for a remote assistant role...&#10;Me: Thanks, what are the next steps?&#10;Recruiter: Please text our hiring manager on Telegram...">{ui.esc(text)}</textarea></div>
+<div class="form-field"><label for="t-me">Your name or email in the thread (optional)</label>
+<input id="t-me" name="me" maxlength="120" value="{ui.esc(me)}" placeholder="So we can tell your messages from theirs"></div>
+<button class="submit-btn" type="submit">Check this conversation</button></form>"""
+
+
+_STAGE_NAMES = {"hook": "The pitch", "legitimacy": "Looking legit", "channel_switch": "Moved you off the platform",
+                "onboarding": "Onboarding", "data_grab": "Asked for bank or ID details", "ask": "Asked for money",
+                "pressure": "Pressure"}
+
+
+def thread_html(a: dict) -> str:
+    rows = ""
+    for t in a.get("turns", []):
+        if t.get("speaker") != "them":
+            continue
+        chips = "".join(f'<span class="pill {"bad" if s in ("ask", "data_grab", "pressure") else "warn" if s in ("channel_switch", "onboarding") else ""}">'
+                        f'{ui.esc(_STAGE_NAMES.get(s, s))}</span>' for s in t.get("stages", []))
+        rows += f'<li><div class="row">{chips}</div><span class="ev" style="white-space:pre-wrap">{ui.esc(t["text"][:400])}</span></li>'
+    head = ""
+    if a.get("warning"):
+        head += f'<div class="banner {"warning" if a.get("risk") != "low" else "info"}"><b>{ui.esc(a["warning"])}</b></div>'
+    if a.get("next_step"):
+        head += f'<p class="card" style="margin-top:10px"><b>What usually comes next:</b> {ui.esc(a["next_step"])}</p>'
+    return head + (f'<h3 class="sec">The conversation, step by step</h3><ol class="reasons card">{rows}</ol>' if rows else "")
