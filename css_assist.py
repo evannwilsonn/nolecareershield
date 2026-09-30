@@ -3,26 +3,60 @@ Colours come from the site's variables, so dark mode follows the rest of the sit
 
 CSS = """
 /* ---------- career assistant ---------- */
-.cs{display:grid;grid-template-columns:250px minmax(0,1fr);gap:0;border:1px solid var(--whisper);border-radius:16px;background:var(--surface);overflow:hidden;min-height:calc(100vh - 150px)}
+.cs{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0;border:1px solid var(--whisper);border-radius:16px;background:var(--surface);min-height:calc(100vh - 150px)}
 .cs .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .cs-inline{display:inline;margin:0}
-.cs-side{border-right:1px solid var(--whisper);padding:16px 12px;display:flex;flex-direction:column;gap:10px;background:var(--canvas);min-width:0}
-.cs-brand{display:flex;align-items:center;gap:9px;font-family:var(--display);font-weight:650;font-stretch:88%;font-size:18px;color:var(--ink);padding:2px 6px 6px}
-.cs-brand .ic{color:var(--accent-ink)}
+/* top bar: the chat history is a dropdown */
+.cs-top{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--whisper);position:sticky;top:57px;background:var(--surface);z-index:5;border-radius:16px 0 0 0}
+.cs-top-t{flex:1;min-width:0;display:flex;align-items:center;gap:7px;font-weight:650;font-size:14.5px;color:var(--ink-2)}
+.cs-top-t span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-top-t .ic{color:var(--accent-ink);flex:none}
+.cs-chats{position:relative}
+.cs-chats-btn{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-weight:650;font-size:14px;padding:7px 12px;border-radius:9px;border:1px solid var(--line-2);color:var(--ink);background:var(--surface)}
+.cs-chats-btn::-webkit-details-marker{display:none}
+.cs-chats-btn:hover,.cs-chats[open] .cs-chats-btn{border-color:var(--accent-ink);color:var(--accent-ink)}
+.cs-menu{position:absolute;left:0;top:calc(100% + 6px);width:min(340px,86vw);background:var(--surface);border:1px solid var(--line-2);border-radius:12px;box-shadow:var(--shadow);padding:8px;z-index:20;display:flex;flex-direction:column;gap:4px}
 .cs-new{display:flex;align-items:center;gap:9px;text-decoration:none;font-weight:650;font-size:14.5px;padding:8px 8px;border-radius:9px;color:var(--ink)}
 .cs-new:hover{background:var(--whisper)}
-.cs-hist{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:650;color:var(--muted);padding:10px 8px 2px}
-.cs-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:1px;overflow-y:auto;max-height:calc(100vh - 340px)}
+.cs-hist{font-size:12px;font-weight:650;color:var(--muted);padding:8px 8px 2px;text-transform:uppercase;letter-spacing:.04em}
+.cs-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:1px;overflow-y:auto;max-height:min(60vh,420px)}
 .cs-list li{display:flex;align-items:center;border-radius:9px;position:relative}
 .cs-list li:hover,.cs-list li.on{background:var(--sand)}
 .cs-list a{flex:1;min-width:0;display:flex;justify-content:space-between;gap:8px;text-decoration:none;color:var(--ink-2);font-size:14px;padding:8px 8px;align-items:baseline}
 .cs-list .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .cs-list .d{font-size:11.5px;color:var(--faint);white-space:nowrap}
-.cs-del{background:none;border:none;color:var(--faint);cursor:pointer;padding:6px;border-radius:6px;opacity:0;font:inherit;display:flex}
-.cs-list li:hover .cs-del,.cs-del:focus-visible{opacity:1}
+.cs-del{background:none;border:none;color:var(--faint);cursor:pointer;padding:6px;border-radius:6px;font:inherit;display:flex}
 .cs-del:hover{color:var(--bad);background:var(--bad-tint)}
 .cs-empty{font-size:13px;color:var(--faint);padding:4px 8px}
+/* right context panel */
+.cs-ctx{border-left:1px solid var(--whisper);background:var(--canvas);min-width:0;border-radius:0 16px 16px 0}
+.cs-ctxd{position:sticky;top:57px}
+.cs-ctxd>summary{display:none}
+.cs-ctx-in{padding:16px 16px 20px;display:flex;flex-direction:column;gap:18px;max-height:calc(100vh - 70px);overflow-y:auto}
+.cs-sec h2{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:650;font-stretch:88%;font-size:17px;margin:0 0 10px;color:var(--ink)}
+.cs-sec h2 .ic,.cs-sec h3 .ic{color:var(--accent-ink)}
+.cs-sec h3{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:650;margin:14px 0 6px;color:var(--ink-2)}
+.cs-str{display:flex;justify-content:space-between;font-size:13.5px;color:var(--muted);margin-bottom:6px}
+.cs-str b{color:var(--ink)}
+.cs-hint{font-size:13px;color:var(--faint);margin:8px 0 0;line-height:1.5}
+.cs-hint a,.cs-link{color:var(--info);font-weight:650}
+.cs-link{display:inline-block;font-size:13.5px;margin-top:8px;text-decoration:none}
+.cs-link:hover{text-decoration:underline}
+.cs-mem{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
+.cs-mem li{font-size:13.5px;color:var(--ink-2);background:var(--surface);border:1px solid var(--whisper);border-radius:9px;padding:7px 10px;line-height:1.4}
+.cs-minis{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
+.cs-mini{display:flex;align-items:flex-start;gap:6px;background:var(--surface);border:1px solid var(--whisper);border-radius:10px;padding:8px 6px 8px 10px}
+.cs-mini-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.cs-mini-t a{font-weight:650;font-size:14px;color:var(--ink);text-decoration:none;overflow-wrap:anywhere}
+.cs-mini-t a:hover{color:var(--accent-ink)}
+.cs-mini-t span{font-size:12.5px;color:var(--muted)}
+.cs-mini .cs-ic{padding:5px}
+.cs-unp{margin-top:8px}
+.cs-unp>summary{cursor:pointer;font-size:13px;color:var(--muted);margin-bottom:6px}
 .cs-main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.cs-memnote{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin:0}
+.cs-memnote .ic{color:var(--accent-ink);flex:none}
+.cs-memnote a{color:var(--info);font-weight:650}
 /* home */
 .cs-home{margin:auto;width:100%;max-width:720px;padding:48px 20px;text-align:center}
 .cs-home h1{display:flex;align-items:center;justify-content:center;gap:12px;font-family:var(--display);font-weight:650;font-stretch:88%;font-size:clamp(28px,4.6vw,40px);letter-spacing:-.01em;line-height:1.15}
@@ -48,7 +82,33 @@ CSS = """
 .cs-scroll{flex:1;padding:24px clamp(14px,4vw,40px) 8px;display:flex;flex-direction:column;gap:18px;max-width:900px;width:100%;margin:0 auto}
 .cs-me{align-self:flex-end;max-width:82%;background:var(--accent-tint);color:var(--ink);border-radius:18px 18px 4px 18px;padding:10px 16px;font-size:15px;white-space:pre-wrap;word-wrap:break-word}
 .cs-bot{display:flex;flex-direction:column;gap:12px;min-width:0}
-.cs-text{font-size:15.5px;line-height:1.65;white-space:pre-wrap;word-wrap:break-word;color:var(--ink)}
+.cs-text{font-size:15.5px;line-height:1.65;word-wrap:break-word;color:var(--ink)}
+.cs-md p{margin:0 0 10px}.cs-md p:last-child{margin-bottom:0}
+.cs-md ul,.cs-md ol{margin:4px 0 10px;padding-left:22px;display:flex;flex-direction:column;gap:4px}
+.cs-md ul:last-child,.cs-md ol:last-child{margin-bottom:0}
+.cs-md a{color:var(--info);font-weight:650}
+.cs-md code{font-size:.92em;background:var(--sunk);border-radius:5px;padding:1px 5px}
+.cs-live::after{content:"";display:inline-block;width:7px;height:15px;margin-left:3px;vertical-align:-2px;background:var(--accent-ink);opacity:.6;animation:csblink 1s steps(2) infinite}
+@keyframes csblink{50%{opacity:0}}
+.cs-err{font-size:13.5px;color:var(--bad)}
+.cs-notice{font-size:12.5px;color:var(--muted);background:var(--sand);border-radius:8px;padding:6px 10px;align-self:flex-start}
+.cs-stop{margin-left:8px}
+/* memory page */
+.cs-memory{padding:22px clamp(14px,4vw,40px) 40px;max-width:760px;width:100%;margin:0 auto}
+.cs-memory h1{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:650;font-stretch:88%;font-size:clamp(24px,3.6vw,32px);margin:6px 0 6px}
+.cs-memory h1 .ic{color:var(--accent-ink)}
+.cs-sub2{color:var(--ink-2);font-size:15px;line-height:1.6;margin:0 0 16px}
+.cs-memlist{list-style:none;padding:0;margin:16px 0;display:flex;flex-direction:column;gap:8px}
+.cs-memrow{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line-2);border-radius:12px;padding:10px 12px 10px 14px;background:var(--surface)}
+.cs-memrow .f{font-size:15px;color:var(--ink)}
+.cs-memrow .d{font-size:12.5px;color:var(--faint);margin-top:2px}
+.cs-memrow .d a{color:var(--info)}
+.cs-addmem{display:flex;gap:8px;align-items:center}
+.cs-addmem input{flex:1;min-width:0}
+.cs-clear>summary{list-style:none;display:inline-flex;cursor:pointer}
+.cs-clear>summary::-webkit-details-marker{display:none}
+.cs-clear[open]{border:1px solid var(--line-2);border-radius:12px;padding:12px}
+.cs-clear p{font-size:14px;color:var(--ink-2)}
 .cs-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .cs-job{position:relative;background:var(--surface);border:1px solid var(--line-2);border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:3px;min-width:0;transition:border-color .15s,box-shadow .15s}
 .cs-job:hover{border-color:var(--accent-ink);box-shadow:var(--shadow)}
@@ -98,12 +158,15 @@ CSS = """
 .cs-think .dots i{width:7px;height:7px;border-radius:50%;background:var(--accent-ink);opacity:.35;animation:csdot 1.1s infinite ease-in-out}
 .cs-think .dots i:nth-child(2){animation-delay:.18s}.cs-think .dots i:nth-child(3){animation-delay:.36s}
 @keyframes csdot{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
-@media (prefers-reduced-motion:reduce){.cs-think .dots i{animation:none;opacity:.7}}
+@media (prefers-reduced-motion:reduce){.cs-think .dots i{animation:none;opacity:.7}.cs-live::after{animation:none}}
 @media(max-width:900px){
 .cs{grid-template-columns:1fr;min-height:0}
-.cs-side{border-right:none;border-bottom:1px solid var(--whisper);padding:10px 12px}
-.cs-list{max-height:150px}
-.cs-del{opacity:1}
+.cs-top{top:0;border-radius:16px 16px 0 0}
+.cs-ctx{border-left:none;border-top:1px solid var(--whisper);border-radius:0 0 16px 16px}
+.cs-ctxd{position:static}
+.cs-ctxd>summary{display:flex;align-items:center;gap:8px;cursor:pointer;padding:14px 16px;font-weight:650;font-size:14.5px;color:var(--ink)}
+.cs-ctxd>summary .ic{color:var(--accent-ink)}
+.cs-ctx-in{max-height:none;padding-top:4px}
 .cs-home{padding:28px 14px}
 }
 @media(max-width:620px){.cs-grid{grid-template-columns:1fr}.cs-me{max-width:92%}.cs-sub{font-size:17px}}

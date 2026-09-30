@@ -50,41 +50,78 @@
     textarea.addEventListener("input", function () { autogrow(textarea); });
   }
 
-  // ---------- job assistant ----------
-  var chat = document.getElementById("chat");
-  if (chat) {
-    var log = document.getElementById("log"), form = document.getElementById("ask"), q = document.getElementById("q");
-    var history = [], busy = false;
-    enterSends(q, form);
-    function say(role, text, cardsHtml) {
-      var d = document.createElement("div");
-      d.className = "say " + (role === "user" ? "me" : "bot");
-      if (role !== "user") {
-        var w = document.createElement("div"); w.className = "who"; w.textContent = "Assistant"; d.appendChild(w);
+  // ---------- career assistant: send without a full reload ----------
+  var csLog = document.getElementById("cs-log");
+  var csCtx = document.querySelector(".cs-ctxd");
+  if (csCtx && window.matchMedia && window.matchMedia("(max-width: 900px)").matches) csCtx.removeAttribute("open");   // phones: panel folds below the chat
+  var pend = document.querySelector("[data-cs-pending]");
+  if (pend) location.replace(pend.getAttribute("data-cs-pending"));          // the no-JS page refreshes here after a second; JS goes now
+  if (document.querySelector(".cs")) {
+    var csBusy = false;
+    var csThinking = function () {
+      var d = document.createElement("div"); d.className = "cs-think"; d.setAttribute("role", "status");
+      d.innerHTML = '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Thinking…';
+      return d;
+    };
+    var csSend = function (form) {
+      var fd = new FormData(form), q = String(fd.get("q") || "").trim(), cid = String(fd.get("cid") || "");
+      if (!q || csBusy) return;
+      csBusy = true;
+      var input = form.querySelector('input[name="q"]');
+      if (input) input.value = "";
+      var wait = csThinking(), mine = null;
+      if (csLog) {
+        document.querySelectorAll(".cs-follow").forEach(function (f) { f.remove(); });
+        mine = document.createElement("div"); mine.className = "cs-me"; mine.textContent = q;
+        var anchor = document.getElementById("latest");
+        csLog.insertBefore(mine, anchor); csLog.insertBefore(wait, anchor);
+        wait.scrollIntoView({ block: "end", behavior: "smooth" });
+      } else {
+        var home = document.querySelector(".cs-home");
+        if (home) home.appendChild(wait);
       }
-      var t = document.createElement("div"); t.textContent = text; d.appendChild(t);
-      if (cardsHtml) { var c = document.createElement("div"); c.className = "cards"; c.innerHTML = cardsHtml; d.appendChild(c); }
-      log.appendChild(d); log.scrollTop = log.scrollHeight; return d;
-    }
-    function ask(text) {
-      text = (text || "").trim();
-      if (!text || busy) return;
-      busy = true;
-      document.getElementById("sugg").style.display = "none";
-      say("user", text);
-      history.push({ role: "user", text: text });
-      var wait = document.createElement("div"); wait.className = "say bot typing"; wait.textContent = "Looking through the board…";
-      log.appendChild(wait); log.scrollTop = log.scrollHeight;
-      post(chat.getAttribute("data-api"), { history: history.slice(-16) }).then(function (j) {
-        wait.remove();
-        say("assistant", j.reply, j.cards_html);
-        history.push({ role: "assistant", text: j.reply });
+      post("/api/assistant/send", { q: q, cid: cid }).then(function (j) {
+        if (!csLog || String(j.cid) !== (csLog.getAttribute("data-cid") || "")) { location.assign(j.url + "#latest"); return; }
+        wait.remove(); if (mine) mine.remove();
+        var tmp = document.createElement("div"); tmp.innerHTML = j.html;
+        var first = tmp.firstElementChild, last = null;
+        while (tmp.firstChild) { last = tmp.firstChild; csLog.insertBefore(last, document.getElementById("latest")); }
+        var side = document.querySelector(".cs-ctx");
+        if (side && j.ctx) {
+          var open = csCtx ? csCtx.hasAttribute("open") : true;
+          side.outerHTML = j.ctx;
+          csCtx = document.querySelector(".cs-ctxd");
+          if (csCtx && !open) csCtx.removeAttribute("open");
+        }
+        if (last && last.scrollIntoView) last.scrollIntoView({ block: "start", behavior: "smooth" });
+        else if (first && first.scrollIntoView) first.scrollIntoView({ block: "start" });
       }).catch(function (err) {
-        wait.remove(); say("assistant", err.message); history.pop();
-      }).finally(function () { busy = false; q.focus(); });
-    }
-    form.addEventListener("submit", function (e) { e.preventDefault(); var t = q.value; q.value = ""; autogrow(q); ask(t); });
-    chat.querySelectorAll("[data-ask]").forEach(function (b) { b.addEventListener("click", function () { ask(b.getAttribute("data-ask")); }); });
+        wait.className = "cs-err"; wait.textContent = err.message;
+        if (input && !input.value) input.value = q;
+      }).finally(function () { csBusy = false; if (input) input.focus(); });
+    };
+    document.addEventListener("submit", function (e) {
+      var f = e.target;
+      if (f.hasAttribute && f.hasAttribute("data-cs-ask")) { e.preventDefault(); csSend(f); return; }
+      if (f.classList && f.classList.contains("cs-fb")) {             // thumbs: save in place
+        e.preventDefault();
+        var btn = f.querySelector("button"), acts = f.parentElement;
+        fetch(f.action, { method: "POST", body: new FormData(f), credentials: "same-origin" }).then(function (r) {
+          if (!r.ok) return;
+          var was = btn.classList.contains("on");
+          acts.querySelectorAll(".cs-fb button").forEach(function (b) { b.classList.remove("on"); b.setAttribute("aria-pressed", "false"); });
+          if (!was) { btn.classList.add("on"); btn.setAttribute("aria-pressed", "true"); }
+        }).catch(function () {});
+      }
+    });
+    document.addEventListener("click", function (e) {                  // copy: straight to the clipboard when it's allowed
+      var s = e.target.closest ? e.target.closest(".cs-copy > summary") : null;
+      if (!s || !navigator.clipboard) return;
+      var t = s.parentElement.querySelector("textarea");
+      e.preventDefault();
+      navigator.clipboard.writeText(t.value).then(function () { s.classList.add("on"); s.setAttribute("title", "Copied"); },
+        function () { s.parentElement.setAttribute("open", ""); });
+    });
   }
 
   // ---------- messages ----------
