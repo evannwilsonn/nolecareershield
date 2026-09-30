@@ -56,10 +56,11 @@ stand, what was decided and why, and what's next.
 - **The listing scanner** (one effect, merging this chat's teardown with the `scan-hero` branch from another chat,
   commit 583902f): a fake listing on the student home ("Know it's real before you apply"). As you scroll, a gold
   line runs down it; each phrase the detector caught lights up (amber for warnings, red for critical) with a
-  number and its flag slides in below. Then the card breaks apart line by line (the old teardown's effect: each
-  sentence becomes its own paper strip that drifts and tilts), the stamp slams onto the pieces, and the verdict
-  shows "Scam risk 100/100 from 8 signals". Scrolling back reverses it. The break is `--b` on `.scan-card`
-  (0 whole, 1 in pieces); it rests at 1, so no-JS and reduced-motion visitors see it already broken.
+  number, and its label appears beside that line. Then the card breaks apart line by line (the old teardown's
+  effect): each sentence becomes its own paper strip, barely tilted, carrying its own labels, and the stamp lands
+  flat on the pieces before the verdict shows "Scam risk 100/100 from 8 signals". Scrolling back reverses it. On
+  phones the labels sit under each strip and open as it breaks. There is no separate flag list. The break is `--b`
+  on `.scan-card` (0 whole, 1 in pieces); it rests at 1, so no-JS and reduced-motion visitors see it finished.
   - Nothing is hand-written: `ui.scan_findings()` runs `ui.SCAN_SAMPLE` through `msgcheck.check_listing`, the same
     code as the public scam check's listing tab, and the flag titles, stamp, verdict and advice are its output.
     `test_scanner_flags_come_from_the_detector` fails if any rule in `ui.SCAN_EXPECTED` stops firing on its phrase.

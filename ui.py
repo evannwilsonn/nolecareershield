@@ -533,7 +533,7 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
    With no JS or reduced motion it is shown finished: every flag underlined and listed, stamp down. */
 .scan{background:var(--stage);color:var(--on-stage);position:relative}
 .scan-stick{max-width:1160px;margin:0 auto;padding:84px 20px;display:grid;grid-template-columns:.92fr 1.08fr;gap:56px;align-items:center}
-.scan h2.display{font-size:clamp(42px,4.8vw,70px);color:var(--on-stage);margin:12px 0 18px}
+.scan h2.display{font-size:clamp(42px,4.4vw,62px);color:var(--on-stage);margin:12px 0 18px}
 .scan h2.display em{color:var(--gold)}
 .scan .eyebrow{color:var(--gold);letter-spacing:.14em}
 .scan-copy p{color:var(--on-stage-2);font-size:17px;max-width:40ch;margin:0}
@@ -541,10 +541,14 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .scan-cta a{color:var(--gold);font-weight:600;text-decoration:none}.scan-cta a:hover{text-decoration:underline}
 .scan-board,.scan-side{position:relative;min-width:0}
 /* --b is how far the card has broken apart (0 whole, 1 in pieces). It rests at 1, so without JS it is shown broken. */
-.scan-card{--b:1;position:relative;color:#1c1917;border-radius:14px;padding:12px 12px 14px;background:rgba(250,248,243,clamp(0,1 - var(--b) * 2.5,1));box-shadow:0 24px 60px rgba(0,0,0,clamp(0,.45 - var(--b),.45)),0 0 0 1px rgba(255,255,255,clamp(0,.06 - var(--b) * .15,.06))}
-.scan-card .sl{position:relative;padding:5px 10px;border-radius:9px;background:rgba(250,248,243,clamp(0,var(--b) * 6,1));box-shadow:0 12px 26px rgba(0,0,0,calc(.42 * var(--b))),0 0 0 1px rgba(28,25,23,calc(.07 * var(--b)));transform:translateX(calc(var(--x) * var(--b))) rotate(calc(var(--r) * var(--b)))}
-.scan-card{--gap:10px}.scan-card .body .sl,.scan-card .sl.apply{margin-top:calc(var(--b) * var(--gap))}
-.scan-card .sl.head{padding-top:8px;padding-bottom:8px}
+.scan-card{--b:1;--gap:10px;position:relative;isolation:isolate;color:#1c1917;padding:12px 12px 14px}
+/* the whole sheet of paper, fading out as it breaks; on wide screens it stops short of the label column */
+.scan-card::before{content:"";position:absolute;top:0;bottom:0;left:0;right:var(--lab,0px);z-index:-1;border-radius:14px;background:rgba(250,248,243,clamp(0,1 - var(--b) * 2.5,1));
+  box-shadow:0 24px 60px rgba(0,0,0,clamp(0,.45 - var(--b),.45)),0 0 0 1px rgba(255,255,255,clamp(0,.06 - var(--b) * .15,.06))}
+/* each piece: goes solid first, then drifts and tilts a little */
+.scan-card .sl{position:relative;transform:translateX(calc(var(--x) * var(--b))) rotate(calc(var(--r) * var(--b)))}
+.scan-card .body .sl,.scan-card .sl.apply{margin-top:calc(var(--b) * var(--gap))}
+.scan-card .tx,.scan-card .paper{border-radius:9px}
 .scan-card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .scan-card h3{font-size:16.5px;font-weight:700;line-height:1.3}
 .scan-card .tag{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b655c;border:1px solid #d9d3c7;border-radius:999px;padding:3px 9px;flex:none}
@@ -557,28 +561,46 @@ html.over header:not(.solid) .nav a.ghost:hover,html.over header:not(.solid) .na
 .scan-card sup.crit{--sev:#b91c1c}.scan-card sup.warn{--sev:#b7791f}
 .scan-line{position:absolute;left:0;right:0;top:0;height:2px;background:var(--gold);box-shadow:0 0 14px 2px color-mix(in srgb,var(--gold) 70%,transparent);opacity:0;pointer-events:none;z-index:2}
 .scan-line::before{content:"";position:absolute;left:0;right:0;bottom:2px;height:min(56px,var(--ly,56px));background:linear-gradient(0deg,color-mix(in srgb,var(--gold) 22%,transparent),transparent)}
-.scan-stamp{position:absolute;right:16px;bottom:14px;z-index:3;border:2.5px solid #b91c1c;color:#b91c1c;background:rgba(250,248,243,.92);border-radius:8px;padding:5px 12px;font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:21px;letter-spacing:.01em;transform:rotate(-5deg)}
-.scan-flags{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:6px}
-.scan-flags li{display:flex;align-items:center;gap:10px;background:var(--stage-2);border:1px solid rgba(243,238,230,.1);border-radius:9px;padding:8px 12px;font-size:13.5px;font-weight:600;transition:opacity .4s var(--ease),transform .4s var(--ease)}
-.scan-flags .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;flex:none;background:#e3b964;color:#2a1f0a}
-.scan-flags li.crit .n{background:#f0a193;color:#3a1410}
-.scan-flags .sev{margin-left:auto;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--on-stage-2);font-weight:700}
-.scan-flags li.crit .sev{color:#f0a193}
+.scan-stamp{position:absolute;right:16px;bottom:14px;z-index:3;border:2.5px solid #b91c1c;color:#b91c1c;background:rgba(250,248,243,.92);border-radius:8px;padding:5px 12px;font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:21px;letter-spacing:.01em;transform:rotate(-3deg)}
+/* flag labels ride on the piece they belong to: beside the card on wide screens, under the line on phones */
+.scan-card .flag{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;font-weight:600;line-height:1.3;transition:opacity .35s var(--ease),transform .35s var(--ease)}
+.scan-card .flag b{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:800;flex:none;background:#e3b964;color:#2a1f0a;margin-top:-1px}
+.scan-card .flag.crit b{background:#f0a193;color:#3a1410}
+.scan-card .flag i{display:block;font-style:normal;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;margin-top:1px}
+@media(min-width:901px){
+  .scan-stick{max-width:1240px;grid-template-columns:minmax(0,.75fr) minmax(0,1.25fr)}
+  .scan-card{--lab:238px;padding-right:0}
+  .scan-card .sl{display:grid;grid-template-columns:minmax(0,1fr) 202px;column-gap:48px;align-items:center}
+  .scan-card .tx{padding:5px 10px;background:rgba(250,248,243,clamp(0,var(--b) * 6,1));box-shadow:0 12px 26px rgba(0,0,0,calc(.42 * var(--b))),0 0 0 1px rgba(28,25,23,calc(.07 * var(--b)))}
+  .scan-card .sl.head .tx{padding:8px 10px}
+  .scan-line{right:238px}.scan-stamp{right:254px}.scan-verdict{margin-right:238px}
+  .scan-card .fl{grid-column:2;position:relative;display:grid;gap:6px}
+  .scan-card .fl::before{content:"";position:absolute;left:-40px;top:50%;width:28px;height:1px;background:rgba(243,238,230,.3)}
+  .scan-card .flag{color:var(--on-stage)}.scan-card .flag.crit{color:#f7c2b7}
+  .scan-card .flag i{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .scan.armed .scan-card .flag:not(.on){opacity:0;transform:translateX(10px)}
+  .scan-card .fl::before{transition:opacity .35s}.scan.armed .scan-card .fl:not(:has(.flag.on))::before{opacity:0}
+}
+@media(max-width:900px){
+  .scan-card .sl{padding:3px 9px;border-radius:9px;background:rgba(250,248,243,clamp(0,var(--b) * 6,1));box-shadow:0 12px 26px rgba(0,0,0,calc(.42 * var(--b))),0 0 0 1px rgba(28,25,23,calc(.07 * var(--b)))}
+  .scan-card .fl{display:grid;gap:4px;overflow:hidden;max-height:calc(var(--b) * 120px);opacity:var(--b);margin-top:calc(var(--b) * 6px)}
+  .scan-card .flag{color:#1c1917;font-size:12px}.scan-card .flag i{color:#6b655c}.scan-card .flag.crit i{color:#b91c1c}
+  .scan-stamp{top:6px;bottom:auto;right:8px;font-size:17px}
+}
 .scan-verdict{margin-top:12px;border-radius:12px;padding:13px 16px;background:#3a1a17;border:1px solid rgba(240,161,147,.35);color:#fbe4df;transition:opacity .5s var(--ease),transform .5s var(--ease)}
 .scan-verdict b{font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:20px;letter-spacing:.01em;color:#f0a193;margin-right:8px}
 .scan-verdict span{font-size:13px}
 .scan-verdict p{font-size:13px;margin:4px 0 0;color:#e8cfc9}.scan-verdict a{color:#fff;font-weight:600}
-@media(max-width:900px){.scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}.scan-side{min-width:0}.scan-card{padding:10px 8px 12px;--gap:6px}.scan-card .body{font-size:13.5px;line-height:1.55}.scan-card .sl{padding:3px 9px}.scan-card .sl.head{padding-top:6px;padding-bottom:6px}.scan-flags{gap:4px;margin-top:10px}.scan-flags li{padding:6px 10px;font-size:12.5px}.scan-flags .n{width:18px;height:18px}.scan-stamp{font-size:18px;bottom:12px}}
+@media(max-width:900px){.scan-stick{grid-template-columns:1fr;gap:34px;padding:60px 20px}.scan-side{min-width:0}.scan-card{padding:10px 8px 12px;--gap:6px}.scan-card .body{font-size:13.5px;line-height:1.55}.scan-card .sl.head{padding-top:6px;padding-bottom:6px}.scan-stamp{font-size:18px;bottom:12px}}
 /* armed by fx.js: things appear as the scan line reaches them */
 .scan.armed .scan-line{opacity:1}
 .scan.armed .scan-card mark:not(.on){box-shadow:inset 0 -2px 0 transparent;background-color:transparent}
 .scan.armed .scan-card mark.flash{background-color:color-mix(in srgb,var(--sev) 30%,transparent)}
 .scan .live-only,.scan.armed .static-only{display:none}.scan.armed .live-only{display:inline}
 .scan.armed .scan-card sup:not(.on){opacity:0}
-.scan.armed .scan-flags li:not(.on){opacity:0;transform:translateX(14px)}
 .scan.armed .scan-verdict:not(.on){opacity:0;transform:translateY(10px)}
-.scan.armed .scan-stamp{opacity:0;transform:rotate(-5deg) scale(1.6)}
-.scan.armed .scan-stamp.on{opacity:1;transform:rotate(-5deg) scale(1);transition:opacity .15s,transform .45s cubic-bezier(.2,1.6,.4,1)}
+.scan.armed .scan-stamp{opacity:0;transform:rotate(-3deg) scale(1.15)}
+.scan.armed .scan-stamp.on{opacity:1;transform:rotate(-3deg) scale(1);transition:opacity .25s,transform .35s var(--ease)}
 .scan.armed.done .scan-line{opacity:0;transition:opacity .6s}
 @media(min-width:901px){.scan.pinned{height:250vh}.scan.pinned .scan-stick{position:sticky;top:0;min-height:100vh;min-height:100svh}}
 /* phones: the copy scrolls away normally and only the card and its flags pin, just under the header */
@@ -947,30 +969,38 @@ def scan_block(cta_html: str) -> str:
     """Rendered finished (every flag underlined, listed and stamped), so it reads without JS or with reduced motion.
     static/fx.js arms it and replays the scan as you scroll."""
     import re
+    from bisect import bisect_right
     s, r = SCAN_SAMPLE, scan_findings()
-    # The card breaks line by line: one piece per sentence, plus the header and the apply line.
+    # The card breaks line by line: one piece per sentence, plus the header and the apply line. Each flag rides on the
+    # piece where its underline ends, so when the card comes apart every piece carries its own label.
     breaks = tuple(m.end() for m in re.finditer(r"[.!?](?=\s)", r["text"]) if m.end() < len(r["text"]))
     pieces = [x.strip() for x in _scan_text(r["text"], r["findings"], breaks).split("\x00")]
-    tilt = ("-1.1deg", ".9deg", "-.5deg", "1.2deg", "-.8deg", ".6deg", "-.4deg", ".7deg")
-    drift = ("-7px", "9px", "-4px", "6px", "-9px", "5px", "-3px", "7px")
-    sl = lambda i, cls, inner: f'<div class="sl{cls}" style="--r:{tilt[i % 8]};--x:{drift[i % 8]}">{inner}</div>'
-    body = "".join(sl(i + 1, "", x) for i, x in enumerate(pieces[:-1]))
-    apply = sl(len(pieces), " apply", "Apply: " + pieces[-1])
+    on_piece: dict[int, list] = {}
+    for i, f in enumerate(r["findings"], 1):
+        if f["spans"]:
+            on_piece.setdefault(bisect_right(breaks, f["spans"][-1][1] - 1), []).append((i, f))
+    crit = lambda f: f["severity"] == "critical"
+    def labels(k: int) -> str:
+        fl = on_piece.get(k)
+        return ('<span class="fl">' + "".join(
+            f'<span class="flag{" crit" if crit(f) else ""}" data-f="{i}"><b>{i}</b><span>{esc(f["title"])}'
+            f'<i>{"Critical" if crit(f) else "Warning"}</i></span></span>' for i, f in fl) + "</span>") if fl else ""
+    tilt = ("-.5deg", ".4deg", "-.25deg", ".5deg", "-.4deg", ".3deg", "-.2deg", ".35deg")
+    drift = ("-3px", "4px", "-2px", "3px", "-4px", "2px", "-2px", "3px")
+    sl = lambda i, cls, inner, k=None: (f'<div class="sl{cls}" style="--r:{tilt[i % 8]};--x:{drift[i % 8]}"><div class="tx">{inner}</div>'
+                                          f'{labels(k) if k is not None else ""}</div>')
+    body = "".join(sl(i + 1, "", x, i) for i, x in enumerate(pieces[:-1]))
+    apply = sl(len(pieces), " apply", "Apply: " + pieces[-1], len(pieces) - 1)
     head = sl(0, " head", f'<div class="top"><h3>{esc(s["title"])}</h3><span class="tag">Sample</span></div>'
                           f'<p class="co">{esc(s["company"])} · {esc(s["meta"])}</p>')
-    flags = "".join(
-        f'<li class="{"crit" if f["severity"] == "critical" else "warn"}" data-f="{i}"><span class="n">{i}</span>{esc(f["title"])}'
-        f'<span class="sev">{"Critical" if f["severity"] == "critical" else "Warning"}</span></li>'
-        for i, f in enumerate(r["findings"], 1))
     n = len(r["findings"])
     return f"""<section class="scan" data-scan aria-labelledby="scan-h"><div class="scan-stick">
 <div class="scan-copy"><div class="eyebrow">A fake listing, read by the real detector</div>
 <h2 class="display" id="scan-h">Know it's real<br><em>before you apply.</em></h2>
-<p>This listing is made up. <span class="live-only">Scroll and watch the scam check read it, then take it apart.</span><span class="static-only">Here's the scam check taking it apart.</span> Every underline is something the detector caught on its own, not something we wrote in.</p>
+<p>This listing is made up. <span class="live-only">Scroll and watch the scam check read it, then take it apart.</span><span class="static-only">Here's the scam check taking it apart.</span> Every flag is something the detector caught on its own, not something we wrote in.</p>
 <p class="scan-cta">{cta_html}</p></div>
 <div class="scan-side"><div class="scan-track"><div class="scan-board"><div class="scan-card"><div class="scan-line" aria-hidden="true"></div>
-{head}<div class="body">{body}</div>{apply}<div class="scan-stamp" aria-hidden="true">{esc(r["title"])}</div></div>
-<ol class="scan-flags" aria-label="What the detector found">{flags}</ol></div></div>
+{head}<div class="body">{body}</div>{apply}<div class="scan-stamp" aria-hidden="true">{esc(r["title"])}</div></div></div></div>
 <div class="scan-verdict"><b>{esc(r["title"])}</b><span>Scam risk {r["score"]}/100 from {n} signals.</span>
 <p>{esc(r["advice"])} {cta_html}</p></div></div>
 </div></section>"""

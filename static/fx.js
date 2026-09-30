@@ -1,6 +1,6 @@
 /* NoleCareerShield visual effects. Decoration only: every page works and reads the same without it.
- *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing, lights each flag, then
- *      breaks the card apart line by line before the verdict lands.
+ *   0. Listing scanner: section[data-scan] runs a gold line down a sample listing and lights each flag beside
+ *      its line, then the card breaks apart line by line (each piece keeps its labels) and the verdict lands.
  *   1. Scroll-scrubbed footage: section[data-cine] pins while you scroll and plays a camera move frame by
  *      frame on a canvas (Apple-style image sequence). Sets --p (0 to 1) and data-cap for the captions.
  *   2. Cursor parallax: [data-pan] layers drift a few pixels against the pointer (fine pointers only).
@@ -122,7 +122,7 @@
     var marks = [].slice.call(card.querySelectorAll("mark")), sups = [].slice.call(card.querySelectorAll("sup"));
     var items = {}, h = 1, done = false, mode = "", played = false, broke = 0;
     var side = sec.querySelector(".scan-side") || board, extra = 0;
-    [].slice.call(sec.querySelectorAll(".scan-flags li")).forEach(function (li) { items[li.getAttribute("data-f")] = li; });
+    [].slice.call(sec.querySelectorAll(".scan-card .flag")).forEach(function (el) { items[el.getAttribute("data-f")] = el; });
     var verdict = sec.querySelector(".scan-verdict"), stamp = sec.querySelector(".scan-stamp");
     var self = { sec: sec, tick: tick, measure: measure };
 
