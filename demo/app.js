@@ -1014,7 +1014,7 @@ function csFollow(out, hasJobs) {
 // ---------- markdown-lite (twin of assistant.md; site paths become demo routes) ----------
 function csRoute(path) {
   const p = path.replace(/&amp;/g, "&"); let m;
-  if ((m = p.match(/^\/job\/(\d+)\/(?:tailor|standout)$/))) return `resume?tab=tailor&amp;job=${m[1]}`;
+  if ((m = p.match(/^\/job\/(\d+)\/(tailor|standout)$/))) return `${m[2]}?job=${m[1]}`;
   if ((m = p.match(/^\/job\/(\d+)$/))) return `job?id=${m[1]}`;
   const map = {"/jobs": "jobs", "/jobs?tab=saved": "jobs?tab=saved", "/resume": "resume", "/check": "scam", "/check?kind=message": "scam?kind=message", "/applications": "applications",
     "/profile/setup": "setup?step=1", "/profile": "profile", "/messages": "messages", "/feed": "feed", "/assistant/memory": "assistant?view=memory", "/report": "report", "/assistant": "assistant"};
@@ -2099,7 +2099,7 @@ function tailorPanel(job, p) {
     return '<section class="card" style="margin:16px 0" id="tailor"><h3 class="sec" style="margin-top:0">Tailor your resume to this job</h3><p class="muted small">Add your resume and you\'ll get a summary written for this role, the bullets to lead with, and the keywords to use where they\'re true.</p><a class="b sm" href="#" data-go="resume" style="margin-top:10px">Add my resume</a></section>';
   const t = N.tailor(p.resume_text, job.title, job.description, p), pills = (xs, cls) => xs.map(x => `<span class="pill ${cls}">${esc(x)}</span>`).join("") || '<span class="faint small">None</span>';
   const lead = t.lead_bullets.map(b => `<li><b>${esc(b.text)}</b><span class="ev">${esc(b.why)}</span></li>`).join("");
-  return `<section class="card" style="margin:16px 0" id="tailor"><div class="row between"><h3 class="sec" style="margin:0">Tailor your resume to this job</h3><a class="b sm sec" href="#" data-go="resume?tab=tailor&amp;job=${job.id}">Open in resume studio</a></div>
+  return `<section class="card" style="margin:16px 0" id="tailor"><div class="row between"><h3 class="sec" style="margin:0">Tailor your resume to this job</h3><a class="b sm sec" href="#" data-go="tailor?job=${job.id}">Open tailored resume</a></div>
 <div class="split" style="margin-top:12px"><div><b class="small">Skills your resume shows</b><div class="kw" style="margin-top:6px">${pills(t.skills_present, "ok")}</div></div><div><b class="small">Skills they want that your resume doesn't show</b><div class="kw" style="margin-top:6px">${pills(t.skills_missing, "warn")}</div></div></div>
 <div style="margin-top:12px"><b class="small">Words from the posting to use where true</b><div class="kw" style="margin-top:6px">${pills(t.keywords_missing, "")}</div></div>
 <h4 class="small" style="margin:16px 0 6px">Suggested summary for this job</h4><div class="sugg-item" style="margin-top:0"><div class="now" style="margin-top:0">${esc(t.summary)}</div><button class="b sm sec" type="button" data-do="copy" data-text="${esc(t.summary)}" style="margin-top:8px">Copy</button></div>
