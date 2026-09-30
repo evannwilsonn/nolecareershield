@@ -289,6 +289,14 @@ def rank_jobs(jobs: list[dict], profile: dict | None = None, query: str = "", li
                     "matched": matched, "missing": missing[:6]})
 
     out.sort(key=lambda r: (r["score"], r["job"].get("created_at", "")), reverse=True)
+    if profile and (profile.get("skills") or profile.get("resume_text") or profile.get("items")):
+        # The whole-profile fit score (fit.py) is what students see; with no search words it also sets the order.
+        import fit as _fit
+        for r in out:
+            f = _fit.fit_score(r["job"], profile)
+            r["fit"] = {"score": f["score"], "label": f["label"]}
+        if not q:
+            out.sort(key=lambda r: (r["fit"]["score"], r["score"], r["job"].get("created_at", "")), reverse=True)
     return out[:limit]
 
 

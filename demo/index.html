@@ -341,6 +341,55 @@ textarea.resume{min-height:420px;font-family:var(--serif);font-size:14.5px;line-
 table.t{width:100%;border-collapse:collapse;font-size:14px}
 table.t th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
 table.t td{padding:10px;border-bottom:1px solid var(--whisper);vertical-align:top}
+/* ---------- profile (LinkedIn header + sections, Handshake side column) ---------- */
+.phero{padding:0;overflow:hidden}
+.pbanner{height:118px;background:linear-gradient(120deg,var(--accent-tint),var(--gold-tint));position:relative}
+.pbanner::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(135deg,transparent 0 22px,var(--whisper) 22px 23px);opacity:.7}
+.pinfo{padding:0 24px 20px}
+.avatar.xl{width:108px;height:108px;font-size:38px;margin-top:-54px;border:4px solid var(--surface);position:relative;z-index:1}
+.phero h1{font-family:var(--serif);font-weight:500;font-size:28px;line-height:1.2;margin-top:10px;letter-spacing:-.01em}
+.phero .pron{font-family:var(--sans);font-size:14px;color:var(--faint);font-weight:400}
+.phero .headline{font-size:15.5px;color:var(--ink-2);margin-top:3px;max-width:62ch}
+.phero .school,.phero .where{font-size:14px;color:var(--muted);margin-top:3px}
+.plinks a{color:var(--accent-ink);font-weight:600;text-decoration:none;margin-right:12px}
+.opento{margin-top:14px;background:var(--sunk);border-radius:10px;padding:10px 14px;font-size:14px;display:inline-block;box-shadow:0 0 0 1px var(--whisper) inset}
+.opento b{font-weight:600;margin-right:6px}
+.opento a{color:var(--accent-ink);font-weight:600;margin-left:6px}
+.pgrid{display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px;margin-top:14px;align-items:start}
+.pside{display:flex;flex-direction:column;gap:12px;position:sticky;top:76px}
+.pmain{display:flex;flex-direction:column;gap:12px;min-width:0}
+.pside .card+.card,.pmain .card+.card{margin-top:0}
+.phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.phead h2{font-family:var(--serif);font-weight:500;font-size:19px;letter-spacing:-.005em}
+.iconbtn{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;color:var(--muted);text-decoration:none;flex:none}
+.iconbtn:hover{background:var(--whisper);color:var(--ink)}
+.entry{display:grid;grid-template-columns:48px minmax(0,1fr);gap:14px;padding:14px 0;border-top:1px solid var(--whisper)}
+.entries>.entry:first-child{border-top:none;padding-top:4px}
+.entry.slim{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:14.5px}
+.logo{width:48px;height:48px;border-radius:10px;background:var(--sand);display:grid;place-items:center;font-family:var(--serif);font-size:17px;color:var(--ink-2)}
+.logo.edu{background:var(--accent-tint);color:var(--accent-ink)}
+.entry .t{font-weight:600;font-size:15px;line-height:1.35}.entry .s{font-size:14px;color:var(--ink-2)}.entry .m{font-size:13px;color:var(--faint)}
+.entry .desc,.pcard .desc{white-space:pre-wrap;font-size:14px;margin-top:8px;line-height:1.6;overflow-wrap:anywhere}
+.entry .small{display:inline-block;margin-top:6px;color:var(--accent-ink);font-weight:600;text-decoration:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.lf+.lf{margin-top:12px}
+.lfl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.pdata{margin-top:10px}
+@media(max-width:960px){.pgrid{grid-template-columns:1fr}.pside{position:static}.pinfo{padding:0 16px 16px}}
+/* ---------- job fit ---------- */
+.fit{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center}
+.fit .ring{width:96px;height:96px}.fit .ring b{width:76px;height:76px;font-size:28px}
+.fitlabel{font-family:var(--serif);font-weight:500;font-size:22px}
+.fitparts{margin-top:14px}
+.fitparts .cat{grid-template-columns:170px 1fr 44px}
+.fitparts .why2{grid-column:1/-1;font-size:12.5px;color:var(--muted);margin:-4px 0 4px}
+.checklist{list-style:none;padding:0;margin:0;display:grid;gap:6px}
+.checklist li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;font-size:14px;align-items:start}
+.checklist .st{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700}
+.checklist .met .st{background:var(--ok-tint);color:var(--ok)}.checklist .missing .st{background:var(--warn-tint);color:var(--warn)}
+.checklist .unknown .st{background:var(--sand);color:var(--muted)}
+.checklist .ev{display:block;font-size:12.5px;color:var(--muted)}
+@media(max-width:620px){.fit{grid-template-columns:1fr}.fitparts .cat{grid-template-columns:120px 1fr 40px}}
 /* ---------- footer ---------- */
 footer{color:var(--faint);font-size:12px;border-top:1px solid var(--whisper);margin-top:48px;padding:22px;text-align:center;line-height:1.7}
 footer .tm{display:block;margin-top:6px;font-size:11.5px}
@@ -849,6 +898,11 @@ do does using use used also just really kind type sort some part time full remot
       out.push({job: j, score: Math.max(0, Math.min(100, Math.round(score))), reasons: reasons.slice(0, 3), matched, missing: missing.slice(0, 6)});
     }
     out.sort((a, b) => b.score - a.score || (b.job.id - a.job.id));
+    const p = profile || {};
+    if ((p.skills || []).length || p.resume_text || (p.items || []).length) {
+      for (const r of out) { const f = fitScore(r.job, p); r.fit = {score: f.score, label: f.label}; }
+      if (!q) out.sort((a, b) => b.fit.score - a.fit.score || b.score - a.score || (b.job.id - a.job.id));
+    }
     return out.slice(0, limit);
   }
   function keywordGap(resume, jobText) {
@@ -1076,8 +1130,365 @@ opportunity apply applicants including knowledge excellent good great including 
     return {reply: `No listing matches “${q.slice(0, 80)}” exactly right now. These are the closest, based on your profile. Try fewer words, or a different job type.`, jobs: rankJobs(jobs, profile, q, 4, false)};
   }
 
+  // ---------- resume -> profile sections (port of resume_parse.py) ----------
+  const pyRound = x => { const r = Math.round(x); return (x - Math.floor(x) === 0.5 && r % 2) ? r - 1 : r; };
+  const pyTitle = s => (s || "").toLowerCase().replace(/(?<![a-z])[a-z]/g, c => c.toUpperCase());
+  const pyStr = x => x === null || x === undefined ? "None" : String(x);
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const uniq = a => [...new Set(a)];
+  function pyStrip(s, chars) { let a = 0, b = s.length; while (a < b && chars.includes(s[a])) a++; while (b > a && chars.includes(s[b - 1])) b--; return s.slice(a, b); }
+  const rpClean = s => pyStrip(s || "", " \t-–—|,·•").replace(/\s+/g, " ").trim();
+  const RP_MONTH = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|winter|expected)";
+  const RP_DATE = `(?:${RP_MONTH}\\.?\\s+)?(?:19|20)\\d{2}|present|current|now`;
+  const DATE_RANGE = new RegExp(`(?<start>${RP_DATE})(?:\\s*(?:-|–|—|to)\\s*(?<end>${RP_DATE}))?`, "gi");
+  const SCHOOL = /\b(?:university|college|institute|school|academy)\b/i;
+  const DEGREE_SRC = "\\b(?:b\\.?s\\.?|b\\.?a\\.?|bachelor(?:'s)?(?: of (?:science|arts))?|m\\.?s\\.?|m\\.?a\\.?|master(?:'s)?(?: of (?:science|arts))?|mba|ph\\.?d|" +
+    "associate(?:'s)?(?: of (?:arts|science))?|a\\.?a\\.?|a\\.?s\\.?|high school diploma)\\b";
+  const DEGREE = new RegExp(DEGREE_SRC, "i"), DEGREE_AT_START = new RegExp("^(?:" + DEGREE_SRC + ")", "i");
+  const GPA_SRC = "\\bgpa\\b[:\\s]*(\\d\\.\\d{1,2})|(\\d\\.\\d{1,2})\\s*(?:/\\s*4\\.0+\\s*)?gpa\\b";
+  const RP_GPA = new RegExp(GPA_SRC, "i"), RP_GPA_ALL = new RegExp(GPA_SRC, "gi");
+  const RP_SPLIT = /\s+(?:\||–|—|-|·|•|@|at)\s+|,\s+/i;
+  const LIST_SPLIT = /[,;|•](?![^()]*\))/;
+  const ROLE = /\b(?:intern|analyst|assistant|manager|associate|server|waiter|developer|engineer|generalist|specialist|coordinator|representative|tutor|chair|president|member|volunteer|attendant|advisor|cashier|lead|director|officer|treasurer|secretary|captain|founder|consultant|researcher|clerk|parker|host|barista|teller|designer|writer|editor)\b/i;
+  const LABELLED = /^(skills|technical skills|tools|languages|certifications?|licenses?|coursework|relevant coursework|interests)\s*:\s*(.+)$/i;
+  const SECTION_KIND = {experience: "experience", leadership: "organization", projects: "project", education: "education", awards: "certification", coursework: "course"};
+  const NOW_RX = /^(?:present|current|now)$/i;
+
+  function rpDates(line) {
+    let m = null;
+    for (const x of line.matchAll(DATE_RANGE)) m = x;
+    if (!m) return ["", "", false, line];
+    const start = rpClean(m.groups.start); let end = rpClean(m.groups.end || "");
+    if (!end && NOW_RX.test(start)) return ["", "", false, line];
+    const current = NOW_RX.test(end);
+    if (current) end = "";
+    let rest = (line.slice(0, m.index) + " " + line.slice(m.index + m[0].length)).trim();
+    rest = rest.replace(/(?:^|\s)(?:expected|exp\.?)\s*$/i, "");
+    return [/^\d/.test(start) ? start : pyTitle(start), end && !/^\d/.test(end) ? pyTitle(end) : end, current, rest];
+  }
+  const splitHeader = t => t.split(RP_SPLIT).map(rpClean).filter(Boolean);
+  const rpItem = (kind, kw) => Object.assign({kind, title: "", org: "", location: "", start: "", end: "", current: false, description: "", url: "", extra: {}}, kw || {});
+  function rpBlocks(lines) {
+    const blocks = []; let head = [], body = [];
+    for (const ln of lines) {
+      if (!ln.trim()) continue;
+      if (BULLET.test(ln)) { body.push(ln.replace(BULLET, "").trim()); continue; }
+      if (body.length || head.length >= 2) { blocks.push([head, body]); head = []; body = []; }
+      head.push(ln.trim());
+    }
+    if (head.length || body.length) blocks.push([head, body]);
+    return blocks;
+  }
+  function rpEntry(kind, head, body) {
+    let start = "", end = "", current = false; const texts = [];
+    for (const h of head) { const [s, e, c, rest] = rpDates(h); if (s && !start) { start = s; end = e; current = c; } texts.push(rest); }
+    const parts = texts.flatMap(splitHeader);
+    if (!parts.length && !body.length) return null;
+    let ttl = parts[0] || "", org = parts[1] || "", location = "";
+    for (const p of parts.slice(2)) if (/\b[A-Z][a-z]+,?\s+(?:[A-Z]{2}|Florida)\b/.test(p) || /^(?:remote|hybrid|on-?site)$/i.test(p)) { location = p; break; }
+    if (location === "" && parts.length > 3 && /^[A-Z]{2}$/.test(parts[parts.length - 1])) location = `${parts[parts.length - 2]}, ${parts[parts.length - 1]}`;
+    if (org && ROLE.test(org) && !ROLE.test(ttl)) [ttl, org] = [org, ttl];
+    return rpItem(kind, {title: ttl.slice(0, 120), org: org.slice(0, 120), location: location.slice(0, 80), start, end, current,
+                         description: body.map(b => "• " + b).join("\n").slice(0, 1500)});
+  }
+  function rpEducation(lines) {
+    const out = []; let cur = null;
+    for (const ln of lines) {
+      let s = ln.trim(); if (!s) continue;
+      s = s.replace(BULLET, "").trim();
+      const m = LABELLED.exec(s);
+      if (m && m[1].toLowerCase().includes("course")) {
+        if (cur !== null) cur.extra.coursework = m[2].split(/[,;]/).map(rpClean).filter(Boolean).slice(0, 20);
+        continue;
+      }
+      const [start, end, current, rest] = rpDates(s);
+      const g = RP_GPA.exec(s), parts = splitHeader(rest);
+      if (parts.length && SCHOOL.test(parts[0]) && !DEGREE_AT_START.test(parts[0])) {
+        cur = rpItem("education"); cur.org = parts[0].slice(0, 120);
+        const others = parts.slice(1).filter(p => !RP_GPA.test(p));
+        const deg = others.find(p => DEGREE.test(p)) || "";
+        if (deg) cur.title = deg.slice(0, 120);
+        const loc = others.filter(p => p !== deg && !DEGREE.test(p) && !/minor|expected|coursework/i.test(p));
+        if (loc.length && /^[A-Z][A-Za-z .]+$/.test(loc[0]) && loc[0].length < 40) cur.location = loc.slice(0, 2).join(", ").slice(0, 80);
+        out.push(cur);
+      } else if (cur === null) { cur = rpItem("education"); out.push(cur); }
+      if (DEGREE.test(rest) && !cur.title) {
+        const dp = splitHeader(rest).find(p => DEGREE.test(p));
+        cur.title = rpClean((dp !== undefined ? dp : rest).replace(RP_GPA_ALL, "")).slice(0, 120);
+      }
+      if (cur.title) {
+        const mm = /\b(?:in|of)\s+([A-Z][A-Za-z&\/ ]{2,60}?)(?=,|\.|;|$| (?:minor|Minor|MINOR)| with| (?:expected|Expected)| (?:gpa|GPA))/.exec(cur.title)
+          || /^(?:b\.?s\.?|b\.?a\.?|m\.?s\.?|m\.?a\.?|a\.?a\.?|a\.?s\.?|mba)\s+([A-Z][A-Za-z&\/ ]{2,60}?)(?=,|\.|;|$)/i.exec(cur.title);
+        if (mm && !cur.extra.major && !/^(?:science|arts)$/i.test(mm[1].trim())) cur.extra.major = rpClean(mm[1]);
+      }
+      const mn = /\b(?:minor|Minor|MINOR)(?:\s+in)?\s+([A-Z][A-Za-z&\/ ]{2,40}?)(?=[.,;]|$)/.exec(s);
+      if (mn) cur.extra.minor = rpClean(mn[1]);
+      if (g) cur.extra.gpa = g[1] || g[2];
+      if (start && !(cur.start || cur.end)) {
+        if (end || current) { cur.start = start; cur.end = end; cur.current = current; }
+        else cur.end = start;
+      }
+    }
+    return out.filter(e => e.org || e.title);
+  }
+  function toProfile(text) {
+    const p = parse(text), lines = p.lines;
+    const heads = Object.entries(p.sections).map(([k, i]) => [i, k]).sort((a, b) => a[0] - b[0]);
+    const items = [], skills = [], languages = [], certs = [];
+    const vals = s => s.split(LIST_SPLIT).map(rpClean).filter(Boolean);
+    heads.forEach(([startLine, key], n) => {
+      const body = lines.slice(startLine + 1, n + 1 < heads.length ? heads[n + 1][0] : lines.length);
+      const headingText = lines[startLine].trim().toLowerCase();
+      if (key === "education") { items.push(...rpEducation(body)); return; }
+      if (key === "skills" || key === "summary" || (key === "awards" && !headingText.includes("cert") && !headingText.includes("licen"))) {
+        for (const ln of body) {
+          const s = ln.trim().replace(BULLET, "").trim(), m = LABELLED.exec(s);
+          if (m) {
+            const label = m[1].toLowerCase(), v = vals(m[2]);
+            if (label.startsWith("language")) languages.push(...v);
+            else if (label.startsWith("cert") || label.startsWith("licen")) certs.push(...v);
+            else if (label.includes("course")) items.push(...v.map(x => rpItem("course", {title: x.slice(0, 120)})));
+            else skills.push(...v);
+          } else if (key === "skills" && s) skills.push(...vals(s));
+        }
+        return;
+      }
+      if (key === "awards") {
+        for (const ln of body) {
+          const s = ln.trim().replace(BULLET, "").trim(); if (!s) continue;
+          const [st, en, , rest] = rpDates(s), parts = splitHeader(rest);
+          if (parts.length) items.push(rpItem("certification", {title: parts[0].slice(0, 120), org: (parts[1] || "").slice(0, 120), start: st || en}));
+        }
+        return;
+      }
+      if (key === "coursework") { for (const ln of body) items.push(...vals(ln.replace(BULLET, "")).map(x => rpItem("course", {title: x.slice(0, 120)}))); return; }
+      let kind = SECTION_KIND[key]; if (!kind) return;
+      if (kind === "project" && headingText.startsWith("research")) kind = "experience";
+      for (const [head, bullets] of rpBlocks(body)) { const e = rpEntry(kind, head, bullets); if (e && (e.title || e.description)) items.push(e); }
+    });
+    items.push(...certs.map(c => rpItem("certification", {title: c.slice(0, 120)})));
+    items.push(...languages.filter(l => !/python|java|sql|html|css|javascript|c\+\+|\br\b/i.test(l)).map(l => rpItem("language", {title: l.slice(0, 60)})));
+    const canon = [];
+    for (const s of skills.concat(extractSkills(text))) { const c = s.length <= 40 ? s : ""; if (c && !canon.some(x => x.toLowerCase() === c.toLowerCase())) canon.push(c); }
+    return {skills: canon.slice(0, 40), items: items.slice(0, 40)};
+  }
+
+  // ---------- whole-profile fit score (port of fit.py) ----------
+  const FIT_WEIGHTS = {skills: 35, experience: 25, education: 15, certifications: 10, keywords: 10, preferences: 10};
+  const FIT_NAMES = {skills: "Skills", experience: "Experience & projects", education: "Education", certifications: "Certifications", keywords: "Keywords", preferences: "Preferences"};
+  const PREFERRED = /\b(?:preferred|nice to have|a plus|bonus|ideally|desired|is helpful|are helpful|not required|familiarity with)\b/i;
+  const SENT_RX = /[^.\n;!?]+[.\n;!?]?/g;
+  const MAJORS = {
+    "accounting": ["accounting"], "finance": ["finance"], "economics": ["economics"], "business": ["business administration", "business"],
+    "marketing": ["marketing"], "management": ["management"], "statistics": ["statistics"], "mathematics": ["mathematics", "math"],
+    "computer science": ["computer science", "cs"], "information technology": ["information technology", "information systems", "mis"],
+    "data science": ["data science", "analytics"], "engineering": ["engineering"], "biology": ["biology", "biological"],
+    "chemistry": ["chemistry"], "psychology": ["psychology"], "communications": ["communications", "communication", "media"],
+    "journalism": ["journalism"], "public health": ["public health"], "nursing": ["nursing"], "education": ["education"],
+    "english": ["english"], "political science": ["political science"], "criminology": ["criminology", "criminal justice"],
+    "hospitality": ["hospitality"], "supply chain": ["supply chain"], "real estate": ["real estate"], "graphic design": ["graphic design", "design"],
+    "sociology": ["sociology"], "physics": ["physics"], "neuroscience": ["neuroscience"], "nutrition": ["nutrition"],
+    "exercise science": ["exercise science", "kinesiology"], "social work": ["social work"],
+  };
+  const MAJOR_CONTEXT = /\b(?:major(?:s|ing)?|degree|studying|pursuing|coursework|background|students?|enrolled in)\b/i;
+  const NOT_MAJOR = {business: "business(?!\\s+(?:analytics|intelligence|development|hours|days|casual|needs|partners?|owners?))",
+                     analytics: "analytics", communication: "communication(?!\\s+skills)", design: "design"};
+  const MAJOR_RX = {}; for (const ws of Object.values(MAJORS)) for (const w of ws) MAJOR_RX[w] = new RegExp("\\b" + (NOT_MAJOR[w] || reEsc(w)) + "\\b");
+  const TERM_STOP = new Set([...GENERIC, ...`build building built help helping clean cleaning present presenting weekly daily monthly hours hour week
+paid pay team teams short friday readout support supporting assist assisting including include includes must should will
+would also please apply summer fall spring semester during per plus related field fields minimum required requirements preferred
+role roles position candidate strong comfort comfortable ability experience experienced familiarity knowledge work working job jobs
+student students intern interns internship years year ideal responsibilities responsible opportunity join grow growing learn
+learning great good using used flag find make ensure provide biweekly juniors seniors sophomores freshmen freshman junior senior
+majoring major majors minor degree hold holds certified certification certifications preferably`.split(/\s+/), ...Object.values(MAJORS).flat()]);
+  const STANDING = /\b(freshm[ae]n|sophomores?|juniors?|seniors?|graduate students?|recent grad(?:uate)?s?|new grads?)\b/gi;
+  const GRAD_YEAR = /\b(?:graduating|graduation|class of|grad date)\D{0,24}((?:19|20)\d{2})\b/gi;
+  const GPA_REQ = /\b(?:gpa|grade point average)\D{0,30}?(\d\.\d{1,2})|(\d\.\d{1,2})\s*(?:\+|or (?:higher|above|better))?\s*(?:cumulative\s+|minimum\s+)?gpa\b/i;
+  const CERTS = {
+    "CPR/First aid": "\\bcpr\\b|\\bfirst aid\\b|\\bbls\\b", "ServSafe / food handler": "\\bservsafe\\b|\\bfood handler",
+    "CompTIA": "\\bcomptia\\b|\\ba\\+ certif|\\bsecurity\\+|\\bnetwork\\+", "Microsoft Office Specialist": "\\bmicrosoft office specialist\\b|\\bmos certif|\\bexcel (?:expert|certif)",
+    "Google Analytics certification": "\\bgoogle analytics (?:certif|individual)|\\bga4 certif", "CNA": "\\bcna\\b|\\bcertified nursing assistant\\b",
+    "EMT": "\\bemt\\b", "Lifeguard": "\\blifeguard", "Driver's license": "\\bdriver'?s licen[cs]e\\b|\\bvalid (?:driver'?s )?licen[cs]e\\b",
+    "AWS certification": "\\baws certif|\\baws certified\\b", "SHRM": "\\bshrm\\b", "Notary": "\\bnotary\\b",
+    "Bloomberg (BMC)": "\\bbloomberg market concepts\\b|\\bbmc\\b", "Tableau certification": "\\btableau (?:desktop )?(?:specialist|certif)",
+    "HIPAA training": "\\bhipaa (?:training|certif)", "Salesforce certification": "\\bsalesforce (?:certif|administrator|trailhead)",
+  };
+  const CERTS_RX = {}; for (const [k, v] of Object.entries(CERTS)) CERTS_RX[k] = new RegExp(v, "i");
+  const TITLE_STOP = new Set("intern internship part time part-time full full-time assistant associate student entry level junior senior the and of for".split(" "));
+  const FIT_LABELS = [[80, "Strong fit"], [65, "Good fit"], [45, "Partial fit"], [0, "Stretch"]];
+  const KIND_TEXT = {"internship": [" intern", "internship", "co-op"], "part-time": ["part-time", "part time"], "full-time": ["full-time", "full time"], "on-campus": ["on campus", "on-campus"]};
+  const wordRx = t => new RegExp("(?<![a-z0-9])" + reEsc(t) + "(?![a-z0-9])");
+
+  function fitTerms(text, n) {
+    const counts = new Map();
+    for (const w of ((text || "").toLowerCase().match(/[a-z][a-z\-]{3,}/g) || [])) if (!TERM_STOP.has(w) && !w.endsWith("ly")) counts.set(w, (counts.get(w) || 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]).slice(0, n || 10);
+  }
+  function jobRequirements(ttl, text) {
+    const full = `${ttl}\n${text}`, sents = [...full.matchAll(SENT_RX)].map(m => m[0]);
+    let required = [], preferred = [];
+    for (const sent of sents) for (const s of extractSkills(sent)) (PREFERRED.test(sent) ? preferred : required).push(s);
+    required = uniq(required); preferred = uniq(preferred).filter(s => !required.includes(s));
+    const majors = [];
+    for (const sent of sents) if (MAJOR_CONTEXT.test(sent)) {
+      const low = " " + sent.toLowerCase() + " ";
+      for (const [canon, words] of Object.entries(MAJORS)) if (words.some(w => MAJOR_RX[w].test(low)) && !majors.includes(canon)) majors.push(canon);
+    }
+    const g = GPA_REQ.exec(full), gpa = g ? parseFloat(g[1] || g[2]) : null;
+    let standing = uniq([...full.matchAll(STANDING)].map(m => m[1].toLowerCase().replace(/s+$/, "").replaceAll("freshmen", "freshman").replaceAll("freshme", "freshman"))).sort();
+    standing = uniq(standing.map(s => /^(?:graduate|recent|new)/.test(s) ? "graduate" : s)).sort();
+    const gy = uniq([...full.matchAll(GRAD_YEAR)].map(m => parseInt(m[1], 10))).sort((a, b) => a - b);
+    const certs = Object.keys(CERTS).filter(k => CERTS_RX[k].test(full));
+    required = required.filter(s => !certs.includes(s)); preferred = preferred.filter(s => !certs.includes(s));
+    const low = " " + full.toLowerCase() + " ";
+    const kind = JOB_KINDS.find(k => KIND_TEXT[k].some(w => low.includes(w))) || "";
+    const sk = new Set(required.concat(preferred).map(s => s.toLowerCase()));
+    return {required, preferred, majors, gpa, standing, grad_years: gy, certs, kind, keywords: fitTerms(full).filter(k => !sk.has(k))};
+  }
+  function fitGradYear(p) {
+    const m = /((?:19|20)\d{2})/.exec(p.grad_term || ""); if (m) return parseInt(m[1], 10);
+    for (const it of p.items || []) if (it.kind === "education" && !it.current && it.end) { const y = /((?:19|20)\d{2})/.exec(it.end); if (y) return parseInt(y[1], 10); }
+    return null;
+  }
+  function fitStanding(gy, today) {
+    if (!gy) return "";
+    const left = gy - today[0] - (today[1] >= 7 ? 0.5 : 0);
+    return left < 0 ? "graduate" : left <= 1 ? "senior" : left <= 2 ? "junior" : left <= 3 ? "sophomore" : "freshman";
+  }
+  function fitSources(p) {
+    const out = [];
+    if ((p.skills || []).length) out.push(["Your skills list", "skills", p.skills.join(", ")]);
+    for (const it of p.items || []) {
+      const k = it.kind, ex = it.extra || {};
+      const text = [it.title, it.org, it.description, (ex.coursework || []).join(" "), ex.major || "", ex.skills || ""].map(pyStr).join(" ");
+      const name = it.title || it.org || k;
+      const labels = {experience: name + (it.org && it.title ? ` at ${it.org}` : ""), project: `${name} (project)`, education: it.org || name,
+                      certification: `${name} (certification)`, organization: it.org || name, course: `${name} (course)`, language: name};
+      out.push([Object.prototype.hasOwnProperty.call(labels, k) ? labels[k] : name, k, text]);
+    }
+    if (p.resume_text) out.push(["Your resume", "resume", p.resume_text]);
+    const about = [p.headline, p.bio].filter(Boolean).join(" ");
+    if (about) out.push(["Your headline and about", "about", about]);
+    return out;
+  }
+  function fitGpa(p) {
+    for (const it of p.items || []) { const g = (it.extra || {}).gpa; if (g) { const f = Number(g); if (String(g).trim() && !isNaN(f)) return f; } }
+    const m = RP_GPA.exec(p.resume_text || "");
+    return m ? parseFloat(m[1] || m[2]) : null;
+  }
+  function jobCategories(job) {
+    const out = job.category ? [job.category] : [], low = " " + ((job.title || "") + " " + (job.description || "")).toLowerCase() + " ";
+    for (const [cat, words] of Object.entries(CATEGORY_WORDS)) if (!out.includes(cat) && words.filter(w => low.includes(w)).length >= 2) out.push(cat);
+    return out;
+  }
+  function fitScore(job, profile, today) {
+    profile = profile || {};
+    if (!today) { const d = new Date(); today = [d.getUTCFullYear(), d.getUTCMonth() + 1]; }
+    const req = jobRequirements(job.title || "", job.description || ""), srcs = fitSources(profile), items = profile.items || [];
+    const where = new Map();
+    for (const [label, , text] of srcs) for (const s of extractSkills(text)) { if (!where.has(s)) where.set(s, []); where.get(s).push(label); }
+    for (const s of profile.skills || []) { const cur = where.get(s) || []; if (!cur.includes("Your skills list")) { where.set(s, cur); cur.unshift("Your skills list"); } }
+    const allText = srcs.map(x => x[2]).join(" ").toLowerCase();
+    const parts = {}, checklist = [];
+
+    const wanted = req.required.map(s => [s, 1.0, true]).concat(req.preferred.map(s => [s, 0.5, false]));
+    const matched = [], missing = [];
+    if (wanted.length) {
+      const got = sum(wanted.filter(w => where.has(w[0])).map(w => w[1])), total = sum(wanted.map(w => w[1]));
+      for (const [s, , isReq] of wanted) {
+        if (where.has(s)) matched.push({skill: s, required: isReq, where: uniq(where.get(s)).slice(0, 3)});
+        else missing.push({skill: s, required: isReq});
+        checklist.push({text: s + (isReq ? "" : " (preferred)"), status: where.has(s) ? "met" : "missing", evidence: uniq(where.get(s) || []).slice(0, 2).join(", ")});
+      }
+      parts.skills = {score: pyRound(100 * got / total), detail: `${matched.length} of ${wanted.length} skills the job lists` +
+        (req.required.length && req.preferred.length ? ` (${matched.filter(m => m.required).length} of ${req.required.length} required)` : "")};
+    }
+
+    const terms = req.required.concat(req.preferred).map(s => s.toLowerCase()).concat(req.keywords.slice(0, 8));
+    let entries = srcs.filter(x => ["experience", "project", "organization"].includes(x[1])).map(x => [x[0], x[2].toLowerCase()]);
+    if (!entries.length && profile.resume_text) entries = parse(profile.resume_text).bullets.map(b => ["Your resume", b.text.toLowerCase()]);
+    const relevant = [];
+    if (entries.length && terms.length) {
+      const covered = new Set();
+      for (const [label, text] of entries) {
+        const has = new Set(extractSkills(text).map(x => x.toLowerCase()));
+        const hits = terms.filter(t => has.has(t) || wordRx(t).test(text));
+        if (hits.length) { relevant.push({where: label, hits: hits.slice(0, 4)}); hits.forEach(h => covered.add(h)); }
+      }
+      const coverage = Math.min(1, covered.size / Math.max(3, pyRound(terms.length * 0.6)));
+      const twords = ((job.title || "").toLowerCase().match(/[a-z]+/g) || []).filter(w => !TITLE_STOP.has(w) && w.length > 2);
+      const role = twords.length ? entries.some(([, text]) => twords.some(w => text.slice(0, 120).includes(w))) : false;
+      parts.experience = {score: pyRound(100 * (0.75 * coverage + 0.25 * (role ? 1 : 0))),
+        detail: (relevant.length ? `${relevant.length} of your entries relate to this job` : "None of your entries mention what this job asks for yet") + (role ? "; you've held a similar role" : "")};
+    } else if (terms.length) parts.experience = {score: 0, detail: "Add your experience and projects so they can count"};
+
+    const eduScores = [], eduNotes = [];
+    const myMajors = [profile.major || "", profile.minor || ""]
+      .concat(items.filter(it => it.kind === "education").map(it => { const ex = it.extra || {}; return (ex.major || "") + " " + (ex.minor || "") + " " + (it.title || "") + " " + (ex.coursework || []).join(" "); }))
+      .concat(items.filter(it => it.kind === "course").map(it => it.title || "")).join(" ").toLowerCase();
+    if (req.majors.length) {
+      const hit = req.majors.filter(m => MAJORS[m].some(w => MAJOR_RX[w].test(myMajors)));
+      if (hit.length) { eduScores.push(1.0); eduNotes.push("Your major or coursework covers " + hit.slice(0, 2).join(" and ")); }
+      else if (/related field|similar field|or related|quantitative field/i.test(job.description || "") && categoriesForMajor(profile.major || "").some(c => jobCategories(job).includes(c))) {
+        eduScores.push(0.6); eduNotes.push("Your major is related to the fields they list");
+      } else { eduScores.push(myMajors.trim() ? 0.15 : 0.4); eduNotes.push("They list " + req.majors.slice(0, 3).join(", ") + " majors"); }
+      checklist.push({text: "Major: " + req.majors.slice(0, 4).join(" or "), status: hit.length ? "met" : (!myMajors.trim() ? "unknown" : "missing"), evidence: profile.major || ""});
+    } else if (profile.major) {
+      const fits = categoriesForMajor(profile.major).some(c => jobCategories(job).includes(c));
+      eduScores.push(fits ? 0.9 : 0.65); eduNotes.push(fits ? "Your major lines up with this kind of work" : "No specific major required");
+    }
+    if (req.gpa) {
+      const have = fitGpa(profile); let status;
+      if (have === null) { eduScores.push(0.6); status = "unknown"; eduNotes.push(`Asks for a ${req.gpa.toFixed(1)}+ GPA; add yours if you meet it`); }
+      else { const ok = have >= req.gpa - 1e-9; eduScores.push(ok ? 1.0 : 0.1); status = ok ? "met" : "missing"; eduNotes.push(`GPA ${have.toFixed(2)} vs ${req.gpa.toFixed(1)} required`); }
+      checklist.push({text: `GPA ${req.gpa.toFixed(1)} or higher`, status, evidence: have === null ? "" : have.toFixed(2)});
+    }
+    const gy = fitGradYear(profile), standing = fitStanding(gy, today);
+    if (req.standing.length || req.grad_years.length) {
+      let ok = null;
+      if (req.grad_years.length && gy) ok = req.grad_years.includes(gy);
+      else if (req.standing.length && standing) ok = req.standing.includes(standing);
+      const want = req.standing.map(s => s.endsWith("e") ? pyTitle(s) + " students" : pyTitle(s) + "s").concat(req.grad_years.map(String)).join(", ");
+      eduScores.push(ok === null ? 0.6 : (ok ? 1.0 : 0.2));
+      checklist.push({text: "Class standing: " + want, status: ok === null ? "unknown" : (ok ? "met" : "missing"), evidence: (standing ? pyTitle(standing) : "") + (gy ? `, graduating ${gy}` : "")});
+      eduNotes.push(`They want ${want}` + (standing ? `; you're a ${standing}` : ""));
+    }
+    if (eduScores.length) parts.education = {score: pyRound(100 * sum(eduScores) / eduScores.length), detail: eduNotes.slice(0, 2).join("; ")};
+
+    if (req.certs.length) {
+      const have = req.certs.filter(c => CERTS_RX[c].test(allText));
+      parts.certifications = {score: pyRound(100 * have.length / req.certs.length), detail: `${have.length} of ${req.certs.length}: ` + req.certs.slice(0, 3).join(", ")};
+      for (const c of req.certs) checklist.push({text: c, status: have.includes(c) ? "met" : "missing", evidence: ""});
+    }
+
+    let kwHit = [];
+    if (req.keywords.length) {
+      kwHit = req.keywords.filter(k => wordRx(k).test(allText));
+      parts.keywords = {score: pyRound(100 * kwHit.length / req.keywords.length), detail: `${kwHit.length} of ${req.keywords.length} key terms from the posting`};
+    }
+
+    const prefs = [], pnotes = [], wt = job.work_type || "";
+    if ((profile.work_types || []).length) { const ok = profile.work_types.includes(wt); prefs.push(ok ? 1.0 : 0.3); pnotes.push(wt.charAt(0).toUpperCase() + wt.slice(1) + (ok ? " matches what you want" : " isn't your first choice")); }
+    if (req.kind && (profile.job_kinds || []).length) { const ok = profile.job_kinds.includes(req.kind); prefs.push(ok ? 1.0 : 0.3); pnotes.push(req.kind.charAt(0).toUpperCase() + req.kind.slice(1) + (ok ? " is a type you want" : " isn't a type you picked")); }
+    const locs = (profile.pref_locations || []).filter(Boolean).map(l => l.toLowerCase());
+    if (locs.length && wt !== "remote" && job.location) {
+      const jl = job.location.toLowerCase();
+      const ok = locs.some(l => jl.includes(l.split(",")[0].trim()) || l.includes(jl.split(",")[0].trim()));
+      prefs.push(ok ? 1.0 : 0.4); pnotes.push((ok ? "In " : "Outside ") + "your preferred locations");
+    }
+    if (prefs.length) parts.preferences = {score: pyRound(100 * sum(prefs) / prefs.length), detail: pnotes.slice(0, 2).join("; ")};
+
+    const keys = Object.keys(FIT_WEIGHTS).filter(k => parts[k]);
+    const totalW = sum(keys.map(k => FIT_WEIGHTS[k]));
+    const score = totalW ? pyRound(sum(keys.map(k => FIT_WEIGHTS[k] * parts[k].score)) / totalW) : 0;
+    const completeness = [(profile.skills || []).length, profile.resume_text, items.some(i => i.kind === "experience" || i.kind === "project"), profile.major].filter(Boolean).length;
+    return {score, label: FIT_LABELS.find(([cut]) => score >= cut)[1], confidence: ["low", "low", "medium", "medium", "high"][completeness],
+            parts: keys.map(k => Object.assign({key: k, name: FIT_NAMES[k], weight: FIT_WEIGHTS[k]}, parts[k])), matched, missing, relevant: relevant.slice(0, 5),
+            keywords_hit: kwHit, keywords_missing: req.keywords.filter(k => !kwHit.includes(k)).slice(0, 8), checklist: checklist.slice(0, 16), requirements: req};
+  }
+
   const NCS = {normalize, runTextRules, scorePosting, check, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
-    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
+    categoriesForMajor, review, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;
   if (typeof module !== "undefined" && module.exports) module.exports = NCS;
@@ -1146,7 +1557,7 @@ const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [],
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, timers: []};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: []};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -1161,6 +1572,19 @@ function reset() {
   S.students[d.id] = {display_name: "Dev P.", major: "Computer Science", degree: "Bachelor's", grad_term: "Spring 2028", headline: "",
     skills: ["Python", "JavaScript", "React", "Git"], interests: ["Software & IT"], work_types: ["remote"], job_kinds: ["internship"],
     links: {}, resume_text: "", visible: false, share_resume: false, allow_messages: true, setup_step: 3};
+  // Profile sections: Jordan's come from the resume (the same import students get), plus a project, a certification and a language.
+  const jp = S.students[j.id];
+  Object.assign(jp, {location: "Tallahassee, FL", looking_roles: ["Data Analyst", "Research Assistant"], pref_locations: ["Tallahassee, FL", "Remote"], items: []});
+  importResume(jp);
+  addItem(jp, {kind: "project", title: "Campus food access dashboard", org: "STA 4102", location: "", start: "Jan 2026", end: "Apr 2026", current: false,
+    description: "• Cleaned 3 semesters of survey data (2,400 responses) in R\n• Built a Tableau dashboard the Student Government food pantry uses to plan orders", url: "github.com/jordanrivera/food-access", extra: {skills: "R, Tableau, SQL"}});
+  addItem(jp, {kind: "certification", title: "Google Data Analytics Certificate", org: "Coursera", location: "", start: "Dec 2025", end: "", current: false, description: "", url: "", extra: {}});
+  addItem(jp, {kind: "language", title: "Spanish", org: "", location: "", start: "", end: "", current: false, description: "", url: "", extra: {proficiency: "Professional working"}});
+  const mp = S.students[m.id]; mp.items = [];
+  addItem(mp, {kind: "experience", title: "Social Media Intern", org: "Tally Coffee Co.", location: "Tallahassee, FL", start: "May 2025", end: "Aug 2025", current: false, description: "• Planned and posted 5 Instagram posts a week\n• Grew followers from 1,200 to 2,050", url: "", extra: {type: "Internship"}});
+  addItem(mp, {kind: "education", title: "B.S. Marketing", org: "Florida State University", location: "Tallahassee, FL", start: "Aug 2022", end: "Dec 2026", current: false, description: "", url: "", extra: {major: "Marketing"}});
+  const dp = S.students[d.id]; dp.items = [];
+  addItem(dp, {kind: "project", title: "Seminole bus tracker", org: "Hackathon", location: "", start: "Feb 2026", end: "", current: false, description: "• React app showing live campus bus arrivals", url: "", extra: {skills: "React, JavaScript"}});
   const emp = (email, p) => { const u = user(email, "employer"); S.employers[u.id] = Object.assign({status: "approved", status_note: ""}, p); return u; };
   emp("pat@garnetanalytics.example", {company: "Garnet Analytics", website: "https://garnetanalytics.example", industry: "Technology", size: "11-50", location: "Tallahassee, FL",
     about: "We build campaign and survey dashboards for Florida nonprofits and city agencies.", contact_name: "Pat Lee", contact_title: "Campus Recruiter",
@@ -1256,7 +1680,7 @@ const flash = (kind, text, raw) => { S.flash = {kind, text, raw}; };
 // ---------------- job cards ----------------
 function jobCard(j, match) {
   const badge = j.scam_status === "clear" ? '<span class="badge verified">✓ Verified</span>' : '<span class="badge warning">⚠ Check carefully</span>';
-  const pill = match ? `<span class="pill accent">${match.score}% match</span>` : "";
+  const pill = match ? (match.fit ? `<span class="pill accent" title="${esc(match.fit.label)}">Fit ${match.fit.score}</span>` : `<span class="pill accent">${match.score}% match</span>`) : "";
   const why = match && match.reasons.length ? `<div class="why">${esc(match.reasons[0])}</div>` : "";
   return `<a class="job" href="#" data-go="job?id=${j.id}"><div class="job-top"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><div class="row" style="gap:6px">${pill}${badge}</div></div>
 <div class="job-meta"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>${why}</a>`;
@@ -1282,7 +1706,7 @@ function nav() {
   else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="jobs">Browse jobs</a><a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="login">Log in</a><a class="btn" href="#" data-go="post">Post a job</a>';
 }
 const APP_PAGES = {home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages",
-  resume: "resume", scam: "scam", profile: "profile", setup: "profile", talent: "talent", u: "", company: "", about: "", privacy: "", report: ""};
+  resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", u: "", company: "", about: "", privacy: "", report: ""};
 
 // ---------------- pages ----------------
 const P = {};
@@ -1313,7 +1737,7 @@ function studentHome() {
   const p = SP(me().id); if (!p || !p.setup_step) { go("setup?step=1"); return null; }
   const h = new Date().getHours(), hello = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
   const recs = N.rankJobs(approvedJobs(), p, "", 3), n = unread(me().id), [pct, missing] = completion(p);
-  const recHtml = recs.map(r => `<a class="job" href="#" data-go="job?id=${r.job.id}" style="margin:0 0 8px"><div class="job-top"><div><div class="job-title" style="font-size:16px">${esc(r.job.title)}</div><div class="job-co">${esc(r.job.company)}</div></div><span class="pill accent">${r.score}% match</span></div>${r.reasons.length ? `<div class="why">${esc(r.reasons[0])}</div>` : ""}</a>`).join("") || "<p>No listings yet.</p>";
+  const recHtml = recs.map(r => `<a class="job" href="#" data-go="job?id=${r.job.id}" style="margin:0 0 8px"><div class="job-top"><div><div class="job-title" style="font-size:16px">${esc(r.job.title)}</div><div class="job-co">${esc(r.job.company)}</div></div><span class="pill accent"${r.fit ? ` title="${esc(r.fit.label)}"` : ""}>${r.fit ? "Fit " + r.fit.score : r.score + "% match"}</span></div>${r.reasons.length ? `<div class="why">${esc(r.reasons[0])}</div>` : ""}</a>`).join("") || "<p>No listings yet.</p>";
   let resumeTile;
   if (p.resume_text) { const rv = N.review(p.resume_text);
     resumeTile = `<div class="tile w3"><h3>${icon("file")}Resume</h3><div class="score"><div class="ring" style="--p:${rv.score}"><b>${rv.score}</b></div><p>${esc(rv.grade)}. ${esc(rv.findings[0] ? rv.findings[0].message : "Looking good.")}</p></div><div class="foot"><a class="b sm sec" href="#" data-go="resume">Open resume studio</a></div></div>`; }
@@ -1344,7 +1768,9 @@ function employerHome() {
 }
 function completion(p) {
   const checks = [[!!p.display_name, "your name"], [!!p.major, "your major"], [!!p.grad_term, "your graduation term"], [(p.skills || []).length >= 3, "at least 3 skills"],
-    [(p.interests || []).length > 0, "the kinds of jobs you want"], [!!p.resume_text, "a resume"], [!!p.headline, "a headline"]];
+    [(p.interests || []).length > 0, "the kinds of jobs you want"], [!!p.resume_text, "a resume"], [!!p.headline, "a headline"],
+    [(p.items || []).some(i => i.kind === "experience"), "an experience entry"], [(p.items || []).some(i => i.kind === "education"), "your education"],
+    [(p.items || []).some(i => ["project", "certification", "organization"].includes(i.kind)), "a project, certification or organization"]];
   return [Math.round(100 * checks.filter(c => c[0]).length / checks.length), checks.filter(c => !c[0]).map(c => c[1])];
 }
 
@@ -1370,17 +1796,16 @@ P.job = () => {
   const ban = j.scam_status === "clear" ? banner("verified", "✓ This listing passed the scam check and was approved by a reviewer. Still verify the employer through their own website before sharing personal information.")
     : banner("warning", "⚠ This listing was approved but tripped some scam signals. Read the notes below and verify the employer independently before responding.");
   const fh = j.scam_status !== "clear" ? `<div style="margin:20px 0"><b style="font-size:14px">Signals to be aware of:</b>${j.findings.filter(f => f.severity !== "note").map(f => `<div class="finding ${esc(f.severity)}"><b>${esc(f.title)}</b><br>${esc(f.why)}</div>`).join("")}</div>` : "";
-  let extras = "", apply;
+  let extras = "", apply, after = "";
   if (isStudent()) {
-    const p = SP(me().id), btns = [`<a class="b sec" href="#" data-go="resume?tab=tailor&amp;job=${j.id}">${icon("file", 16)} Tailor my resume</a>`];
+    const p = SP(me().id), btns = [`<a class="b sec" href="#" data-do="to-tailor">${icon("file", 16)} Tailor my resume</a>`];
     if (j.employer_id && approvedEmp(j.employer_id)) { btns.unshift(`<a class="b ghost" href="#" data-go="newmsg?to=${j.employer_id}&amp;job=${j.id}">${icon("chat", 16)} Message the employer</a>`); btns.push(`<a class="b sec" href="#" data-go="company?id=${j.employer_id}">Company profile</a>`); }
-    const r = p && N.rankJobs([j], p, "", 1)[0];
-    const fit = r ? `<div class="card" style="margin:14px 0"><div class="row between"><b>How you fit</b><span class="pill accent">${r.score}% match</span></div>${r.reasons.length ? `<ul class="small muted" style="margin:8px 0 0 18px">${r.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>` : "";
-    extras = fit + `<div class="row" style="margin:14px 0">${btns.join("")}</div>`;
+    extras = fitPanel(j, p) + `<div class="row" style="margin:14px 0">${btns.join("")}</div>`;
+    after = tailorPanel(j, p);
     apply = `<a class="apply-btn" href="${esc(j.apply_url)}" target="_blank" rel="noopener noreferrer nofollow ugc">Apply →</a><p class="fine" style="text-align:left">Demo links go to example addresses.</p>`;
   } else apply = `<div class="card" style="background:var(--info-tint);color:var(--info);border:none"><b>Log in to apply.</b> Apply links are shown to signed-in FSU students only, which keeps scrapers and scammers away from them.<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="login?role=student&amp;next=job-${j.id}">Student log in</a><a class="b sm sec" href="#" data-go="signup?role=student&amp;next=job-${j.id}">Create student account</a></div></div>`;
   return `<a class="back" href="#" data-go="jobs">← All jobs</a>${ban}<h2 class="page" style="margin-top:8px">${esc(j.title)}</h2><p class="job-co" style="font-size:16px">${esc(j.company)}</p>
-<div class="job-meta" style="margin:14px 0"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>${fh}${extras}<div class="detail-desc">${esc(j.description)}</div>${apply}`;
+<div class="job-meta" style="margin:14px 0"><span class="chip">${esc(j.category)}</span><span class="chip">${esc(cap(j.work_type))}</span>${j.location ? `<span class="chip">${esc(j.location)}</span>` : ""}</div>${fh}${extras}<div class="detail-desc">${esc(j.description)}</div>${apply}${after}`;
 };
 P.post = () => {
   const v = S.draft || {}, val = n => esc(v[n] || "");
@@ -1489,7 +1914,7 @@ ${t.gaps.length ? `<h3 class="sec">Gaps, honestly</h3><ul class="reasons">${t.ga
 <details style="margin:-4px 0 14px"><summary class="small" style="cursor:pointer;color:var(--accent-ink);font-weight:600">Preview and edit the copy before saving</summary><textarea class="resume" name="body" maxlength="20000" style="margin-top:8px" aria-label="Tailored copy">${esc(N.versioned(p.resume_text, t.summary))}</textarea></details>
 <button class="b" type="submit">Save version</button></form>`;
     }
-    return head + tabs + result + `<form id="tailorForm" class="card" style="margin-top:16px"><div class="form-field"><label for="t-job">A job on the board</label><select id="t-job" name="job_id"><option value="">Choose a listing...</option>${ranked.map(r => `<option value="${r.job.id}"${r.job.id === sel ? " selected" : ""}>${esc(r.job.title)} · ${esc(r.job.company)} (${r.score}% match)</option>`).join("")}</select></div>
+    return head + tabs + result + `<form id="tailorForm" class="card" style="margin-top:16px"><div class="form-field"><label for="t-job">A job on the board</label><select id="t-job" name="job_id"><option value="">Choose a listing...</option>${ranked.map(r => `<option value="${r.job.id}"${r.job.id === sel ? " selected" : ""}>${esc(r.job.title)} · ${esc(r.job.company)} (${r.fit ? "fit " + r.fit.score : r.score + "% match"})</option>`).join("")}</select></div>
 <div class="or"><span>Or paste a job description</span></div><div class="form-field"><label for="t-title">Job title</label><input id="t-title" name="title" maxlength="200" placeholder="Marketing Intern"></div>
 <div class="form-field"><label for="t-desc">Job description</label><textarea id="t-desc" name="description" maxlength="8000" placeholder="Paste the posting"></textarea></div><button class="b" type="submit">Compare</button></form>${note}`;
   }
@@ -1499,7 +1924,7 @@ ${t.gaps.length ? `<h3 class="sec">Gaps, honestly</h3><ul class="reasons">${t.ga
 };
 function uploadCard(first, bare) {
   return `<${bare ? "div" : 'div class="card"'}><h3 class="sec" style="margin-top:0">${first ? "Add your resume" : "Replace your resume"}</h3><form id="resumeUpload">
-<div class="form-field"><label for="r-file">Upload a text file</label><p class="hint">The live site also reads PDF and Word (.docx), up to 2 MB, and keeps the text only.</p><input id="r-file" type="file" name="file" accept=".txt,.md,text/plain"></div>
+<div class="form-field"><label for="r-file">Upload your resume</label><p class="hint">PDF, Word (.docx) or text, up to 2 MB. It's read right here in your browser and only the text is kept.</p><input id="r-file" type="file" name="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"></div>
 <div class="form-field"><label for="r-paste">Or paste it</label><textarea id="r-paste" name="paste" maxlength="20000" placeholder="Paste your resume text"></textarea></div>
 <div class="row"><button class="submit-btn" type="submit">${first ? "Review my resume" : "Replace"}</button>${first ? '<button class="b sec" type="button" data-do="sample-resume">Use a sample resume</button>' : ""}</div></form></div>`;
 }
@@ -1611,12 +2036,15 @@ P.setup = () => {
 <form id="setup2" class="card"><div class="form-field"><label>Skills</label><p class="hint">Pick any that fit.</p>${checks("skills", N.POPULAR, p.skills)}</div>
 <div class="form-field"><label for="p-more">Other skills (optional)</label><p class="hint">Separate with commas, e.g. SPSS, Canva, Premiere Pro.</p><input id="p-more" name="more_skills" maxlength="400" value="${esc(extra.join(", "))}"></div>
 <div class="form-field"><label>Kinds of jobs you want</label>${checks("interests", N.CATEGORIES.slice(0, -1), p.interests)}</div>
+<div class="grid2"><div class="form-field"><label for="p-roles">Roles you're looking for (optional)</label><p class="hint">Separate with commas.</p><input id="p-roles" name="looking_roles" maxlength="300" value="${esc((p.looking_roles || []).join(", "))}" placeholder="Data Analyst, Financial Analyst"></div>
+<div class="form-field"><label for="p-locs">Preferred locations (optional)</label><p class="hint">Separate with semicolons.</p><input id="p-locs" name="pref_locations" maxlength="300" value="${esc((p.pref_locations || []).join("; "))}" placeholder="Tallahassee, FL; Tampa, FL"></div></div>
 <div class="grid2"><div class="form-field"><label>Work setting</label>${checks("work_types", N.WORK_TYPES, p.work_types, {remote: "Remote", hybrid: "Hybrid", "on-site": "On-site"})}</div><div class="form-field"><label>Type</label>${checks("job_kinds", N.JOB_KINDS, p.job_kinds, {internship: "Internship", "part-time": "Part-time", "full-time": "Full-time", "on-campus": "On campus"})}</div></div>
 <div class="row"><a class="b sec" href="#" data-go="setup?step=1">Back</a><button class="submit-btn" type="submit">Continue</button></div></form></div>`; }
     const links = p.links || {};
     return `<div style="max-width:680px">${err}${bar}${pageHead("Resume and privacy", "Add your resume to get reviews, tailoring and better matches. You decide who can see it.")}
 <form id="setup3" class="card">${p.resume_text ? `<p class="small" style="color:var(--ok)">✓ Resume on file (${esc(p.resume_name || "pasted")}). Paste a new one to replace it.</p>` : ""}
-<div class="form-field"><label for="p-paste">Paste your resume (optional)</label><p class="hint">The live site also takes PDF and Word uploads.</p><textarea id="p-paste" name="resume_paste" maxlength="20000" placeholder="Paste your resume here"></textarea><button class="b sm sec" type="button" data-do="fill-sample" style="margin-top:6px">Paste a sample resume</button></div>
+<div class="form-field"><label for="p-file">Upload your resume (optional)</label><p class="hint">PDF, Word (.docx) or text. We fill your experience, education and projects from it; you can edit everything.</p><input id="p-file" type="file" name="resume_file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"></div>
+<div class="form-field"><label for="p-paste">Or paste it</label><textarea id="p-paste" name="resume_paste" maxlength="20000" placeholder="Paste your resume here"></textarea><button class="b sm sec" type="button" data-do="fill-sample" style="margin-top:6px">Paste a sample resume</button></div>
 <div class="grid2"><div class="form-field"><label for="p-li">LinkedIn (optional)</label><input id="p-li" name="linkedin" maxlength="300" value="${esc(links.linkedin || "")}" placeholder="linkedin.com/in/you"></div><div class="form-field"><label for="p-web">GitHub or portfolio (optional)</label><input id="p-web" name="website" maxlength="300" value="${esc(links.website || "")}" placeholder="github.com/you"></div></div>
 <h3 class="sec" style="margin-top:6px">Privacy</h3>
 <label class="toggle"><input type="checkbox" name="visible" value="1"${p.visible ? " checked" : ""}><span><b>Let approved employers find me.</b> Your name, major, class year, headline and skills appear in the student directory. Only employers our reviewers approved can see it.</span></label>
@@ -1636,16 +2064,6 @@ P.setup = () => {
 <div class="form-field"><label for="e-fsu">How do you work with FSU students?</label><p class="hint">Internships, part-time roles, career fair, alumni, Tallahassee office. Your feed posts must be opportunities or advice for FSU students.</p><textarea id="e-fsu" name="fsu_connection" required maxlength="800" style="min-height:100px">${esc(p.fsu_connection)}</textarea></div>
 <div class="row"><a class="b sec" href="#" data-go="setup?step=1">Back</a><button class="submit-btn" type="submit">${["pending", "approved"].includes(p.status) ? "Save" : "Send for review"}</button></div></form></div>`;
 };
-function studentCard(p, showLinks, showResume) {
-  const name = p.display_name || "FSU student";
-  const sub = [p.degree, p.major ? p.major + (p.minor ? `, minor in ${p.minor}` : "") : "", p.grad_term ? "Graduating " + p.grad_term : ""].filter(Boolean).map(esc).join(" · ");
-  const links = showLinks ? [["linkedin", "LinkedIn"], ["website", "Website"]].filter(([k]) => (p.links || {})[k]).map(([k, l]) => `<a class="b sm ghost" href="${esc(p.links[k])}" target="_blank" rel="noopener noreferrer nofollow ugc">${l} ↗</a>`).join("") : "";
-  return `<div class="card"><div class="row" style="gap:16px;align-items:flex-start"><span class="avatar lg">${initials(name)}</span><div style="flex:1;min-width:0">
-<h2 style="font-family:var(--serif);font-weight:500;font-size:26px;line-height:1.2">${esc(name)}${p.pronouns ? ` <span class="faint small">(${esc(p.pronouns)})</span>` : ""}</h2><p class="muted">${sub || "FSU student"}</p>${p.headline ? `<p style="margin-top:8px">${esc(p.headline)}</p>` : ""}<div class="row" style="margin-top:12px">${links}</div></div></div>
-${p.bio ? `<p style="margin-top:14px;white-space:pre-wrap">${esc(p.bio)}</p>` : ""}<h3 class="sec" style="font-size:16px">Skills</h3><div class="skills">${(p.skills || []).map(s => `<span class="pill">${esc(s)}</span>`).join("") || '<span class="faint small">No skills added yet.</span>'}</div>
-${(p.interests || []).length ? `<h3 class="sec" style="font-size:16px">Interested in</h3><div class="row">${p.interests.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>` : ""}</div>
-${showResume && p.resume_text ? `<h3 class="sec">Resume</h3><div class="card"><div class="detail-desc" style="margin:0;font-family:var(--serif);font-size:14px">${esc(p.resume_text)}</div></div>` : ""}`;
-}
 function employerCard(p) {
   const pill = {approved: '<span class="pill ok">✓ Approved employer</span>', pending: '<span class="pill warn">Waiting for review</span>', rejected: '<span class="pill bad">Not approved</span>', draft: '<span class="pill">Profile not finished</span>'}[p.status] || "";
   return `<div class="card"><div class="row" style="gap:16px;align-items:flex-start"><span class="avatar lg emp">${initials(p.company)}</span><div style="flex:1;min-width:0">
@@ -1661,14 +2079,279 @@ P.profile = () => {
 <form id="deleteForm"><div class="form-field"><label for="d-pw">Your password</label><input id="d-pw" type="password" name="password" required maxlength="128" autocomplete="current-password"></div><button class="b danger" type="submit">Delete my account</button></form></details>`;
   if (isStudent()) {
     const p = SP(me().id); if (!p || !p.display_name) { go("setup?step=1"); return null; }
-    const [pct, missing] = completion(p);
-    const vis = [p.visible ? "Approved employers can find you" : "Hidden from the employer directory", p.share_resume ? "resume shared with them" : "resume private", p.allow_messages ? "messages on" : "messages from employers off"].join("; ");
-    return takeFlash() + pageHead("Your profile", "", "Profile") + `<div class="card" style="margin-bottom:12px"><div class="row between"><b>Profile ${pct}% complete</b><a class="b sm sec" href="#" data-go="setup?step=1">Edit profile</a></div><div class="meter" style="margin-top:10px"><i style="width:${pct}%"></i></div>${missing.length ? `<p class="small muted" style="margin-top:8px">Add ${esc(missing.slice(0, 3).join(", "))} for better matches.</p>` : ""}</div>` +
-      studentCard(p, true, false) + `<div class="card" style="margin-top:12px"><div class="row between"><div><b>Privacy</b><p class="small muted">${esc(vis)}.</p></div><a class="b sm sec" href="#" data-go="setup?step=3">Change</a></div></div>` + data;
+    const notice = takeFlash() + (S.profileNotice ? banner("info", S.profileNotice) : ""); S.profileNotice = "";
+    return profileHtml(p, {owner: true, showLinks: true, notice, completion: completion(p)}) + `<div class="pdata">${data}</div>`;
   }
   const p = EP(me().id); if (!p || !p.company) { go("setup?step=1"); return null; }
   return takeFlash() + (p.status === "pending" ? banner("info", "A reviewer checks every organization, usually within a business day. In the demo, open the reviewer view to approve it.") : "") + pageHead("Company profile", "", "Profile") + employerCard(p) + '<div class="row" style="margin-top:12px"><a class="b sec" href="#" data-go="setup?step=1">Edit profile</a></div>' + data;
 };
+// ---------------- profile sections (LinkedIn x Handshake), same as profile_page.py ----------------
+const ITEM_SECTIONS = [["experience", "Experience", "Add experience", "Jobs, internships, research and volunteer work."],
+  ["education", "Education", "Add education", "Your degree, major, GPA and coursework."],
+  ["project", "Projects", "Add project", "Class, club or personal projects. These count toward your job fit."],
+  ["certification", "Certifications", "Add certification", "Licenses and certifications, finished or in progress."],
+  ["organization", "Organizations", "Add organization", "Clubs, societies, teams and leadership roles."],
+  ["course", "Courses", "Add course", "Courses that show what you know."], ["language", "Languages", "Add language", "Languages you speak."]];
+const ITEM_KINDS = ITEM_SECTIONS.map(s => s[0]);
+const ITEM_HEAD = Object.fromEntries(ITEM_SECTIONS.map(s => [s[0], s[1]]));
+const EMPLOYMENT = ["Internship", "Part-time", "Full-time", "On-campus job", "Research", "Volunteer", "Freelance", "Seasonal"];
+const PROFICIENCY = ["Elementary", "Limited working", "Professional working", "Full professional", "Native or bilingual"];
+const KIND_LABEL = {internship: "Internships", "part-time": "Part-time", "full-time": "Full-time", "on-campus": "On-campus jobs"};
+const ITEM_DATE = /^(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+|(?:spring|summer|fall|winter)\s+)?(?:19|20)\d{2}$/i;
+const MAX_ITEMS = 60;
+const tcase = s => String(s || "").toLowerCase().replace(/(?<![a-z])[a-z]/g, c => c.toUpperCase());
+
+function cleanItem(f) {
+  const t = (v, limit, label, req, multi) => { v = String(v || "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "").trim(); if (!multi) v = v.replace(/\s+/g, " ");
+    if (v.length > limit) throw `${label} is too long (max ${limit} characters).`; if (req && !v) throw `${label} is required.`; return v; };
+  const date = (v, label) => { v = t(v, 20, label); if (v && !ITEM_DATE.test(v)) throw `${label}: use a month and year like May 2025, or just a year.`; return v; };
+  const link = v => { v = t(v, 300, "Link"); if (!v) return ""; if (!/^https?:\/\//i.test(v)) v = "https://" + v;
+    if (!/^https?:\/\/[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[\/?#][^\s<>"']*)?$/.test(v)) throw "That link doesn't look like a web address."; return v; };
+  const kind = f.kind; if (!ITEM_KINDS.includes(kind)) throw "Pick a section.";
+  const ex = f.extra || {};
+  const it = {kind, title: t(f.title, 120, "Title", kind !== "education"), org: t(f.org, 120, "Organization"), location: t(f.location, 80, "Location"),
+    start: date(f.start, "Start"), end: date(f.end, "End"), current: !!f.current, description: t(f.description, 2000, "Description", false, true), url: link(f.url), extra: {}};
+  if (kind === "education") {
+    if (!it.org) throw "School is required.";
+    const gpa = t(ex.gpa, 5, "GPA"); if (gpa && !/^[0-4](?:\.\d{1,2})?$/.test(gpa)) throw "GPA should look like 3.4 (on a 4.0 scale).";
+    const cw = (Array.isArray(ex.coursework) ? ex.coursework : String(ex.coursework || "").split(/[,;]/)).map(c => t(c, 80, "Course")).filter(Boolean).slice(0, 20);
+    const e = {major: t(ex.major, 80, "Major"), minor: t(ex.minor, 80, "Minor"), gpa, coursework: cw};
+    for (const k in e) if (e[k] && (!Array.isArray(e[k]) || e[k].length)) it.extra[k] = e[k];
+  } else if (kind === "experience") { if (EMPLOYMENT.includes(ex.type)) it.extra = {type: ex.type}; }
+  else if (kind === "project") { const sk = Array.isArray(ex.skills) ? ex.skills.join(", ") : String(ex.skills || ""); if (sk.trim()) it.extra = {skills: t(sk, 200, "Skills used")}; }
+  else if (kind === "language") { if (PROFICIENCY.includes(ex.proficiency)) it.extra = {proficiency: ex.proficiency}; }
+  if (it.current) it.end = "";
+  return it;
+}
+function addItem(p, it) {
+  p.items = p.items || [];
+  if (p.items.length >= MAX_ITEMS) throw `A profile can hold up to ${MAX_ITEMS} entries.`;
+  const x = Object.assign({id: ++S.itemN}, it); p.items.push(x); return x;
+}
+// Add what the resume shows that the profile doesn't have yet (same rules as profile_page.import_resume).
+function importResume(p) {
+  const parsed = N.toProfile(p.resume_text || ""), key = i => [i.kind, i.title.toLowerCase(), i.org.toLowerCase()].join("\u0001");
+  const have = new Set((p.items || []).map(key)); let added = 0;
+  for (const it of parsed.items) {
+    if (have.has(key(it))) continue;
+    let clean; try { clean = cleanItem(it); } catch (e) { try { clean = cleanItem(Object.assign({}, it, {start: "", end: ""})); } catch (e2) { continue; } }
+    try { addItem(p, clean); } catch (e) { break; }
+    have.add(key(it)); added++;
+  }
+  p.skills = p.skills || [];
+  for (const s of parsed.skills) if (!p.skills.some(x => x.toLowerCase() === s.toLowerCase()) && p.skills.length < 40) p.skills.push(s);
+  return added;
+}
+function itemDates(it) { const a = it.start || "", b = it.current ? "Present" : (it.end || ""); return a && b ? `${a} – ${b}` : (a || b); }
+const logoMark = (text, k) => `<span class="logo${k === "education" ? " edu" : ""}" aria-hidden="true">${initials(text || "?")}</span>`;
+function entryHtml(it, owner) {
+  const k = it.kind, ex = it.extra || {}, edit = owner && it.id ? `<a class="b sm ghost" href="#" data-go="item?id=${it.id}">Edit</a>` : "";
+  let head, sub, meta, more = "", lg;
+  if (k === "education") {
+    head = esc(it.org); sub = [it.title, ex.major && "Major: " + ex.major, ex.minor && "Minor: " + ex.minor].filter(Boolean).map(esc).join(" · ");
+    meta = [esc(itemDates(it)), ex.gpa && "GPA " + esc(ex.gpa)].filter(Boolean).join(" · ");
+    if ((ex.coursework || []).length) more = `<div class="chips">${ex.coursework.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div>`;
+    lg = logoMark(it.org, k);
+  } else if (k === "language" || k === "course") {
+    const note = k === "language" ? ex.proficiency : it.org;
+    return `<div class="entry slim"><div><b>${esc(it.title)}</b>${note ? ` <span class="faint">· ${esc(note)}</span>` : ""}</div>${edit}</div>`;
+  } else {
+    head = esc(it.title); sub = [it.org, ex.type].filter(Boolean).map(esc).join(" · "); meta = [itemDates(it), it.location].filter(Boolean).map(esc).join(" · ");
+    if (k === "project" && ex.skills) more = `<div class="chips">${ex.skills.split(",").map(s => s.trim()).filter(Boolean).map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>`;
+    lg = logoMark(it.org || it.title, k);
+  }
+  const desc = it.description ? `<div class="desc">${esc(it.description)}</div>` : "";
+  const link = it.url ? `<a class="small" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer nofollow ugc">${esc(it.url.replace(/^https?:\/\//, "").slice(0, 60))} ↗</a>` : "";
+  return `<div class="entry">${lg}<div class="body"><div class="row between" style="align-items:flex-start;flex-wrap:nowrap"><div style="min-width:0"><div class="t">${head}</div>${sub ? `<div class="s">${sub}</div>` : ""}${meta ? `<div class="m">${meta}</div>` : ""}</div>${edit}</div>${desc}${link}${more}</div></div>`;
+}
+function itemSection(kind, items, owner) {
+  const [, title, add, prompt] = ITEM_SECTIONS.find(s => s[0] === kind), mine = items.filter(i => i.kind === kind);
+  if (!mine.length && !owner) return "";
+  const plus = owner ? `<a class="iconbtn" href="#" data-go="item?kind=${kind}" aria-label="${esc(add)}" title="${esc(add)}">${icon("plus", 18)}</a>` : "";
+  const body = mine.length ? mine.map(i => entryHtml(i, owner)).join("") : `<p class="muted small">${esc(prompt)} <a href="#" data-go="item?kind=${kind}">${esc(add)}</a></p>`;
+  return `<section class="card pcard" id="${kind}"><div class="phead"><h2>${esc(title)}</h2>${plus}</div><div class="entries${kind === "course" || kind === "language" ? " slimlist" : ""}">${body}</div></section>`;
+}
+function schoolLine(p) {
+  const edu = (p.items || []).filter(i => i.kind === "education"), yr = /(?:19|20)(\d{2})/.exec(p.grad_term || "");
+  return (edu.length ? edu[0].org : "Florida State University") + (yr ? ` '${yr[1]}` : "") + (p.major ? ` · ${p.major}` : "");
+}
+function profileHtml(p, o) {
+  const owner = !!o.owner, showSections = o.showSections !== false, items = owner || showSections ? (p.items || []) : [];
+  const name = p.display_name || "FSU student";
+  const links = o.showLinks ? [["linkedin", "LinkedIn"], ["website", "Website"]].filter(([k]) => (p.links || {})[k]).map(([k, l]) => `<a href="${esc(p.links[k])}" target="_blank" rel="noopener noreferrer nofollow ugc">${l} ↗</a>`).join("") : "";
+  const openTo = (p.job_kinds || []).map(k => KIND_LABEL[k] || k).concat((p.work_types || []).map(tcase));
+  const opento = openTo.length ? `<div class="opento"><b>Open to</b> ${esc(openTo.join(" · "))}${owner ? ' <a href="#" data-go="setup?step=2">Edit</a>' : ""}</div>`
+    : owner ? '<div class="opento muted"><b>Open to</b> <a href="#" data-go="setup?step=2">Add what you\'re looking for</a></div>' : "";
+  const actions = owner ? `<div class="row"><a class="b sm sec" href="#" data-go="setup?step=1">Edit intro</a>${p.resume_text ? '<button class="b sm ghost" type="button" data-do="import-resume">Fill from resume</button>' : '<a class="b sm ghost" href="#" data-go="resume">Add resume</a>'}</div>` : (o.messageBtn || "");
+  const hero = `<section class="card phero"><div class="pbanner" aria-hidden="true"></div><div class="pinfo"><span class="avatar xl">${initials(name)}</span>
+<div class="row between" style="align-items:flex-end;gap:14px"><div style="min-width:0"><h1>${esc(name)}${p.pronouns ? ` <span class="pron">(${esc(p.pronouns)})</span>` : ""}</h1>${p.headline ? `<p class="headline">${esc(p.headline)}</p>` : ""}
+<p class="school">${esc(schoolLine(p))}</p><p class="where">${esc(p.location || "Tallahassee, FL")}${links ? " · " : ""}<span class="plinks">${links}</span></p></div>${actions}</div>${opento}</div></section>`;
+  const look = [["Job types", (p.job_kinds || []).map(k => KIND_LABEL[k] || k)], ["Roles", p.looking_roles || []], ["Industries", p.interests || []],
+    ["Locations", p.pref_locations || []], ["Work setting", (p.work_types || []).map(tcase)]].filter(x => x[1].length)
+    .map(([l, v]) => `<div class="lf"><div class="lfl">${esc(l)}</div><div class="chips">${v.slice(0, 8).map(x => `<span class="pill accent">${esc(x)}</span>`).join("")}</div></div>`).join("");
+  let side = `<section class="card"><div class="phead"><h2>Looking for</h2>${owner ? `<a class="iconbtn" href="#" data-go="setup?step=2" aria-label="Edit what you're looking for">${icon("file", 16)}</a>` : ""}</div>${look || (owner ? '<p class="small muted">Tell employers and the job assistant what you want. <a href="#" data-go="setup?step=2">Add it</a></p>' : '<p class="small muted">Not shared yet.</p>')}</section>`;
+  if (owner && o.completion) {
+    const [pct, missing] = o.completion;
+    side += `<section class="card"><div class="phead"><h2>Profile strength</h2><span class="small faint">${pct}%</span></div><div class="meter"><i style="width:${pct}%"></i></div>${missing.length ? `<p class="small muted" style="margin-top:8px">Next: add ${esc(missing.slice(0, 2).join(", "))}. A fuller profile makes your job fit scores more accurate.</p>` : '<p class="small muted" style="margin-top:8px">Complete. Your fit scores use all of it.</p>'}</section>`;
+    const vis = [p.visible ? "Approved employers can find you" : "Hidden from the employer directory", p.share_resume ? "resume shared with them" : "resume private", p.allow_messages ? "messages on" : "employer messages off"].join("; ");
+    side += `<section class="card"><div class="phead"><h2>Privacy</h2><a class="small" href="#" data-go="setup?step=3">Change</a></div><p class="small muted">${esc(cap(vis.toLowerCase()))}.</p></section>`;
+  }
+  const about = p.bio || "";
+  const aboutHtml = about || owner ? `<section class="card pcard"><div class="phead"><h2>About</h2>${owner ? `<a class="iconbtn" href="#" data-go="setup?step=1" aria-label="Edit about">${icon("file", 16)}</a>` : ""}</div>${about ? `<p class="desc">${esc(about)}</p>` : '<p class="small muted">A few sentences about you and what you want next. <a href="#" data-go="setup?step=1">Write it</a></p>'}</section>` : "";
+  const skills = p.skills || [];
+  const skillsHtml = skills.length || owner ? `<section class="card pcard" id="skills"><div class="phead"><h2>Skills</h2>${owner ? `<a class="iconbtn" href="#" data-go="setup?step=2" aria-label="Edit skills">${icon("plus", 18)}</a>` : ""}</div>${skills.length ? `<div class="chips">${skills.map(s => `<span class="pill">${esc(s)}</span>`).join("")}</div>` : '<p class="small muted">No skills added yet.</p>'}</section>` : "";
+  let main = aboutHtml + ["experience", "education", "project"].map(k => itemSection(k, items, owner)).join("") + skillsHtml + ["certification", "organization", "course", "language"].map(k => itemSection(k, items, owner)).join("");
+  if (!owner && !showSections) main += '<p class="small faint">Experience, education and projects are shared with approved employers only.</p>';
+  if (o.showResume && p.resume_text) main += `<section class="card pcard"><div class="phead"><h2>Resume</h2></div><div class="desc" style="font-family:var(--serif);font-size:14px">${esc(p.resume_text)}</div></section>`;
+  else if (owner) main += `<section class="card pcard"><div class="phead"><h2>Resume</h2><a class="small" href="#" data-go="resume">Open resume studio</a></div>${p.resume_text ? `<p class="small muted">${esc(p.resume_name || "Resume")} on file. ${p.share_resume ? "Shared with approved employers who can see your profile." : "Only you can see it."}</p>` : '<p class="small muted">Add your resume to fill your profile in one step and get fit scores on every job.</p>'}</section>`;
+  return (o.notice || "") + hero + `<div class="pgrid"><aside class="pside">${side}</aside><div class="pmain">${main}</div></div>`;
+}
+P.item = () => {
+  if (!isStudent()) return needStudent("your profile");
+  const p = SP(me().id), q = S.route.q;
+  let it = q.id ? (p.items || []).find(i => i.id === q.id) : null;
+  if (q.id && !it) { go("profile"); return null; }
+  const kind = it ? it.kind : (ITEM_KINDS.includes(q.kind) ? q.kind : "experience");
+  if (S.itemDraft) it = S.itemDraft;
+  it = it || {}; const ex = it.extra || {};
+  const v = k => esc(it[k] || ""), x = k => esc(Array.isArray(ex[k]) ? ex[k].join(", ") : ex[k] || "");
+  const field = (fid, name, label, val, o) => { o = o || {}; return `<div class="form-field"><label for="${fid}">${label}</label>${o.hint ? `<p class="hint">${o.hint}</p>` : ""}<input id="${fid}" name="${name}" maxlength="${o.ml || 120}" value="${val}"${o.req ? " required" : ""} placeholder="${esc(o.ph || "")}"></div>`; };
+  const dates = `<div class="grid2">${field("i-start", "start", "Start", v("start"), {ph: "Aug 2025", ml: 20})}${field("i-end", "end", "End", v("end"), {ph: "May 2026", ml: 20})}</div><label class="toggle"><input type="checkbox" name="current" value="1"${it.current ? " checked" : ""}><span>I'm currently doing this</span></label>`;
+  const desc = hint => `<div class="form-field"><label for="i-desc">Description</label><p class="hint">${hint || "What you did and what came of it. One point per line works well."}</p><textarea id="i-desc" name="description" maxlength="2000">${v("description")}</textarea></div>`;
+  const select = (id, name, label, vals, cur) => `<div class="form-field"><label for="${id}">${label}</label><select id="${id}" name="${name}"><option value="">Choose...</option>${vals.map(t => `<option${cur === t ? " selected" : ""}>${t}</option>`).join("")}</select></div>`;
+  const body = {
+    experience: () => field("i-title", "title", "Title", v("title"), {req: 1, ph: "Data Analyst Intern"}) + field("i-org", "org", "Company or organization", v("org"), {ph: "Leon County Health Department"})
+      + `<div class="grid2">${select("i-type", "x_type", "Type", EMPLOYMENT, ex.type)}${field("i-loc", "location", "Location", v("location"), {ph: "Tallahassee, FL or Remote", ml: 80})}</div>` + dates + desc(),
+    education: () => field("i-org", "org", "School", v("org"), {req: 1, ph: "Florida State University"}) + field("i-title", "title", "Degree", v("title"), {ph: "Bachelor of Science"})
+      + `<div class="grid2">${field("i-major", "x_major", "Major", x("major"), {ml: 80, ph: "Statistics"})}${field("i-minor", "x_minor", "Minor", x("minor"), {ml: 80})}</div>`
+      + `<div class="grid2">${field("i-start", "start", "Start", v("start"), {ph: "Aug 2025", ml: 20})}${field("i-end", "end", "Graduation (or expected)", v("end"), {ph: "May 2027", ml: 20})}</div>`
+      + field("i-gpa", "x_gpa", "GPA (optional)", x("gpa"), {hint: "Only add it if you're comfortable sharing it. Jobs that ask for a minimum GPA use it.", ml: 5, ph: "3.4"})
+      + field("i-cw", "x_coursework", "Relevant coursework", x("coursework"), {hint: "Separate with commas.", ml: 600, ph: "Business Analytics, Statistics I"}) + desc("Honors, activities or a thesis."),
+    project: () => field("i-title", "title", "Project name", v("title"), {req: 1, ph: "Personal budget dashboard"}) + field("i-org", "org", "Associated with (optional)", v("org"), {hint: "A class, club, hackathon or company.", ph: "ISM 3011"})
+      + field("i-url", "url", "Link (optional)", v("url"), {hint: "GitHub, a live site or a file.", ml: 300, ph: "github.com/you/project"})
+      + field("i-skills", "x_skills", "Skills used", x("skills"), {hint: "Separate with commas. These count toward your fit score.", ml: 200, ph: "Python, SQL, Excel"}) + dates + desc(),
+    certification: () => field("i-title", "title", "Name", v("title"), {req: 1, ph: "Microsoft Office Specialist: Excel Expert"}) + field("i-org", "org", "Issuing organization", v("org"), {ph: "Microsoft"})
+      + `<div class="grid2">${field("i-start", "start", "Issued", v("start"), {ph: "Mar 2026", ml: 20})}${field("i-end", "end", "Expires (optional)", v("end"), {ml: 20})}</div>` + field("i-url", "url", "Credential link (optional)", v("url"), {ml: 300}),
+    organization: () => field("i-org", "org", "Organization", v("org"), {req: 1, ph: "The Finance Society"}) + field("i-title", "title", "Role", v("title"), {req: 1, ph: "Member"}) + dates + desc(),
+    course: () => field("i-title", "title", "Course name", v("title"), {req: 1, ph: "Business Analytics"}) + field("i-org", "org", "Course code (optional)", v("org"), {ph: "QMB 3200"}),
+    language: () => field("i-title", "title", "Language", v("title"), {req: 1, ph: "Spanish", ml: 60}) + select("i-prof", "x_proficiency", "Proficiency", PROFICIENCY, ex.proficiency),
+  }[kind]();
+  const editing = !!(q.id), heading = (editing ? "Edit " : "Add ") + (kind === "education" ? "education" : ITEM_HEAD[kind].toLowerCase().replace(/s$/, ""));
+  return `<a class="back" href="#" data-go="profile#${kind}">← Profile</a>${pageHead(heading)}${takeFlash()}<form id="itemForm" data-kind="${kind}" data-id="${q.id || 0}" class="card" style="max-width:680px">${body}
+<div class="row"><button class="submit-btn" type="submit">Save</button><a class="b sec" href="#" data-go="profile#${kind}">Cancel</a></div></form>${editing ? `<button class="b danger sm" type="button" data-do="del-item" data-id="${q.id}" style="margin-top:12px">Delete this entry</button>` : ""}`;
+};
+
+// ---------------- job fit + tailoring on every listing, same as jobfit.py ----------------
+const MARK = {met: "✓", missing: "!", unknown: "?"};
+function fitPanel(job, p) {
+  if (!p || !((p.skills || []).length || p.resume_text || (p.items || []).length))
+    return '<section class="card" style="margin:16px 0"><h3 class="sec" style="margin-top:0">How well you fit</h3><p class="muted small">Add your skills, experience or resume and every listing shows a fit score built from your whole profile.</p><div class="row" style="margin-top:10px"><a class="b sm" href="#" data-go="profile">Build my profile</a><a class="b sm sec" href="#" data-go="resume">Add my resume</a></div></section>';
+  const f = N.fitScore(job, p), tone = f.score >= 65 ? "ok" : f.score < 45 ? "warn" : "";
+  const parts = f.parts.map(x => `<div class="cat"><span>${esc(x.name)}</span><div class="meter${x.score >= 75 ? " ok" : x.score < 40 ? " warn" : ""}"><i style="width:${x.score}%"></i></div><span>${x.score}</span><div class="why2">${esc(x.detail)}</div></div>`).join("");
+  const found = f.matched.slice(0, 8).map(m => `<li class="met"><span class="st">✓</span><div><b>${esc(m.skill)}</b><span class="ev">Found in ${esc(m.where.slice(0, 2).map(w => w.replace(/^Your /, "your ")).join(", "))}</span></div></li>`).join("");
+  const checks = f.checklist.map(c => `<li class="${c.status}"><span class="st">${MARK[c.status]}</span><div>${esc(c.text)}${c.evidence ? `<span class="ev">${esc(c.evidence)}</span>` : ""}</div></li>`).join("");
+  const rel = f.relevant.slice(0, 4).map(r => `<li class="met"><span class="st">✓</span><div><b>${esc(r.where)}</b><span class="ev">Mentions ${esc(r.hits.slice(0, 3).join(", "))}</span></div></li>`).join("");
+  const conf = {low: "Your profile is thin, so this is a rough estimate. Add experience, projects and a resume to sharpen it.", medium: "Based on part of your profile. Adding more sections makes it more accurate.",
+    high: "Based on your whole profile: skills, resume, experience, projects, education and what you're looking for."}[f.confidence];
+  return `<section class="card" style="margin:16px 0" id="fit"><div class="fit"><div class="ring" style="--p:${f.score}"><b>${f.score}</b></div><div><div class="eyebrow">Your fit for this job</div><div class="fitlabel">${esc(f.label)} <span class="pill ${tone}">${f.score}/100</span></div><p class="small muted" style="margin-top:4px">${esc(conf)}</p></div></div>
+<div class="fitparts">${parts}</div><div class="split" style="margin-top:14px"><div><h4 class="small" style="margin-bottom:8px">What they ask for</h4><ul class="checklist">${checks || '<li class="unknown"><span class="st">?</span><div>The posting doesn\'t list specific requirements.</div></li>'}</ul></div>
+<div><h4 class="small" style="margin-bottom:8px">Where your profile backs it up</h4><ul class="checklist">${rel}${found || '<li class="unknown"><span class="st">?</span><div>Nothing in your profile matches the skills they list yet.</div></li>'}</ul></div></div></section>`;
+}
+function tailorPanel(job, p) {
+  if (!p || !p.resume_text)
+    return '<section class="card" style="margin:16px 0" id="tailor"><h3 class="sec" style="margin-top:0">Tailor your resume to this job</h3><p class="muted small">Add your resume and you\'ll get a summary written for this role, the bullets to lead with, and the keywords to use where they\'re true.</p><a class="b sm" href="#" data-go="resume" style="margin-top:10px">Add my resume</a></section>';
+  const t = N.tailor(p.resume_text, job.title, job.description, p), pills = (xs, cls) => xs.map(x => `<span class="pill ${cls}">${esc(x)}</span>`).join("") || '<span class="faint small">None</span>';
+  const lead = t.lead_bullets.map(b => `<li><b>${esc(b.text)}</b><span class="ev">${esc(b.why)}</span></li>`).join("");
+  return `<section class="card" style="margin:16px 0" id="tailor"><div class="row between"><h3 class="sec" style="margin:0">Tailor your resume to this job</h3><a class="b sm sec" href="#" data-go="resume?tab=tailor&amp;job=${job.id}">Open in resume studio</a></div>
+<div class="split" style="margin-top:12px"><div><b class="small">Skills your resume shows</b><div class="kw" style="margin-top:6px">${pills(t.skills_present, "ok")}</div></div><div><b class="small">Skills they want that your resume doesn't show</b><div class="kw" style="margin-top:6px">${pills(t.skills_missing, "warn")}</div></div></div>
+<div style="margin-top:12px"><b class="small">Words from the posting to use where true</b><div class="kw" style="margin-top:6px">${pills(t.keywords_missing, "")}</div></div>
+<h4 class="small" style="margin:16px 0 6px">Suggested summary for this job</h4><div class="sugg-item" style="margin-top:0"><div class="now" style="margin-top:0">${esc(t.summary)}</div><button class="b sm sec" type="button" data-do="copy" data-text="${esc(t.summary)}" style="margin-top:8px">Copy</button></div>
+${lead ? `<h4 class="small" style="margin:16px 0 6px">Lead with these bullets</h4><ul class="reasons" style="margin-top:0">${lead}</ul>` : ""}
+<form id="jobVersionForm" data-name="${esc(("For " + job.title + " at " + job.company).slice(0, 80))}" style="margin-top:16px"><details><summary class="small" style="cursor:pointer;color:var(--accent-ink);font-weight:600">Preview and edit the tailored copy</summary>
+<textarea class="resume" name="body" maxlength="20000" style="margin-top:8px" aria-label="Tailored copy">${esc(N.versioned(p.resume_text, t.summary))}</textarea></details>
+<button class="b sm" type="submit" style="margin-top:10px">Save a tailored copy</button> <span class="small faint">Your main resume doesn't change.</span></form></section>`;
+}
+
+// ---------------- reading PDF and Word resumes in the browser ----------------
+const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+let pdfReady = null;
+const loadScript = src => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.crossOrigin = "anonymous"; s.onload = ok; s.onerror = () => bad(new Error("load")); document.head.appendChild(s); });
+function loadPdfJs() {
+  // pdf.worker loaded as a plain script lets pdf.js parse on the page itself, so no worker file has to be allowed.
+  if (!pdfReady) { pdfReady = loadScript(PDFJS + "pdf.min.js").then(() => loadScript(PDFJS + "pdf.worker.min.js")).then(() => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js"; });
+    pdfReady.catch(() => { pdfReady = null; }); }
+  return pdfReady;
+}
+async function pdfText(buf) {
+  try { await loadPdfJs(); } catch (e) { throw "The PDF reader didn't load (are you offline?). Paste the text instead."; }
+  let doc;
+  try { doc = await window.pdfjsLib.getDocument({data: new Uint8Array(buf), isEvalSupported: false, disableFontFace: true}).promise; }
+  catch (e) { throw e && e.name === "PasswordException" ? "That PDF is password-protected. Export it again without a password, or paste the text." : "Couldn't read that PDF. Try exporting it again, or paste the text."; }
+  if (doc.numPages > 6) throw "That PDF is longer than 6 pages. A student resume should be one page.";
+  const lines = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const tc = await (await doc.getPage(i)).getTextContent(); let line = "", lastY = null;
+    for (const it of tc.items) {
+      if (typeof it.str !== "string") continue;
+      const y = it.transform[5];
+      if (lastY !== null && Math.abs(y - lastY) > 2 && line.trim()) { lines.push(line); line = ""; }
+      line += it.str; lastY = y;
+      if (it.hasEOL) { lines.push(line); line = ""; lastY = null; }
+    }
+    if (line.trim()) lines.push(line);
+  }
+  return lines.join("\n");
+}
+const XML_ENT = {amp: "&", lt: "<", gt: ">", quot: '"', apos: "'"};
+const unxml = s => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, e) => e[0] === "#" ? String.fromCodePoint(parseInt(e[1] === "x" || e[1] === "X" ? e.slice(2) : e.slice(1), e[1] === "x" || e[1] === "X" ? 16 : 10)) : XML_ENT[e.toLowerCase()]);
+async function docxText(buf) {
+  // A .docx is a zip: find word/document.xml in the central directory, inflate it, keep the text (same as resume_engine._docx_text).
+  const bad = "That file isn't a Word document (.docx).", u8 = new Uint8Array(buf), dv = new DataView(buf);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw bad;
+  const n = dv.getUint16(eocd + 10, true); let p = dv.getUint32(eocd + 16, true), entry = null;
+  if (n > 400) throw "That document is too large to read.";
+  const dec = new TextDecoder();
+  for (let k = 0; k < n; k++) {
+    if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) throw bad;
+    const nl = dv.getUint16(p + 28, true), name = dec.decode(u8.subarray(p + 46, p + 46 + nl));
+    if (name === "word/document.xml") entry = {method: dv.getUint16(p + 10, true), csize: dv.getUint32(p + 20, true), usize: dv.getUint32(p + 24, true), off: dv.getUint32(p + 42, true)};
+    p += 46 + nl + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+  }
+  if (!entry || dv.getUint32(entry.off, true) !== 0x04034b50) throw bad;
+  if (entry.usize > 6 * 1024 * 1024) throw "That document is too large to read.";
+  const start = entry.off + 30 + dv.getUint16(entry.off + 26, true) + dv.getUint16(entry.off + 28, true), data = u8.subarray(start, start + entry.csize);
+  let xmlBytes;
+  if (entry.method === 0) xmlBytes = data;
+  else if (entry.method === 8 && typeof DecompressionStream !== "undefined") xmlBytes = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+  else throw "This browser can't open that Word file. Paste the text instead.";
+  const xml = dec.decode(xmlBytes), paras = [];
+  for (const m of xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>|<w:p\/>/g)) {
+    const para = m[0].replace(/<w:tab\/>/g, "\t").replace(/<w:br[^>]*\/>/g, "\n");
+    paras.push((para.includes("<w:numPr>") ? "• " : "") + unxml([...para.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)].map(r => r[1]).join("")));
+  }
+  return paras.join("\n");
+}
+function cleanResumeText(t) {
+  t = t.replace(/\r\n?/g, "\n").replace(/\t/g, "  ").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+  t = t.replace(/[  ]+\n/g, "\n").replace(/^[  ]*[•▪●◦‣■□➢►–]\s*/gm, "• ").replace(/\n{3,}/g, "\n\n");
+  return t.trim().slice(0, 20000);
+}
+// Resolves to the resume text, or rejects with a message for the student.
+async function readResumeFile(file) {
+  if (file.size > 2 * 1024 * 1024) throw "That file is larger than 2 MB.";
+  const name = file.name.toLowerCase(), buf = await file.arrayBuffer(), head = new Uint8Array(buf.slice(0, 4));
+  let text;
+  if (name.endsWith(".pdf") || String.fromCharCode(...head) === "%PDF") text = await pdfText(buf);
+  else if (name.endsWith(".docx") || (head[0] === 0x50 && head[1] === 0x4b)) text = await docxText(buf);
+  else if (/\.(txt|md)$/.test(name)) text = new TextDecoder().decode(buf);
+  else throw "Upload a PDF, a Word document (.docx), or a text file.";
+  text = cleanResumeText(text);
+  if (text.length < 80) throw name.endsWith(".pdf") ? "That PDF has almost no text we can read (it may be a scanned image). Paste the text instead." : "That's too short to be a resume. Paste the whole thing.";
+  return text;
+}
+
 function exportData() {
   const u = me(), d = {account: {email: u.email, role: u.role}, student_profile: SP(u.id) || null, employer_profile: EP(u.id) || null,
     messages_sent: S.convos.flatMap(c => c.messages.filter(m => m.from === u.id).map(m => ({conversation: c.id, body: m.body, status: m.status}))),
@@ -1687,8 +2370,10 @@ P.u = () => {
   if (!me()) return needLogin("profiles");
   const id = Number(S.route.q.id), [basics, links, resume] = canView(me(), id);
   if (!basics) return '<p class="empty" style="margin:40px 0">That profile isn\'t available.</p>';
-  const p = SP(id);
-  return `<a class="back" href="#" data-go="${isEmployer() ? "talent" : "feed"}">← Back</a>` + studentCard(p, links, resume) + (isEmployer() && p.allow_messages ? `<div class="row" style="margin-top:12px"><a class="b" href="#" data-go="newmsg?to=${id}">${icon("chat", 16)} Message</a></div>` : "");
+  const p = SP(id), owner = id === me().id;
+  const msg = isEmployer() && p.allow_messages ? `<a class="b sm" href="#" data-go="newmsg?to=${id}">${icon("chat", 16)} Message</a>` : "";
+  // Other students see the basics only; approved employers also see experience, education and projects (like Handshake).
+  return `<a class="back" href="#" data-go="${isEmployer() ? "talent" : "feed"}">← Back</a>` + profileHtml(p, {owner, showLinks: links, showResume: resume, messageBtn: msg, showSections: owner || isEmployer()});
 };
 P.company = () => {
   if (!me()) return needLogin("company pages");
@@ -1725,7 +2410,7 @@ P.about = () => `${pageHead("About NoleCareerShield")}<div class="prose"><p>Stud
 <h3>Beyond the board</h3><ul><li><b>Profiles</b> that students control, including whether approved employers can find them.</li><li><b>Messaging</b> between students and reviewed employers, with every message scanned for scam signs.</li><li><b>A job assistant</b> that answers in plain words and only suggests listings that passed review.</li><li><b>A resume studio</b> that scores a resume, rewrites weak lines without inventing anything, and tailors it to a job.</li><li><b>A scam checker</b> for any message a student receives, here or anywhere else.</li><li><b>An FSU-only feed</b> where employer posts must be opportunities or advice for FSU students.</li></ul>
 <h3>What this is not</h3><p>A verified badge is not a guarantee. Always confirm an employer through their own website before sharing personal information. This is an independent student project and is not affiliated with Florida State University.</p></div>`;
 P.privacy = () => `${pageHead("Privacy")}<div class="prose"><p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, and you can download or delete everything at any time.</p>
-<h3>Students</h3><ul><li>A student account needs a confirmed @fsu.edu address and a password, stored as a salted hash. No student ID, date of birth or SSN.</li><li>Your profile holds only what you type in. Your resume is private unless you share it with approved employers.</li><li>Employers see your profile only if a reviewer approved them and you chose to be visible or are already talking with them.</li></ul>
+<h3>Students</h3><ul><li>A student account needs a confirmed @fsu.edu address and a password, stored as a salted hash. No student ID, date of birth or SSN.</li><li>Your profile holds only what you type in. Your resume is private unless you share it with approved employers.</li><li>Employers see your profile only if a reviewer approved them and you chose to be visible or are already talking with them. They see your experience, education and projects; other students see only your name, school, headline and skills.</li><li>If you upload a resume, we can fill your profile sections from it. Nothing is added that isn't in your resume, and you can edit or delete every entry.</li><li>Your fit score for a job is worked out when you open it. It isn't stored, and employers never see it.</li></ul>
 <h3>Messages and the feed</h3><ul><li>Messages are only between students and approved employers, and every one is scanned when sent. Messages that match scam-only patterns are held for a reviewer.</li><li>Email notifications never include message text.</li><li>Only signed-in FSU students and approved employers can read or post on the feed.</li></ul>
 <h3>AI features</h3><ul><li>On the live site the assistant, resume tools and scam checker's second opinion can use Claude. Text is sent only when you use one of those features. This demo runs everything in your browser and sends nothing.</li></ul></div>`;
 P.report = () => `${pageHead("Report a listing")}<div class="prose"><p>See something that looks like a scam? Use the Report button on any message or feed post, or email the site operator with the listing title and company. Reports are reviewed by a person.</p><p>If you already sent money or personal information, contact your bank and report it to the FTC at reportfraud.ftc.gov.</p></div>`;
@@ -1835,15 +2520,18 @@ function render(keepScroll) {
   if (inApp) main.innerHTML = `<div class="app">${sidebar(APP_PAGES[name])}<main class="main" id="main"><div class="wrap">${body}</div>${FOOTER}</main></div>`;
   else main.innerHTML = `${hero}<div class="wrap"><main id="main">${body}</main></div>${FOOTER}`;
   if (!keepScroll) window.scrollTo(0, 0);
+  if (S.scrollTo) { const el = document.getElementById(S.scrollTo); S.scrollTo = null; if (el) el.scrollIntoView({block: "start"}); }
   const th = $("#thread"); if (th) th.scrollTop = th.scrollHeight;
   const lg = $("#log"); if (lg) lg.scrollTop = lg.scrollHeight;
 }
 function go(spec) {
+  const hash = spec.indexOf("#"); if (hash >= 0) { S.scrollTo = spec.slice(hash + 1); spec = spec.slice(0, hash); }
   const i = spec.indexOf("?"), name = i < 0 ? spec : spec.slice(0, i), q = {};
   if (i >= 0) new URLSearchParams(spec.slice(i + 1).replace(/&amp;/g, "&")).forEach((v, k) => q[k] = v);
   ["id", "m", "c", "to", "job", "step"].forEach(k => { if (q[k] !== undefined) q[k] = Number(q[k]); });
   S.route = {name, q}; if (name !== "post") S.draft = null;
   if (name !== "resume") { S.tailor = null; S.bulletOut = null; }
+  if (name !== "item") S.itemDraft = null;
   render();
 }
 const FOOTER = `<footer>Every listing is scanned for scam signals and reviewed by a human before it appears. A verified badge is not a guarantee; always confirm an employer through their own website before sharing personal information.
@@ -1890,7 +2578,11 @@ document.addEventListener("click", e => {
     sample: () => { const s = SAMPLES[Number(d.dataset.i)]; go(`scam?run=1&text=${encodeURIComponent(s[1])}&sender=${encodeURIComponent(s[2])}`); },
     ask: () => ask(SUGG[Number(d.dataset.i)]),
     "apply-rewrite": () => { const r = S.lastRewrites[Number(d.dataset.i)], p = SP(me().id); if (r && p.resume_text.includes(r.text)) p.resume_text = p.resume_text.replace(r.text, r.rewrite); flash("verified", "Rewrite applied. Fill in any [placeholder] with your real numbers."); render(true); },
-    "sample-resume": () => { const p = SP(me().id); p.resume_text = RESUME; p.resume_name = "Sample resume"; render(); },
+    "sample-resume": () => { const p = SP(me().id); p.resume_text = RESUME; p.resume_name = "Sample resume"; if (!(p.items || []).length) importResume(p); render(); },
+    "import-resume": () => { const n = importResume(SP(me().id)); flash(n ? "verified" : "info", n ? `Added ${n} entr${n === 1 ? "y" : "ies"} from your resume. Check them over and edit anything that's off.` : "Your profile already has everything your resume shows."); render(true); },
+    "del-item": () => { const p = SP(me().id), it = (p.items || []).find(i => i.id === id); p.items = (p.items || []).filter(i => i.id !== id); flash("verified", "Entry deleted."); go("profile" + (it ? "#" + it.kind : "")); },
+    "to-tailor": () => { const el = document.getElementById("tailor"); if (el) el.scrollIntoView({behavior: "smooth", block: "start"}); },
+    copy: () => { const t = d.dataset.text || ""; try { navigator.clipboard.writeText(t).then(() => { d.textContent = "Copied"; }, () => {}); } catch (x) { /* clipboard unavailable */ } },
     "fill-sample": () => { $("#p-paste").value = RESUME; },
     "copy-resume": () => { const t = $("#r-text"); try { navigator.clipboard.writeText(t.value).then(() => { d.textContent = "Copied"; }, () => t.select()); } catch (x) { t.select(); } },
     "use-version": () => { const v = S.versions.find(x => x.id === id); if (v) { SP(me().id).resume_text = v.body; flash("verified", `"${v.name}" is now your main resume.`); } render(); },
@@ -1989,14 +2681,22 @@ document.addEventListener("submit", e => {
     return go("setup?step=2"); }
   if (id === "setup2") { const p = SP(me().id), skills = many("skills").filter(s => N.POPULAR.includes(s));
     g("more_skills").split(",").forEach(r => { const s = N.normalizeSkill(r); if (s && !skills.includes(s) && !/[<>{}]|https?:/.test(s)) skills.push(s); });
-    Object.assign(p, {skills: skills.slice(0, 30), interests: many("interests"), work_types: many("work_types"), job_kinds: many("job_kinds"), setup_step: Math.max(p.setup_step || 0, 2)});
+    const roles = g("looking_roles").slice(0, 300).split(",").map(x => x.trim().replace(/\s+/g, " ")).filter(x => x && x.length <= 60).slice(0, 8);
+    const locs = g("pref_locations").slice(0, 300).split(/[;|]|,(?!\s*[A-Z]{2}\b)/).map(x => x.trim().replace(/\s+/g, " ")).filter(x => x && x.length <= 60).slice(0, 8);
+    Object.assign(p, {skills: skills.slice(0, 30), interests: many("interests"), work_types: many("work_types"), job_kinds: many("job_kinds"), looking_roles: roles, pref_locations: locs, setup_step: Math.max(p.setup_step || 0, 2)});
     return go("setup?step=3"); }
   if (id === "setup3") { const p = SP(me().id), li = url(g("linkedin"), "linkedin.com"), web = url(g("website"));
     if (li === null) return back(3, "LinkedIn should be a linkedin.com address."); if (web === null) return back(3, "Website doesn't look like a web address.");
-    const paste = g("resume_paste");
     Object.assign(p, {links: {linkedin: li, website: web}, visible: !!fd.get("visible"), share_resume: !!fd.get("share_resume"), allow_messages: !!fd.get("allow_messages"), setup_step: 3});
-    if (paste) { p.resume_text = paste.slice(0, 20000); p.resume_name = "Pasted text"; if (!(p.skills || []).length) p.skills = N.extractSkills(paste).slice(0, 20); }
-    flash("verified", "Your profile is set up. Try the job assistant for matches, or run your resume through the studio."); return go("profile"); }
+    const finish = (text, name) => {
+      let added = 0;
+      if (text) { p.resume_text = text.slice(0, 20000); p.resume_name = name; if (!(p.skills || []).length) p.skills = N.extractSkills(text).slice(0, 20); if (!(p.items || []).length) added = importResume(p); }
+      S.profileNotice = added ? `We filled in ${added} entr${added === 1 ? "y" : "ies"} from your resume. Check them over and edit anything that's off.` : "";
+      flash("verified", "Your profile is set up. Every job now shows how well you fit it."); go("profile"); };
+    const file = fd.get("resume_file"), paste = g("resume_paste");
+    if (file && file.size) { readResumeFile(file).then(t => finish(t, file.name.slice(0, 120)), msg => back(3, String(msg))); return; }
+    if (paste) return finish(cleanResumeText(paste), "Pasted text");
+    return finish("", ""); }
   if (id === "esetup1") { const p = EP(me().id), web = url(g("website"));
     if (!g("company")) return back(1, "Organization name is required."); if (!web) return back(1, "Website doesn't look like a web address.");
     if (g("about").length < 40) return back(1, "Write at least a couple of sentences about the organization.");
@@ -2044,13 +2744,26 @@ document.addEventListener("submit", e => {
   if (id === "resumeUpload") {
     const file = fd.get("file"), paste = g("paste"), p = SP(me().id);
     const done = (text, name) => { if (text.trim().length < 80) { flash("warning", "That's too short to be a resume. Paste the whole thing."); return render(); }
-      p.resume_text = text.slice(0, 20000); p.resume_name = name; if (!(p.skills || []).length) p.skills = N.extractSkills(text).slice(0, 20); go("resume?tab=review"); };
-    if (file && file.size) { if (file.size > 2 * 1024 * 1024) { flash("warning", "That file is larger than 2 MB."); return render(); }
-      if (!/\.(txt|md)$/i.test(file.name)) { flash("warning", "The demo reads text files. The live site also reads PDF and Word, or paste the text here."); return render(); }
-      const r = new FileReader(); r.onload = () => done(String(r.result), file.name.slice(0, 120)); r.readAsText(file); return; }
-    if (paste) return done(paste, "Pasted text");
+      p.resume_text = text.slice(0, 20000); p.resume_name = name; if (!(p.skills || []).length) p.skills = N.extractSkills(text).slice(0, 20);
+      const n = (p.items || []).length ? 0 : importResume(p);
+      flash("verified", `Read ${name}.` + (n ? ` We also filled ${n} profile entr${n === 1 ? "y" : "ies"} from it; check them on your profile.` : "")); go("resume?tab=review"); };
+    if (file && file.size) {
+      const btn = f.querySelector("button[type=submit]"); if (btn) { btn.disabled = true; btn.textContent = "Reading…"; }
+      readResumeFile(file).then(t => done(t, file.name.slice(0, 120)), msg => { flash("warning", String(msg)); render(); }); return; }
+    if (paste) return done(cleanResumeText(paste), "Pasted text");
     flash("warning", "Choose a file or paste your resume."); return render();
   }
+  if (id === "itemForm") {
+    const p = SP(me().id), iid = Number(f.dataset.id) || 0, raw = {kind: f.dataset.kind, current: !!fd.get("current"), extra: {}};
+    for (const k of ["title", "org", "location", "start", "end", "description", "url"]) raw[k] = String(fd.get(k) || "");
+    for (const [k, v] of fd.entries()) if (k.startsWith("x_")) raw.extra[k.slice(2)] = String(v);
+    let it; try { it = cleanItem(raw); } catch (err) { S.itemDraft = Object.assign({}, raw, {id: iid}); flash("warning", String(err)); return render(); }
+    if (iid) { const cur = (p.items || []).find(x => x.id === iid); if (cur) Object.assign(cur, it); }
+    else { try { addItem(p, it); } catch (err) { flash("warning", String(err)); return render(); } }
+    S.itemDraft = null; return go("profile#" + it.kind);
+  }
+  if (id === "jobVersionForm") { S.versions.unshift({id: Date.now(), user: me().id, name: f.dataset.name || "Tailored copy", body: String(fd.get("body") || "").trim(), at: NOW()});
+    flash("verified", "Saved a tailored copy. Your main resume didn't change."); return go("resume?tab=versions"); }
   if (id === "resumeSave") { const t = String(fd.get("text") || ""); if (t.trim().length < 80) { flash("warning", "A resume needs 80 to 20,000 characters."); return render(); }
     SP(me().id).resume_text = t.slice(0, 20000); flash("verified", "Saved."); return render(true); }
   if (id === "bulletForm") { S.bulletIn = g("bullet"); S.bulletOut = S.bulletIn ? N.improveBullet(S.bulletIn) : null; return render(true); }

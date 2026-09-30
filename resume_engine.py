@@ -449,6 +449,13 @@ def tailor(resume_text: str, job_title: str, job_text: str, profile: dict | None
             "summary": summary, "gaps": gaps}
 
 
+def versioned(resume: str, summary: str) -> str:
+    """A copy of the resume with a SUMMARY section added above the first heading."""
+    lines = (resume or "").splitlines()
+    at = next((i for i, ln in enumerate(lines) if _heading(ln)), min(3, len(lines)))
+    return "\n".join(lines[:at] + ["SUMMARY", summary, ""] + lines[at:])
+
+
 # ---------- .docx export ----------
 
 def _x(s: str) -> str:

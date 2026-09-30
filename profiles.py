@@ -25,6 +25,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import accounts
 import ai
 import matching
+import profile_page
 import resume_engine
 import security
 import store
@@ -101,7 +102,7 @@ def ensure_employer(conn, uid: int) -> dict:
 
 def save_student(conn, uid: int, **fields) -> None:
     ensure_student(conn, uid)
-    for k in ("skills", "interests", "work_types", "job_kinds", "links"):
+    for k in ("skills", "interests", "work_types", "job_kinds", "links", "looking_roles", "pref_locations"):
         if k in fields:
             fields[k] = json.dumps(fields[k])
     fields["updated_at"] = time.time()
@@ -124,6 +125,9 @@ def student_completion(p: dict | None) -> tuple[int, list[str]]:
         (bool(p.get("grad_term")), "your graduation term"), (len(p.get("skills") or []) >= 3, "at least 3 skills"),
         (bool(p.get("interests")), "the kinds of jobs you want"), (bool(p.get("resume_text")), "a resume"),
         (bool(p.get("headline")), "a headline"),
+        (any(i["kind"] == "experience" for i in p.get("items") or []), "an experience entry"),
+        (any(i["kind"] == "education" for i in p.get("items") or []), "your education"),
+        (any(i["kind"] in ("project", "certification", "organization") for i in p.get("items") or []), "a project, certification or organization"),
     ]
     done = sum(1 for ok, _ in checks if ok)
     return round(100 * done / len(checks)), [label for ok, label in checks if not ok]
@@ -185,6 +189,10 @@ def _student_step(p: dict, step: int, error: str = "", status: int = 200) -> HTM
 <div class="form-field"><label for="p-more">Other skills (optional)</label><p class="hint">Separate with commas, e.g. SPSS, Canva, Premiere Pro.</p>
 <input id="p-more" name="more_skills" maxlength="400" value="{esc(', '.join(extra))}"></div>
 <div class="form-field"><label>Kinds of jobs you want</label>{_checks("interests", CATEGORIES[:-1], p.get('interests') or [])}</div>
+<div class="grid2"><div class="form-field"><label for="p-roles">Roles you're looking for (optional)</label><p class="hint">Separate with commas.</p>
+<input id="p-roles" name="looking_roles" maxlength="300" value="{esc(', '.join(p.get('looking_roles') or []))}" placeholder="Data Analyst, Financial Analyst"></div>
+<div class="form-field"><label for="p-locs">Preferred locations (optional)</label><p class="hint">Cities or states, separated with commas.</p>
+<input id="p-locs" name="pref_locations" maxlength="300" value="{esc(', '.join(p.get('pref_locations') or []))}" placeholder="Tallahassee, FL; Tampa, FL"></div></div>
 <div class="grid2"><div class="form-field"><label>Work setting</label>{_checks("work_types", WORK_TYPES, p.get('work_types') or [], {w: w.title() for w in WORK_TYPES})}</div>
 <div class="form-field"><label>Type</label>{_checks("job_kinds", JOB_KINDS, p.get('job_kinds') or [], kinds)}</div></div>
 <div class="row"><a class="b sec" href="/profile/setup/1">Back</a><button class="submit-btn" type="submit">Continue</button></div></form>"""
@@ -298,7 +306,9 @@ async def setup_save(step: int, request: Request):
                         s = matching.normalize_skill(raw)
                         if s and s not in skills and not re.search(r"[<>{}]|https?:", s):
                             skills.append(s)
-                    save_student(conn, user["id"], skills=skills[:30], interests=_pick(many("interests"), CATEGORIES),
+                    roles = [r for r in (_t(x, 60, "Role") for x in _t(g("looking_roles"), 300, "Roles").split(",")) if r][:8]
+                    locs = [r for r in (_t(x, 60, "Location") for x in re.split(r"[;|]|,(?!\s*[A-Z]{2}\b)", _t(g("pref_locations"), 300, "Locations"))) if r][:8]
+                    save_student(conn, user["id"], skills=skills[:30], interests=_pick(many("interests"), CATEGORIES), looking_roles=roles, pref_locations=locs,
                                  work_types=_pick(many("work_types"), WORK_TYPES), job_kinds=_pick(many("job_kinds"), JOB_KINDS),
                                  setup_step=max(p["setup_step"], 2))
                     return RedirectResponse("/profile/setup/3", status_code=303)
@@ -325,7 +335,10 @@ async def setup_save(step: int, request: Request):
                     if fields.get("resume_text") and not p.get("skills"):
                         fields["skills"] = matching.extract_skills(fields["resume_text"])[:20]
                     save_student(conn, user["id"], **fields)
-                    return RedirectResponse("/profile?welcome=1", status_code=303)
+                    added = 0
+                    if fields.get("resume_text") and not store.profile_items(conn, user["id"]):
+                        added = profile_page.import_resume(conn, user["id"], fields["resume_text"])
+                    return RedirectResponse(f"/profile?welcome=1&imported={added}", status_code=303)
             except ProfileError as e:
                 merged = {**p, **{k: g(k) for k in ("display_name", "pronouns", "major", "minor", "headline", "bio") if k in form}}
                 return _student_step(merged, step, str(e), 400)
@@ -409,28 +422,22 @@ def _employer_card(p: dict) -> str:
 
 
 @router.get("/profile", response_class=HTMLResponse)
-def my_profile(request: Request, welcome: int = 0):
+def my_profile(request: Request, welcome: int = 0, imported: int = 0):
     user = web.require_user(request)
     with store.db() as conn:
         if user["role"] == "student":
             p = ensure_student(conn, user["id"])
-            pct, missing = student_completion(p)
             if not p.get("display_name"):
                 return RedirectResponse("/profile/setup", status_code=303)
             top = ""
             if welcome:
-                top = ui.banner("verified", "Your profile is set up. Try the job assistant for matches, or run your resume through the studio.")
-            meter = (f'<div class="card" style="margin-bottom:12px"><div class="row between"><b>Profile {pct}% complete</b>'
-                     f'<a class="b sm sec" href="/profile/setup/1">Edit profile</a></div><div class="meter" style="margin-top:10px"><i style="width:{pct}%"></i></div>'
-                     + (f'<p class="small muted" style="margin-top:8px">Add {esc(", ".join(missing[:3]))} for better matches.</p>' if missing else "")
-                     + "</div>")
-            vis = []
-            vis.append("Approved employers can find you" if p["visible_to_employers"] else "Hidden from the employer directory")
-            vis.append("resume shared with them" if p["share_resume"] else "resume private")
-            vis.append("messages on" if p["allow_messages"] else "messages from employers off")
-            privacy = (f'<div class="card" style="margin-top:12px"><div class="row between"><div><b>Privacy</b><p class="small muted">{esc("; ".join(vis)).capitalize()}.</p></div>'
-                       f'<a class="b sm sec" href="/profile/setup/3">Change</a></div></div>')
-            body = top + ui.page_head("Your profile", num="Profile") + meter + _student_card(p, show_links=True, show_resume=False, owner=True) + privacy
+                top = ui.banner("verified", "Your profile is set up." + (f" We filled {imported} section entr{'y' if imported == 1 else 'ies'} from your resume; check them below." if imported else "")
+                                + " Every job now shows how well you fit it.")
+            elif imported:
+                top = ui.banner("verified", f"Added {imported} entr{'y' if imported == 1 else 'ies'} from your resume. Check them below and edit anything that's off.")
+            elif request.query_params.get("imported") == "0":
+                top = ui.banner("info", "Your profile already has everything we could find in your resume.")
+            body = profile_page.profile_html(p, owner=True, notice=top, completion=student_completion(p))
         else:
             p = ensure_employer(conn, user["id"])
             if not p.get("company"):
@@ -442,13 +449,13 @@ def my_profile(request: Request, welcome: int = 0):
                 top += ui.banner("warning", "Not approved: " + p["status_note"] + " Update your profile and send it again.")
             body = top + ui.page_head("Company profile", num="Profile") + _employer_card(p) + \
                 '<div class="row" style="margin-top:12px"><a class="b sec" href="/profile/setup/1">Edit profile</a></div>'
-    body += f"""<h3 class="sec">Your data</h3><div class="card"><div class="row between"><div><b>Download your data</b>
+    body += f"""<div class="pdata"><h3 class="sec">Your data</h3><div class="card"><div class="row between"><div><b>Download your data</b>
 <p class="small muted">Everything we store about your account, as a JSON file.</p></div><a class="b sm sec" href="/profile/export">Download</a></div></div>
 <details class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;color:var(--bad)">Delete my account</summary>
 <p class="small muted" style="margin:8px 0 12px">Deletes your profile, resume versions, feed posts and comments, and blanks the messages you sent. This can't be undone.</p>
 <form method="post" action="/profile/delete">{ui.user_csrf_input()}<div class="form-field"><label for="d-pw">Your password</label>
 <input id="d-pw" type="password" name="password" required maxlength="128" autocomplete="current-password"></div>
-<button class="b danger" type="submit">Delete my account</button></form></details>"""
+<button class="b danger" type="submit">Delete my account</button></form></details></div>"""
     return web.page(body, "Profile", active="/profile", js=True)
 
 
@@ -482,8 +489,9 @@ def student_page(uid: int, request: Request):
         msg = ""
         if user["role"] == "employer" and p["allow_messages"]:
             msg = f'<a class="b" href="/messages/new?to={uid}">{ui.icon("chat", 16)} Message</a>'
-    body = f'<a class="back" href="{"/talent" if user["role"] == "employer" else "/feed"}">← Back</a>' + \
-        _student_card(p, show_links=links, show_resume=resume) + (f'<div class="row" style="margin-top:12px">{msg}</div>' if msg else "")
+    body = (f'<a class="back" href="{"/talent" if user["role"] == "employer" else "/feed"}">← Back</a>' +
+            profile_page.profile_html(p, owner=user["id"] == uid, show_links=links, show_resume=resume, message_btn=msg,
+                                      show_sections=user["id"] == uid or user["role"] == "employer"))
     return web.page(body, p["display_name"] or "Profile", active="")
 
 
@@ -606,7 +614,7 @@ def dashboard(user: dict) -> str:
         recs = matching.rank_jobs(jobs, p, limit=3) if jobs else []
         rec_html = "".join(f'<a class="job" href="/job/{int(r["job"]["id"])}" style="margin:0 0 8px"><div class="job-top"><div>'
                            f'<div class="job-title" style="font-size:16px">{esc(r["job"]["title"])}</div><div class="job-co">{esc(r["job"]["company"])}</div></div>'
-                           f'<span class="pill accent">{r["score"]}% match</span></div>'
+                           f'<span class="pill accent" title="{esc(r.get("fit", {}).get("label", ""))}">Fit {r.get("fit", {}).get("score", r["score"])}</span></div>'
                            + ("<div class=why>" + esc(r["reasons"][0]) + "</div>" if r["reasons"] else "") + '</a>' for r in recs) \
             or '<p>No listings yet. New ones appear here as reviewers approve them.</p>'
         resume_tile = ""
