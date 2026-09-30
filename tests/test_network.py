@@ -456,7 +456,7 @@ def test_resume_review_edit_tailor_versions(net):
     r = s.post("/api/resume/bullet", json={"bullet": "I was in charge of planning weekly study sessions"}, headers={"X-CSRF-Token": t})
     assert r.status_code == 200 and "Planned" in json.dumps(r.json())
     # Tailor to a board listing, save as a version, download .docx.
-    assert f'<option value="{job}" selected>' in s.get(f"/resume?tab=tailor&job={job}").text
+    assert s.get(f"/resume?tab=tailor&job={job}").headers["location"] == f"/job/{job}/tailor"   # the new tailored resume page
     r = s.post("/resume/tailor", data={"csrf": t, "job_id": str(job), "title": "", "description": "", "mode": "builtin"})
     assert r.status_code == 200 and "Tableau" in r.text
     body = re.search(r'<textarea[^>]*name="body"[^>]*>(.*?)</textarea>', r.text, re.S)

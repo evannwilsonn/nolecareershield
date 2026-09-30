@@ -1216,8 +1216,379 @@ majoring major majors minor degree hold holds certified certification certificat
     return tips.slice(0, 4);
   }
 
+  // ---- the new resume (mirrors resume_engine.build_resume, doc_text, doc_html, to_pdf, stand_out_job, cover_note) ----
+  const DOC_ORDER = ["summary", "education", "experience", "projects", "skills", "awards", "leadership", "coursework"];
+  const DOC_TITLES = {summary: "Summary", education: "Education", experience: "Experience", projects: "Projects", skills: "Skills", awards: "Certifications", leadership: "Activities", coursework: "Relevant Coursework"};
+  const BULLET_KEYS = ["experience", "projects", "leadership"];
+  const PLACEHOLDER_TAIL = " [add a number: how many, how much, or how often]";
+  const D_SCHOOL = /\b(?:university|college|institute|school|academy)\b/i;
+  const D_MON = "(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?\\s+|(?:spring|summer|fall|winter)\\s+";
+  const D_START = `(?:expected\\s+)?(?:${D_MON})?(?:19|20)\\d{2}`;
+  const D_RANGE = `${D_START}(?:\\s*(?:-|–|—|to)\\s*(?:${D_START}|present|current|now))?`;
+  const DOC_DATE = new RegExp(`(?:^|[\\s,|(·—–-])(${D_RANGE})[\\s)|,.]*$`, "i");
+  const DATE_ONLY = new RegExp(`^${D_RANGE}$`, "i");
+  const SEG = /\s+[|·]\s+/;
+  const SPLIT_CONTACT = /\s*[|·•]\s*|\s{3,}/;
+  const D_EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/;
+  const PROFILE_ITEM_KEYS = {experience: "experience", project: "projects", organization: "leadership", certification: "awards"};
+  const pyLines = t => (t || "").split(/\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]/).filter((l, i, a) => !(i === a.length - 1 && l === ""));
+  const pyWords = t => t.split(/\s+/).filter(Boolean);
+  const S = v => (v === null || v === undefined || v === false || v === 0 || v === "") ? "" : String(v);
+  const nrm = s => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const edgeStrip = s => pyStrip(s, " ,|·—–-");
+  const rstripChars = (s, ch) => { let b = s.length; while (b > 0 && ch.includes(s[b - 1])) b--; return s.slice(0, b); };
+  const tc = s => s === s.toUpperCase() ? pyWords(s).map(w => w.slice(0, 1).toUpperCase() + w.slice(1).toLowerCase()).join(" ") : s;
+  const andList = xs => { xs = xs.map(String); return !xs.length ? "" : xs.length === 1 ? xs[0] : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1]; };
+  const uniqLower = xs => { const out = []; for (const s of xs) if (!out.some(h => h.toLowerCase() === s.toLowerCase())) out.push(s); return out; };
+  function docEntry(line) {
+    const m = DOC_DATE.exec(line);
+    if (m && m[1].trim() !== line.trim()) {
+      const start = m.index + (m[0].startsWith(m[1]) ? 0 : 1);
+      return {head: edgeStrip(line.slice(0, start).trim()), date: m[1].trim(), line, sub: [], bullets: []};
+    }
+    const parts = line.split(SEG);
+    for (let i = 1; i < parts.length; i++) if (DATE_ONLY.test(parts[i].trim())) return {head: parts.slice(0, i).concat(parts.slice(i + 1)).join(" | "), date: parts[i].trim(), line, sub: [], bullets: []};
+    return {head: line, date: "", line, sub: [], bullets: []};
+  }
+  function docParse(text) {
+    const lines = pyLines(text), anyBullet = lines.some(l => l.trim() && BULLET.test(l));
+    const header = [], sections = []; let cur = null;
+    for (const ln of lines) {
+      const s = ln.trim(); if (!s) continue;
+      const h = heading(s);
+      if (h) { cur = {key: h, title: tc(s.replace(/[:\s]+$/, "")), text: "", lines: [], entries: []}; sections.push(cur); continue; }
+      if (!cur) header.push(s); else cur.lines.push(s);
+    }
+    let n = 0;
+    for (const sec of sections) {
+      const raw = sec.lines; sec.lines = [];
+      if (sec.key === "summary") { sec.text = raw.map(s => s.replace(BULLET, "").trim()).join(" ").trim(); continue; }
+      if (sec.key === "skills") { sec.lines = raw.map(s => s.replace(BULLET, "").trim()).filter(Boolean); continue; }
+      let e = null;
+      for (const s of raw) {
+        const isB = anyBullet ? BULLET.test(s) : BULLET_KEYS.includes(sec.key) && pyWords(s).length >= 6 && !DATE_TAIL.test(s.slice(-14));
+        if (isB) {
+          const t = anyBullet ? s.replace(BULLET, "").trim() : s; if (!t) continue;
+          if (!e) { e = docEntry(""); sec.entries.push(e); }
+          n++; e.bullets.push({id: "b" + n, text: t, change: ""});
+        } else if (!e || e.bullets.length || ["awards", "coursework"].includes(sec.key) || (sec.key === "education" && D_SCHOOL.test(s) && e.head)) {
+          e = docEntry(s); sec.entries.push(e);
+        } else e.sub.push(s);
+      }
+    }
+    let name = "", contactLines = header;
+    if (header.length && !header[0].includes("@") && !/\d/.test(header[0]) && pyWords(header[0]).length <= 6 && header[0].length <= 60) { name = header[0]; contactLines = header.slice(1); }
+    const contact = [];
+    for (const ln of contactLines) for (let part of ln.split(SPLIT_CONTACT)) { part = part.trim(); if (part && !contact.includes(part)) contact.push(part); }
+    return {name, contact, sections};
+  }
+  const linkNorm = s => rstripChars((s || "").trim().toLowerCase().replace(/^(?:https?:\/\/)?(?:www\.)?/, ""), "/");
+  function relevance(text, jskills, kws) {
+    const low = text.toLowerCase(), has = extractSkills(text).map(x => x.toLowerCase());
+    const hits = jskills.filter(s => has.includes(s.toLowerCase()) || hasWord(low, s)), hl = hits.map(h => h.toLowerCase());
+    const more = kws.filter(k => !hl.includes(k) && hasWord(low, k));
+    return [2 * hits.length + more.length, hits.concat(more)];
+  }
+  function jobTerms(job) {
+    const jtext = S(job.title) + "\n" + S(job.description);
+    const jskills = uniqExact(extractSkills(jtext).concat(qualsOf(job).filter(q => q.kind === "skill").map(q => q.label)));
+    return [jskills, keywords(S(job.title) + " " + S(job.description))];
+  }
+  const uniqExact = xs => xs.filter((x, i) => xs.indexOf(x) === i);
+  function summaryText(profile, doc, have, jl, job) {
+    const major = S(profile.major).trim(), grad = S(profile.grad_term).trim();
+    let s = (major ? major + " student" : "Student") + " at Florida State University" + (grad ? " graduating " + grad : "");
+    let pick = jl !== null ? have.filter(h => jl.includes(h.toLowerCase())) : [];
+    if (!pick.length) pick = have.slice(0, 3);
+    if (pick.length) s += " with hands-on experience in " + andList(pick.slice(0, 3));
+    s += ".";
+    const exp = doc.sections.find(sec => sec.key === "experience" && sec.entries.length);
+    const head = ((exp ? exp.entries : []).find(e => e.head) || {head: ""}).head.split(SEG)[0].trim();
+    if (head && head.length <= 90) s += " Experience includes " + rstripChars(head, ".") + ".";
+    const cat = S((job || {}).category).trim();
+    if (job && cat && cat.toLowerCase() !== "other") s += " Interested in " + cat.toLowerCase() + " work.";
+    return s;
+  }
+  function profileEntry(it) {
+    const title = S(it.title).trim(), org = S(it.org).trim();
+    const head = title ? title + (org && title ? ", " + org : "") : org;
+    const start = S(it.start).trim(), end = it.current ? "Present" : S(it.end).trim();
+    const date = start && end ? start + " – " + end : (start || end);
+    const bl = S(it.description).split(/\n+/).map(x => x.replace(BULLET, "").trim()).filter(Boolean).slice(0, 3);
+    return {head, date, line: head + (date ? ", " + date : ""), sub: [], bullets: bl.map(t => ({id: "", text: t, change: ""}))};
+  }
+  function gapAdvice(item, status) {
+    if (item.startsWith("Major:")) return "They list these majors. If yours is related, say how your classes connect in your note to the poster.";
+    if (item.startsWith("GPA")) return "Add your GPA to the Education line if you meet it. If you don't, leave it off; many employers still consider you.";
+    if (item.startsWith("Class standing")) return "Make sure your expected graduation month and year are on the resume.";
+    const s = item.split(" (preferred)").join("");
+    if (status === "unknown") return `We can't tell from your resume. If ${s} applies to you, add it.`;
+    return `Only add ${s} if you've really used it, in a class, a club, a project or a job. If you have, write a bullet that shows it. If not, leave it off and mention a related skill you do have.`;
+  }
+  function buildResume(profile, baseText, job, accepted, undo, today) {
+    profile = profile || {}; const text = baseText || "", und = new Set(undo || []);
+    const on = cid => (accepted === null || accepted === undefined || accepted.includes(cid)) && !und.has(cid);
+    const parsed = docParse(text), doc = JSON.parse(JSON.stringify(parsed)), changes = [];
+    const change = (kind, title, detail, before, after) => { const cid = "c" + (changes.length + 1); changes.push({id: cid, kind, title, detail: detail || "", before: before || "", after: after || "", on: on(cid)}); return cid; };
+    const section = (key, make) => { let sec = doc.sections.find(s => s.key === key) || null; if (!sec && make) { sec = {key, title: DOC_TITLES[key], text: "", lines: [], entries: []}; doc.sections.push(sec); } return sec; };
+    if (!doc.name) doc.name = S(profile.display_name).trim() || "Your Name";
+    const haveLinks = doc.contact.map(linkNorm).join(" "), email = S(profile.email).trim();
+    if (email && !D_EMAIL.test(text)) doc.contact.push(email);
+    const links = profile.links || {};
+    for (const k of ["linkedin", "website"]) { const v = S(links[k]).trim(); if (v && !haveLinks.includes(linkNorm(v)) && !(k === "linkedin" && haveLinks.includes("linkedin.com"))) doc.contact.push(rstripChars(v.replace(/^(?:https?:\/\/)?(?:www\.)?/, ""), "/")); }
+    let jl = null, jskills = [], kws = [];
+    if (job) { [jskills, kws] = jobTerms(job); jl = jskills.map(s => s.toLowerCase()); }
+    const skillsProfile = (profile.skills || []).map(s => String(s).trim()).filter(Boolean);
+    const have = uniqLower(extractSkills(parsed.sections.filter(s => s.key === "skills").flatMap(s => s.lines).join(" ")).concat(extractSkills(text), skillsProfile));
+    // 1. summary
+    const oldSum = (section("summary") || {text: ""}).text;
+    const gen = summaryText(profile, parsed, have, jl, job);
+    if ((job && nrm(gen) !== nrm(oldSum)) || (!job && !oldSum)) {
+      const cid = change("summary", job ? (oldSum ? "Rewrote your summary for this job" : "Added a summary for this job") : "Added a short summary",
+        "Built from your major, graduation term, skills" + (job ? " this job lists" : "") + " and experience. Nothing new is claimed.", oldSum, gen);
+      if (on(cid)) section("summary", true).text = gen;
+    }
+    // 2. profile entries
+    const textN = nrm(text); let added = 0;
+    for (const it of profile.items || []) {
+      const key = PROFILE_ITEM_KEYS[it.kind || ""], title = S(it.title).trim();
+      if (!key || !title || textN.includes(nrm(title)) || added >= 4) continue;
+      added++;
+      const e = profileEntry(it), label = {awards: "certification", projects: "project", leadership: "activity"}[key] || "experience";
+      const cid = change("profile", `Added your ${label} “${title}” from your profile`, "It's on your profile but wasn't on this resume.", "", e.line);
+      if (on(cid)) section(key, true).entries.push(e);
+    }
+    // 3. order
+    const scoreOf = {};
+    for (const sec of doc.sections) {
+      if (!BULLET_KEYS.includes(sec.key)) continue;
+      for (const e of sec.entries) {
+        const sc = e.bullets.map(b => { const r = job ? relevance(b.text, jskills, kws) : [NUM.test(b.text) && !bulletIssues(b.text).length ? 1 : 0, []]; if (b.id) scoreOf[b.id] = r[0]; return r; });
+        if (e.bullets.length < 2) continue;
+        const order = e.bullets.map((_, i) => i).sort((a, b) => sc[b][0] - sc[a][0] || a - b);
+        if (order.some((v, i) => v !== i) && sc[order[0]][0] > sc[0][0]) {
+          const where = e.head || DOC_TITLES[sec.key] || "";
+          const cid = change("order", job ? "Led " + where.slice(0, 60) + " with its most relevant bullet" : "Led " + where.slice(0, 60) + " with its strongest result",
+            job ? `It mentions ${andList(sc[order[0]][1].slice(0, 3))}, which this job asks for.` : "It shows a result with a number, so it should come first.",
+            e.bullets[0].text, e.bullets[order[0]].text);
+          if (on(cid)) e.bullets = order.map(i => e.bullets[i]);
+        }
+      }
+    }
+    // 4. trim
+    const dropped = new Set();
+    if (job) for (const sec of doc.sections) {
+      if (!BULLET_KEYS.includes(sec.key)) continue;
+      for (const e of sec.entries) {
+        if (e.bullets.length <= 4) continue;
+        const ranked = e.bullets.map((b, i) => [b, i]).sort((x, y) => -(scoreOf[x[0].id] || 0) - -(scoreOf[y[0].id] || 0) || x[1] - y[1]).map(x => x[0]);
+        const gone = ranked.slice(4).filter(b => b.id && (scoreOf[b.id] || 0) === 0);
+        if (gone.length) {
+          const where = e.head || DOC_TITLES[sec.key] || "";
+          const cid = change("trim", `Left out ${gone.length} bullet${gone.length !== 1 ? "s" : ""} under ${where.slice(0, 60)} that don't relate to this job`,
+            "Keeps the page on what this employer asks for. They stay on your main resume.", gone.map(b => b.text).join(" / "), "");
+          const ids = new Set(gone.map(b => b.id)); ids.forEach(i => dropped.add(i));
+          if (on(cid)) e.bullets = e.bullets.filter(b => !ids.has(b.id));
+        }
+      }
+    }
+    // 5. rewrites
+    let nRw = 0;
+    for (const b of parsed.sections.flatMap(sec => sec.entries.flatMap(e => e.bullets))) {
+      if (dropped.has(b.id) || nRw >= 10) continue;
+      const t = b.text, iss = bulletIssues(t);
+      if (!iss.length) continue;
+      const nw = improveBullet(t).rewrite.split(PLACEHOLDER_TAIL).join("");
+      const why = iss[0] + (!NUM.test(t) && !iss[0].startsWith("No number") ? " If you have a number for it, add it." : "");
+      if (!nw || nrm(nw) === nrm(t)) continue;
+      nRw++;
+      const cid = change("rewrite", "Reworded a bullet to lead with what you did", why, t, nw);
+      if (on(cid)) for (const sec of doc.sections) for (const e of sec.entries) for (const x of e.bullets) if (x.id === b.id) { x.text = nw; x.change = cid; }
+    }
+    // 6. skills
+    const cand = jl !== null ? skillsProfile.filter(s => jl.includes(s.toLowerCase())) : skillsProfile;
+    const miss = missingProfileSkills(text, cand);
+    if (miss.length) {
+      const many = miss.length > 1;
+      const cid = change("skills", "Added " + andList(miss.slice(0, 4)) + (miss.length > 4 ? ` and ${miss.length - 4} more` : "") + " to Skills",
+        job ? "This job lists " + (many ? "them" : "it") + ", and " + (many ? "they're" : "it's") + " on your profile."
+            : (many ? "They're" : "It's") + " on your profile but " + (many ? "weren't" : "wasn't") + " on your resume.", "", miss.join(", "));
+      if (on(cid)) {
+        const sec = section("skills", true), i = sec.lines.findIndex(ln => !ln.includes(":"));
+        if (i >= 0) sec.lines[i] = rstripChars(sec.lines[i].replace(/\s+$/, ""), ",;") + ", " + miss.join(", ");
+        else sec.lines.push((sec.lines.length ? "Additional: " : "") + miss.join(", "));
+      }
+    }
+    const sections = doc.sections.map((s, i) => [s, i]).sort((a, b) => DOC_ORDER.indexOf(a[0].key) - DOC_ORDER.indexOf(b[0].key) || a[1] - b[1]).map(x => x[0])
+      .filter(s => s.text || s.lines.length || s.entries.length);
+    const out = {name: doc.name, contact: doc.contact, sections, changes, gaps: [], match: null,
+                 job: job ? {id: job.id === undefined ? null : job.id, title: job.title || "", company: job.company || ""} : null};
+    out.text = docText(out);
+    if (job) {
+      const lean = t => Object.assign({}, profile, {skills: [], items: [], headline: "", bio: "", resume_text: t});
+      const f0 = fitScore(job, lean(text), today), f1 = fitScore(job, lean(out.text), today);
+      out.match = {before: f0.percent, after: f1.percent, met_before: f0.met, met_after: f1.met, total: f1.total};
+      out.gaps = f1.checklist.filter(c => c.status !== "met").map(c => ({text: c.text, must: !!c.must, advice: gapAdvice(c.text, c.status)})).slice(0, 8);
+    }
+    return out;
+  }
+  function docText(doc) {
+    const out = [doc.name];
+    if (doc.contact.length) out.push(doc.contact.join(" | "));
+    for (const sec of doc.sections) {
+      out.push("", sec.title.toUpperCase());
+      if (sec.key === "summary") { out.push(sec.text); continue; }
+      out.push(...sec.lines);
+      for (const e of sec.entries) { if (e.line) out.push(e.line); out.push(...e.sub); out.push(...e.bullets.map(b => "• " + b.text)); }
+    }
+    return out.join("\n").trim() + "\n";
+  }
+  const hesc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
+  function docHtml(doc, marks) {
+    if (marks === undefined) marks = true;
+    const p = [`<article class="rs-doc" aria-label="Resume preview"><div class="rs-dhd"><h1>${hesc(doc.name)}</h1>`];
+    if (doc.contact.length) p.push('<p class="rs-dc">' + doc.contact.map(c => `<span>${hesc(c)}</span>`).join('<i aria-hidden="true"> · </i>') + "</p>");
+    p.push("</div>");
+    for (const sec of doc.sections) {
+      p.push(`<section><h2>${hesc(sec.title)}</h2>`);
+      if (sec.key === "summary") p.push(`<p class="rs-ds">${hesc(sec.text)}</p>`);
+      for (const ln of sec.lines) { const k = ln.indexOf(":"); p.push(k > 0 && k < 40 ? `<p class="rs-dsk"><b>${hesc(ln.slice(0, k + 1))}</b>${hesc(ln.slice(k + 1))}</p>` : `<p class="rs-dsk">${hesc(ln)}</p>`); }
+      for (const en of sec.entries) {
+        p.push('<div class="rs-de">');
+        if (en.head || en.date) p.push(`<div class="rs-dh"><b>${hesc(en.head)}</b>` + (en.date ? `<span>${hesc(en.date)}</span>` : "") + "</div>");
+        en.sub.forEach(s => p.push(`<p class="rs-dsub">${hesc(s)}</p>`));
+        if (en.bullets.length) p.push("<ul>" + en.bullets.map(b => `<li${marks && b.change ? ' class="rs-chg"' : ""}>${hesc(b.text)}</li>`).join("") + "</ul>");
+        p.push("</div>");
+      }
+      p.push("</section>");
+    }
+    p.push("</article>");
+    return p.join("");
+  }
+  // PDF: Helvetica metrics for WinAnsi 32..255, the same small writer as resume_engine.to_pdf.
+  const HELV = "278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584,0,556,0,222,556,333,1000,556,556,333,1000,667,333,1000,0,611,0,0,222,222,333,333,350,556,1000,333,1000,500,333,944,0,500,667,0,333,556,556,556,556,260,556,333,737,370,556,584,0,737,333,400,584,0,0,333,556,537,278,333,0,365,556,834,834,834,611,667,667,667,667,667,667,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,500,556,556,556,556,278,278,278,278,556,556,556,556,556,556,556,584,611,556,556,556,556,500,556,500".split(",").map(Number), HELVB = "278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584,0,556,0,278,556,500,1000,556,556,333,1000,667,333,1000,0,611,0,0,278,278,500,500,350,556,1000,333,1000,556,333,944,0,500,667,0,333,556,556,556,556,280,556,333,737,370,556,584,0,737,333,400,584,0,0,333,611,556,278,333,0,365,556,834,834,834,611,722,722,722,722,722,722,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,556,556,556,556,556,278,278,278,278,611,611,611,611,611,611,611,584,611,611,611,611,611,556,611,556".split(",").map(Number);
+  const WIN_HI = "€\x81‚ƒ„…†‡ˆ‰Š‹Œ\x8dŽ\x8f\x90‘’“”•–—˜™š›œ\x9džŸ";
+  function win(ch) {
+    const o = ch.codePointAt(0); let c;
+    if ((o >= 32 && o <= 126) || (o >= 160 && o <= 255)) c = o;
+    else if (WIN_HI.includes(ch)) c = 128 + WIN_HI.indexOf(ch);
+    else if ("\t   ".includes(ch)) c = 32;
+    else if ("‐‑‒".includes(ch)) c = 45;
+    else return 63;
+    return HELV[c - 32] ? c : 63;
+  }
+  const chars = s => Array.from(s);
+  const pdfWidth = (s, bold, size) => { const w = bold ? HELVB : HELV; let n = 0; for (const ch of chars(s)) n += w[win(ch) - 32]; return n * size / 1000; };
+  const pdfStr = s => "(" + chars(s).map(ch => { const c = win(ch); return c === 40 || c === 41 || c === 92 ? "\\" + String.fromCharCode(c) : c > 126 ? "\\" + c.toString(8).padStart(3, "0") : String.fromCharCode(c); }).join("") + ")";
+  function pdfWrap(s, bold, size, width) {
+    const lines = []; let cur = [];
+    for (const w of pyWords(s)) {
+      const wc = chars(w), t = cur.length ? cur.concat([" "], wc) : wc;
+      if (cur.length && pdfWidth(t.join(""), bold, size) > width) { lines.push(cur.join("")); cur = wc; } else cur = t;
+      while (cur.length > 1 && pdfWidth(cur.join(""), bold, size) > width) {
+        let k = cur.length; while (k > 1 && pdfWidth(cur.slice(0, k).join(""), bold, size) > width) k--;
+        lines.push(cur.slice(0, k).join("")); cur = cur.slice(k);
+      }
+    }
+    if (cur.length) lines.push(cur.join(""));
+    return lines.length ? lines : [""];
+  }
+  const pnum = v => { const r = Math.floor(v * 100 + 0.5) / 100; return String(r === 0 ? 0 : r); };
+  function pdfBytes(pages, title) {
+    const objs = ["<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>", `<< /Title ${pdfStr(title || "Resume")} /Producer (NoleCareerShield) >>`];
+    const kids = [];
+    for (const ops of pages) {
+      const stream = ops.join("\n");
+      objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+      objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${objs.length} 0 R >>`);
+      kids.push(`${objs.length} 0 R`);
+    }
+    objs[1] = `<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${kids.length} >>`;
+    let out = "%PDF-1.4\n"; const offs = [];
+    objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+    const xref = out.length;
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(o => String(o).padStart(10, "0") + " 00000 n \n").join("");
+    out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R /Info 5 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    const bytes = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i);
+    return bytes;
+  }
+  function toPdf(doc) {
+    const M = 54, W = 504, TOP = 738, BOT = 54, pages = [[]]; let y = TOP;
+    const need = h => { if (y - h < BOT) { pages.push([]); y = TOP; } };
+    const put = (x, s, bold, size) => pages[pages.length - 1].push(`BT /${bold ? "F2" : "F1"} ${pnum(size)} Tf ${pnum(x)} ${pnum(y)} Td ${pdfStr(s)} Tj ET`);
+    const para = (s, indent, bullet) => { indent = indent || 0; pdfWrap(s, false, 10, W - indent).forEach((ln, i) => { need(12.5); y -= 12.5; if (i === 0 && bullet) put(M + indent - 10, "•", false, 10); put(M + indent, ln, false, 10); }); };
+    for (const ln of pdfWrap(doc.name, true, 20, W)) { y -= 22; put(M + (W - pdfWidth(ln, true, 20)) / 2, ln, true, 20); }
+    if (doc.contact.length) for (const ln of pdfWrap(doc.contact.join("  |  "), false, 9.5, W)) { y -= 13; put(M + (W - pdfWidth(ln, false, 9.5)) / 2, ln, false, 9.5); }
+    for (const sec of doc.sections) {
+      need(40); y -= 20; put(M, sec.title.toUpperCase(), true, 10.5);
+      pages[pages.length - 1].push(`0.6 w 0.55 G ${M} ${pnum(y - 4)} m ${M + W} ${pnum(y - 4)} l S 0 G`); y -= 4;
+      if (sec.key === "summary") para(sec.text);
+      sec.lines.forEach(ln => para(ln));
+      for (const e of sec.entries) {
+        if (e.head || e.date) {
+          const dw = e.date ? pdfWidth(e.date, false, 10) : 0, heads = pdfWrap(e.head, true, 10, W - dw - 12);
+          need(3 + 12.5 * heads.length); y -= 3;
+          heads.forEach((h, i) => { y -= 12.5; put(M, h, true, 10); if (i === 0 && e.date) put(M + W - dw, e.date, false, 10); });
+        }
+        e.sub.forEach(s => para(s));
+        e.bullets.forEach(b => para(b.text, 14, true));
+      }
+    }
+    const ps = pages.filter(p => p.length);
+    return pdfBytes(ps.length ? ps : [[]], doc.name + " resume");
+  }
+  function bestEntry(doc, keys, jskills, kws) {
+    let best = null, top = 0, hits = [];
+    for (const sec of doc.sections) { if (!keys.includes(sec.key)) continue;
+      for (const e of sec.entries) { const [sc, hs] = relevance(e.head + " " + e.bullets.map(b => b.text).join(" "), jskills, kws); if (sc > top) { best = e; top = sc; hits = hs; } } }
+    return [best, top, hits];
+  }
+  function standOutJob(profile, text, job, today) {
+    profile = profile || {}; const doc = docParse(text), [jskills, kws] = jobTerms(job), tips = [];
+    const [e, , hits] = bestEntry(doc, ["experience", "leadership"], jskills, kws);
+    if (e && (e.head || e.bullets.length)) tips.push({title: "Lead with " + (e.head.split(SEG)[0].trim() || "that role").slice(0, 80), kind: "lead",
+      detail: `It shows ${andList(hits.slice(0, 3))}, which this posting asks for. Keep it near the top, and bring it up first when you talk to them.`});
+    let [proj, psc, phits] = bestEntry(doc, ["projects"], jskills, kws), ptitle = proj ? proj.head.split(SEG)[0].trim() : "";
+    if (!proj) for (const it of profile.items || []) if (it.kind === "project" && it.title) {
+      const [s2, h2] = relevance(String(it.title) + " " + S(it.description), jskills, kws); if (s2 > psc) { ptitle = String(it.title).trim(); psc = s2; phits = h2; } }
+    if (ptitle && psc) tips.push({title: "Mention your project " + ptitle.slice(0, 70), kind: "project", detail: `It's the project that best matches this job: it shows ${andList(phits.slice(0, 3))}. Put the link on your resume if it's online.`});
+    const f = fitScore(job, Object.assign({}, profile, {skills: [], items: [], headline: "", bio: "", resume_text: text}), today);
+    const mine = new Set((profile.skills || []).map(s => String(s).toLowerCase())); let shown = 0;
+    for (const c of f.checklist) {
+      if (c.status !== "missing" || ["Major:", "GPA", "Class standing"].some(p => c.text.startsWith(p)) || shown >= 2) continue;
+      const s = c.text.split(" (preferred)").join("");
+      if (mine.has(s.toLowerCase())) tips.push({title: `Show where you used ${s}`, kind: "evidence", detail: "It's on your profile and this job lists it, but nothing on your resume shows it. Add one bullet about where you used it."});
+      else tips.push({title: `Build evidence for ${s}`, kind: "gap", detail: `The posting asks for ${s} and nothing you've shared shows it. If you've used it in a class or club, add that. If not, a short course or a small project can show it. Don't list it until it's true.`});
+      shown++;
+    }
+    if (e) { const bare = e.bullets.filter(b => !NUM.test(b.text));
+      if (bare.length) tips.push({title: "Add numbers to " + (e.head.split(SEG)[0].trim() || "your top role").slice(0, 70), kind: "numbers",
+        detail: `${bare.length} of its bullets ${bare.length === 1 ? "has" : "have"} no number. How many people, hours, dollars or percent? Numbers are what screeners remember.`}); }
+    if (f.checklist.some(c => c.status === "met" && c.text.startsWith("Major:"))) tips.push({title: "Say your major up front", kind: "major", detail: "This posting lists your major. Your summary and note should say it in the first line."});
+    if (tips.length < 3) tips.push({title: "Open with a summary aimed at this job", kind: "summary", detail: "Two lines on your major, your strongest skills for this role and your most relevant experience. Tailor my resume writes one from what you've shared."});
+    if (tips.length < 3) tips.push({title: "Follow up after you apply", kind: "follow", detail: "Once you've applied, a short, specific note to the person who posted the job helps you stand out. There's a draft under Message the poster."});
+    return tips.slice(0, 6);
+  }
+  function coverNote(profile, text, job, poster) {
+    profile = profile || {}; const doc = docParse(text), [jskills, kws] = jobTerms(job);
+    const name = (S(profile.display_name) || doc.name || "").trim(), major = S(profile.major).trim(), grad = S(profile.grad_term).trim();
+    const who = (name ? `I'm ${name}, a` : "I'm a") + (major ? " " + major : "") + " student at Florida State University" + (grad ? " graduating " + grad : "") + ".";
+    const title = (S(job.title) || "this").trim(), company = S(job.company).trim();
+    let body = who + ` I'm interested in the ${title} role` + (company ? " at " + company : "") + ".", best = "", top = 0;
+    for (const sec of doc.sections) { if (!BULLET_KEYS.includes(sec.key)) continue;
+      for (const e of sec.entries) for (const b of e.bullets) { const t = rstripChars(b.text, "."), fw = firstWord(t), [sc] = relevance(t, jskills, kws);
+        if (sc > top && (STRONG.has(fw) || fw.endsWith("ed")) && !PRONOUN.test(t) && pyWords(t).length <= 30) { best = t; top = sc; } } }
+    if (best) body += " For example, I " + best.slice(0, 1).toLowerCase() + best.slice(1) + ".";
+    const jlow = jskills.map(j => j.toLowerCase()), have = [];
+    for (const s of extractSkills(text).concat((profile.skills || []).map(String))) if (jlow.includes(s.toLowerCase()) && !have.some(h => h.toLowerCase() === s.toLowerCase())) have.push(s);
+    if (have.length) body += ` I've worked with ${andList(have.slice(0, 3))}, which the posting mentions.`;
+    body += " I'd welcome the chance to talk about how I could help. Thank you for your time.";
+    return (poster ? `Hi ${poster},` : "Hi,") + "\n\n" + body + (name ? "\n\n" + name : "");
+  }
+
   const NCS = {normalize, runTextRules, scorePosting, check, linkFindings, LEVELS, NEXT_STEPS, extractSkills, normalizeSkill, parseQuery, rankJobs, keywordGap,
-    categoriesForMajor, KIND_WORDS, qualsOf, QUAL_KINDS, review, report, standOut, addSkills, setSummary, missingProfileSkills, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
+    categoriesForMajor, KIND_WORDS, qualsOf, QUAL_KINDS, review, report, standOut, parseResume: parse, heading, buildResume, docText, docHtml, toPdf, standOutJob, coverNote, DOC_TITLES, addSkills, setSummary, missingProfileSkills, improveBullet, bulletIssues, tailor, versioned, relevance, assistant, toProfile, jobRequirements, fitScore, FIT_NAMES, FREE_MAIL, trustFromSignals, replyTime, median, PROFILE_FIELDS, POPULAR, CATEGORIES, WORK_TYPES, JOB_KINDS, SKILLS,
     ruleset: RULEPACK.version};
   root.NCS = NCS;
   if (typeof module !== "undefined" && module.exports) module.exports = NCS;

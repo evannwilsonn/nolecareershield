@@ -7,12 +7,7 @@ follows for free. Class names all start with rs-.
 CSS = """
 /* ---------- Resume studio: optimizer ---------- */
 .rs-tabs{margin-bottom:22px}
-.rs-hero{position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:44px;align-items:center;padding:14px 0 30px}
-.rs-hero::before{content:"";position:absolute;inset:-20px -40px;z-index:-1;pointer-events:none;
-  background:radial-gradient(520px circle at 85% 40%,var(--gold-tint),transparent 65%),radial-gradient(460px circle at 10% 10%,var(--accent-tint),transparent 60%);opacity:.75}
-.rs-badge{width:54px;height:54px;border-radius:16px;background:var(--accent-tint);color:var(--accent-ink);display:grid;place-items:center;margin-bottom:18px}
-.rs-badge svg{width:28px;height:28px}
-.rs-h1{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:clamp(32px,4.6vw,52px);line-height:1.05;letter-spacing:-.01em;margin:0 0 18px;color:var(--ink)}
+.rs-h1{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:clamp(26px,3.2vw,36px);line-height:1.1;letter-spacing:-.01em;margin:0 0 12px;color:var(--ink)}
 .rs-lede{font-size:16px;color:var(--muted);max-width:52ch;margin:0 0 18px}
 .rs-checks{list-style:none;margin:0;padding:0;display:grid;gap:12px}
 .rs-checks li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;align-items:start;font-size:16px;color:var(--ink)}
@@ -91,8 +86,122 @@ CSS = """
 .rs-cover h4{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
 .rs-note{font-size:13px;color:var(--muted);margin:10px 0 0}
 
+/* ---------- steps: 1 Choose resume, 2 Scan, 3 Review changes ---------- */
+.rs-steps{list-style:none;margin:0 0 22px;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;counter-reset:none}
+.rs-steps li{position:relative;border-top:3px solid var(--line-2);padding:10px 2px 0;font-size:14px;color:var(--faint);font-weight:600}
+.rs-steps li>a,.rs-steps li>span{display:flex}
+.rs-steps li a{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
+.rs-steps li:not(:has(a)){display:flex;align-items:center;gap:10px}
+.rs-steps .n{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;background:var(--sunk);color:var(--muted);border:1px solid var(--line-2)}
+.rs-steps .n svg{width:14px;height:14px}
+.rs-steps li.on{border-top-color:var(--accent-ink);color:var(--ink)}
+.rs-steps li.on .n{background:var(--accent-ink);color:var(--canvas);border-color:var(--accent-ink)}
+.rs-steps li.done{border-top-color:color-mix(in srgb,var(--accent-ink) 45%,var(--line-2));color:var(--muted)}
+.rs-steps li.done .n{background:var(--accent-tint);color:var(--accent-ink);border-color:transparent}
+.rs-steps li a:hover .t{text-decoration:underline}
+.rs-start{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:36px;align-items:start;padding:4px 0 26px}
+
+/* ---------- step 2: the resume line by line, notes in the margin ---------- */
+.rs-next{display:block;width:100%;margin-top:14px;text-align:center}
+.rs-sheet .rs-lines{margin-top:10px;background:var(--surface);border:1px solid var(--whisper);border-radius:12px;padding:14px 0}
+.rs-ln{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0 18px;align-items:start;padding:0 16px}
+.rs-ln.sp{min-height:10px}
+.rs-txt{font-size:14px;line-height:1.5;padding:3px 8px;border-radius:6px;color:var(--ink-2);overflow-wrap:anywhere}
+.rs-ln.lh .rs-txt{font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12.5px;color:var(--ink);padding-top:8px}
+.rs-ln.ln .rs-txt{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:20px;color:var(--ink)}
+.rs-ln.lb .rs-txt{padding-left:18px;text-indent:-10px}
+.rs-ln.hl .rs-txt{background:var(--gold-tint);box-shadow:inset 3px 0 0 var(--gold,#c9a227);color:var(--ink)}
+.rs-margin{border-left:1px dashed var(--line-2);padding:0 0 0 14px;min-height:100%}
+.rs-margin .rs-card{margin:4px 0 10px;box-shadow:var(--shadow)}
+.rs-margin:empty{border-left-color:transparent}
+.rs-sect{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:3px}
+.rs-anchor{display:block;position:relative;top:-80px;height:0}
+
+/* ---------- the new resume: preview + panel ---------- */
+.rs-jtabs{margin:6px 0 18px}
+.rs-gen-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+.rs-t1{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:clamp(24px,3vw,32px);line-height:1.12;margin:0 0 4px;color:var(--ink)}
+.rs-gen{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}
+.rs-gen.one{grid-template-columns:minmax(0,1fr) 360px}
+.rs-paper{background:var(--sunk);border:1px solid var(--whisper);border-radius:14px;padding:22px}
+.rs-legend{font-size:12.5px;color:var(--faint);margin:12px 4px 0}
+.rs-legend .rs-chg{background:#fff4c7;color:#3d3d3a;padding:0 4px;border-radius:3px}
+.rs-panel{display:grid;gap:14px;position:sticky;top:76px}
+.rs-panel h3{margin:0 0 8px;font-size:16px}
+.rs-panel h3 small{font-weight:500;color:var(--faint);font-size:12.5px;margin-left:6px}
+.rs-mm{display:flex;align-items:center;gap:14px;margin:8px 0 10px}
+.rs-mm div{display:grid}
+.rs-mm .lbl{font-size:12px;color:var(--muted)}
+.rs-mm b{font-family:var(--display);font-stretch:84%;font-size:34px;line-height:1;font-variant-numeric:tabular-nums;color:var(--muted)}
+.rs-mm .new b{color:var(--ok,#2f7a4a)}
+.rs-mm .arr{font-size:22px;color:var(--faint)}
+.rs-match .meter{margin:6px 0}
+.rs-dl{display:grid;gap:10px}
+.rs-dl h3{margin:0}
+.rs-dlrow{display:flex;gap:8px;flex-wrap:wrap}
+.rs-dl .rs-save{margin:0}.rs-dl .rs-save .b,.rs-dl>.b{width:100%;justify-content:center;text-align:center}
+.rs-changes ol{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.rs-ch{border:1px solid var(--whisper);border-radius:10px;padding:10px 12px;background:var(--canvas)}
+.rs-ch.off{opacity:.72}
+.rs-ch.off .rs-diff .now{text-decoration:line-through;text-decoration-color:var(--faint)}
+.rs-cht{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.rs-cht b{font-size:14px;line-height:1.35}
+.rs-cht .pill{margin-left:0;flex:none}
+.rs-ch .why{font-size:12.5px;color:var(--muted);margin:4px 0 0}
+.rs-ch .rs-diff div{font-size:13px}
+.rs-ch .rs-actions{margin-top:8px}
+.rs-kept{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:600;color:var(--ok,#2f7a4a)}
+.rs-kept.off{color:var(--faint)}
+.rs-gaps .reasons li{font-size:13.5px}
+.rs-need{max-width:640px}
+.rs-need h2{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:24px;margin:0 0 6px}
+.rs-aibox p{margin:0 0 8px}
+.rs-tpick .b{margin-top:2px}
+.rs-draft textarea.resume{min-height:520px}
+.rs-notecard textarea{min-height:260px;width:100%;margin:6px 0 10px}
+.rs-notecard label{font-weight:600}
+.rs-cn{white-space:pre-wrap;font-size:14px;background:var(--canvas);border:1px solid var(--whisper);border-radius:10px;padding:12px 14px;margin:0 0 10px}
+.rs-tips{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.rs-tipc{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;background:var(--surface);border:1px solid var(--whisper);border-radius:12px;padding:16px 18px}
+.rs-tipc .n{width:30px;height:30px;border-radius:50%;background:var(--accent-tint);color:var(--accent-ink);display:grid;place-items:center;font-weight:700}
+.rs-tipc b{font-size:15.5px}
+.rs-tipc p{margin:4px 0 0;color:var(--muted);font-size:14px}
+
+/* The resume itself: always a white page, in light and dark, like the PDF. */
+.rs-doc{--d-ink:#1b1b1a;--d-muted:#4a4a46;--d-rule:#b9b6ac;background:#fff;color:var(--d-ink);max-width:816px;margin:0 auto;padding:48px 54px 56px;
+  border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.08),0 8px 28px rgba(0,0,0,.12);font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:13.5px;line-height:1.42}
+.rs-dhd{text-align:center;margin-bottom:6px}
+.rs-doc h1{font-size:27px;font-weight:700;margin:0 0 4px;letter-spacing:.01em;color:var(--d-ink);font-family:inherit}
+.rs-dc{margin:0;color:var(--d-muted);font-size:12.5px;display:flex;flex-wrap:wrap;justify-content:center;gap:0 2px}
+.rs-dc i{font-style:normal;color:#9a978f}
+.rs-doc section{margin-top:14px}
+.rs-doc h2{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--d-rule);padding-bottom:3px;margin:0 0 6px;color:var(--d-ink);font-family:inherit}
+.rs-doc p{margin:0 0 3px}
+.rs-dsk b{font-weight:700}
+.rs-de{margin:0 0 8px}
+.rs-dh{display:flex;justify-content:space-between;gap:14px;align-items:baseline}
+.rs-dh span{flex:none;color:var(--d-muted);font-size:12.5px;white-space:nowrap}
+.rs-dsub{color:var(--d-muted)}
+.rs-doc ul{margin:3px 0 0 18px;padding:0}
+.rs-doc li{margin:0 0 2px;padding-left:2px}
+.rs-doc li.rs-chg{background:#fff4c7;border-radius:3px;box-shadow:-4px 0 0 #fff4c7,4px 0 0 #fff4c7}
+
+@media (max-width:1000px){.rs-gen,.rs-gen.one{grid-template-columns:minmax(0,1fr)}.rs-panel{position:static}}
+@media (max-width:700px){.rs-ln{grid-template-columns:minmax(0,1fr)}.rs-margin{border-left:0;padding:0 0 0 12px}
+  .rs-paper{padding:8px;border-radius:10px}.rs-doc{padding:24px 18px 28px;font-size:13px}.rs-dh{flex-wrap:wrap}.rs-steps .t{font-size:12.5px}
+  .rs-start{grid-template-columns:minmax(0,1fr);gap:20px}}
+
+/* Ctrl+P on a page with a resume prints just the resume. */
+@media print{
+  @page{size:letter;margin:.5in}
+  body:has(.rs-doc){background:#fff!important}
+  body:has(.rs-doc) *:not(.rs-doc,.rs-doc *,:has(.rs-doc)){display:none!important}
+  body:has(.rs-doc) :has(.rs-doc){display:block!important;margin:0!important;padding:0!important;border:0!important;background:none!important;box-shadow:none!important;max-width:none!important;width:auto!important;position:static!important}
+  .rs-doc{box-shadow:none!important;border-radius:0;padding:0!important;max-width:none;font-size:10.5pt}
+  .rs-doc li.rs-chg{background:none;box-shadow:none}
+}
+
 @media (max-width:900px){
-  .rs-hero{grid-template-columns:minmax(0,1fr);gap:26px}
   .rs-report{grid-template-columns:minmax(0,1fr)}
   .rs-side{position:static}
   .rs-tools,.rs-stand,.rs-cover{grid-template-columns:minmax(0,1fr)}
