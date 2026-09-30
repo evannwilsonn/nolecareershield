@@ -169,6 +169,13 @@ In production the app **refuses to start** if `ADMIN_PASSWORD`, `SECRET_KEY`,
 `SMTP_HOST` in development, emails are not sent: read the confirmation link in
 `outbox.log`.
 
+**FSU single sign-on (optional).** Sign-in starts with one email box, like Handshake. An @fsu.edu address goes to
+"Continue to FSU single sign-on" (OpenID Connect with PKCE against FSU's Microsoft Entra tenant, so FSU's own page and
+Duo handle the password) when `SSO_TENANT_ID`, `SSO_CLIENT_ID` and `SSO_CLIENT_SECRET` are set; any other address goes
+to the employer login. FSU ITS has to register the app (redirect URI `{BASE_URL}/sso/callback`) before this can be
+switched on; until then students use email and password. `sso.py` checks the state, nonce, token signature, issuer,
+audience, expiry and tenant, and that the address is exactly @fsu.edu.
+
 ## Deploy
 
 A `Dockerfile` and Render blueprint (`render.yaml`) are included. On Render:

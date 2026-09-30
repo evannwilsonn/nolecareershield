@@ -80,6 +80,7 @@ import feed
 import admin_extra
 import hiring
 import employer_page
+import sso
 import ai
 from ui import esc, EMBLEM, BASE_CSS, PAGE_SCRIPT, PAGE_SCRIPT_HASH, _viewer, shell
 from security import (
@@ -486,7 +487,7 @@ def landing(request: Request):
 <div class="eyebrow">For FSU students · Scam-checked</div>
 <h1>Student jobs, <em>checked for scams</em> before you see them.</h1>
 <p>Every listing is scanned and approved by a person. Build a profile, message verified employers, get matched by the job assistant and sharpen your resume, all in one place.</p>
-<div class="cta"><a class="primary" href="/signup/student">Join with your @fsu.edu email</a><a class="secondary" href="/jobs">Browse jobs</a></div>
+<div class="cta"><a class="primary" href="/login">Join with your @fsu.edu email</a><a class="secondary" href="/jobs">Browse jobs</a></div>
 <div class="count">{count_line}</div></div>
 <div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
 <b style="font-family:var(--serif);font-weight:500;font-size:19px">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</b>
@@ -779,6 +780,7 @@ def privacy():
 <li>No analytics, advertising or trackers. Pages load only from this site, with no third-party fonts.</li></ul>
 <h3>Students</h3>
 <ul><li>A student account needs an @fsu.edu email address, confirmed by a link we send, and a password. We store the address and a salted hash of the password, never the password itself.</li>
+<li>If FSU single sign-on is available, you can sign in on FSU's own page instead. FSU confirms your @fsu.edu address to us; we never see your FSU password, and we keep only the address.</li>
 <li>Your profile holds what you type in: the name you choose to show, major, graduation term, headline, skills, interests and optional links. We never ask for a student ID, date of birth or SSN.</li>
 <li>If you add a resume, we keep its text (not the file) and any versions you save. Only you can see it unless you turn on "share my resume with approved employers".</li>
 <li>Other students can see your name, school, major, class year, headline, about, skills and what you're looking for, never your experience, education entries, projects or resume. Employers see your full profile only if our reviewers approved them and you either turned on "let approved employers find me" or are already talking with them.</li>
@@ -949,17 +951,96 @@ def _resume_draft(request: Request, user: dict, background: BackgroundTasks) -> 
     return True
 
 
-# --- pick a side ---
+# --- one place to start: email first, like Handshake ---
+
+def _start_shell(inner: str, title: str, status: int = 200) -> HTMLResponse:
+    return HTMLResponse(shell(f'<div class="auth start"><div class="startmark" aria-hidden="true">{EMBLEM}</div>{inner}</div>',
+                              title=title + " — NoleCareerShield", scripts=True), status_code=status)
+
+
+def _start_page(email: str = "", error: str = "", next_: str = "", status: int = 200) -> HTMLResponse:
+    err = f'<div class="banner warning" role="alert">{esc(error)}</div>' if error else ""
+    note = ('<div class="banner info">Log in with your FSU student account to see how to apply.</div>'
+            if next_.startswith("/job/") else "")
+    inner = f"""<h2 class="auth-title">Log in or sign up</h2><p class="auth-sub">Students use their @fsu.edu address.</p>{note}{err}
+<form method="post" action="/login">{_csrf_input()}<input type="hidden" name="next" value="{esc(next_)}">
+<div class="form-field"><input id="s-email" type="email" name="email" required maxlength="254" autocomplete="username" aria-label="Email"
+placeholder="Email" value="{esc(email)}" autofocus></div>
+<button class="submit-btn wide" type="submit">Continue with email</button></form>
+<p class="start-foot">Hiring? <a href="/signup/employer">Sign up as an employer</a></p>"""
+    return _start_shell(inner, "Log in or sign up", status)
+
+
+def _sso_welcome(email: str, next_: str) -> HTMLResponse:
+    hidden = f'{_csrf_input()}<input type="hidden" name="email" value="{esc(email)}"><input type="hidden" name="next" value="{esc(next_)}">'
+    inner = f"""<h2 class="auth-title">Welcome to NoleCareerShield</h2>
+<p class="auth-sub">Use your {esc(sso.NAME)} account to log in as<br><b>{esc(email)}</b> <a href="/login{"?next=" + esc(next_) if next_ else ""}">Edit</a></p>
+<form method="post" action="/sso/start">{hidden}<button class="submit-btn wide" type="submit">Continue to {esc(sso.NAME)} single sign-on →</button></form>
+<form method="post" action="/login" style="margin-top:12px;text-align:center">{hidden}<input type="hidden" name="how" value="password">
+<button class="linkbtn" type="submit">Log in another way</button></form>
+<p class="fine" style="margin-top:16px">You'll sign in on {esc(sso.NAME)}'s own page, with Duo if your account uses it. NoleCareerShield never sees your {esc(sso.NAME)} password.</p>"""
+    return _start_shell(inner, "Welcome")
+
 
 @app.get("/login", response_class=HTMLResponse)
-def login_choose(request: Request):
-    body = """<h2 class="page">Log in</h2><p class="lead">Pick the kind of account you have.</p>
-<div class="choose">
-<div class="card"><h3>I'm a student</h3><p>Log in with your @fsu.edu email to see how to apply to a listing.</p>
-<div class="row"><a class="pri" href="/login/student">Log in</a><a class="sec" href="/signup/student">Sign up</a></div></div>
-<div class="card"><h3>I'm an employer</h3><p>Log in to send a listing for review, or create an account to post your first one.</p>
-<div class="row"><a class="pri" href="/login/employer">Log in</a><a class="sec" href="/signup/employer">Sign up</a></div></div></div>"""
-    return HTMLResponse(shell(body, title="Log in — NoleCareerShield"))
+def login_start_page(request: Request, next: str = ""):
+    return _start_page(next_=_safe_next(next))
+
+
+@app.post("/login", response_class=HTMLResponse)
+def login_start(request: Request, email: str = Form(""), csrf: str = Form(""), next: str = Form(""), how: str = Form("")):
+    """Step one: the address decides the path. @fsu.edu goes to FSU single sign-on (when it is set up) or the student
+    password page; anything else is an employer. The email never goes into a URL."""
+    enforce_rate_limit(request, general_limiter, "login_start")
+    nx = _safe_next(next)
+    if not verify_csrf(csrf, "form"):
+        return _start_page(email[:254], next_=nx, status=400, error="That page had been open too long. Please try again.")
+    try:
+        addr = accounts.normalize_email(email)
+    except ValueError:
+        return _start_page(email[:254], next_=nx, status=400, error="Enter a valid email address.")
+    if accounts.is_fsu_email(addr):
+        if sso.enabled() and how != "password":
+            return _sso_welcome(addr, nx)
+        return _login_page("student", email=addr, next_=nx)
+    return _login_page("employer", email=addr, next_=nx,
+                       notice="That isn't an @fsu.edu address, so this is an employer login. Students: go back and use your FSU email.")
+
+
+@app.post("/sso/start")
+def sso_start(request: Request, email: str = Form(""), csrf: str = Form(""), next: str = Form("")):
+    enforce_rate_limit(request, user_login_limiter, "sso_start")
+    if not sso.enabled():
+        return RedirectResponse("/login", status_code=303)
+    if not verify_csrf(csrf, "form"):
+        return _start_page(status=400, error="That page had been open too long. Please try again.")
+    try:
+        addr = accounts.normalize_email(email)
+    except ValueError:
+        addr = ""
+    url, cookie = sso.start(addr if accounts.is_fsu_email(addr) else "", _safe_next(next))
+    resp = RedirectResponse(url, status_code=303)
+    resp.set_cookie(sso.COOKIE, cookie, max_age=sso.COOKIE_TTL, httponly=True, secure=IS_PROD, samesite="lax", path="/sso")
+    return resp
+
+
+@app.get("/sso/callback")
+def sso_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    enforce_rate_limit(request, user_login_limiter, "sso_callback")
+    if error:
+        resp = _start_page(status=400, error="FSU sign-in was cancelled or didn't finish. Try again, or log in another way.")
+    else:
+        try:
+            email, nx = sso.finish(code[:4000], state[:200], request.cookies.get(sso.COOKIE))
+        except sso.SSOError as e:
+            resp = _start_page(status=400, error=str(e))
+        else:
+            with closing(sqlite3.connect(DB_PATH)) as db:
+                user = sso.user_for(db, email)
+                token = accounts.create_session(db, user["id"])
+            resp = _login_cookie(RedirectResponse(_safe_next(nx) or _home_for(user), status_code=303), token)
+    resp.delete_cookie(sso.COOKIE, path="/sso")
+    return resp
 
 
 # --- log in ---

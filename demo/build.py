@@ -59,8 +59,8 @@ a[href="#"]{cursor:pointer}
 
 SHELL = """<title>{title}</title>
 <style>{css}</style>
-<div class="demo" id="demo" role="region" aria-label="Demo controls"><span class="lbl">Interactive demo with sample data. The scam checks, matches and resume scores run the real detector and rules in your browser; nothing is saved or sent.</span>
-<span class="grp"><span>Explore as:</span><button type="button" data-do="as-student">Student</button><button type="button" data-do="as-employer">Employer</button><button type="button" data-do="as-reviewer">Reviewer</button></span>
+<div class="demo" id="demo" role="region" aria-label="Demo controls"><span class="lbl">Interactive demo with sample data. The scam checks, matches and resume scores run the real detector and rules in your browser; nothing is saved or sent. Students: log in with jordan@fsu.edu.</span>
+<span class="grp"><span>Explore as:</span><button type="button" data-do="as-employer">Employer</button><button type="button" data-do="as-reviewer">Reviewer</button></span>
 <span class="grp"><button type="button" data-go="inbox" id="inboxBtn">Demo inbox</button><button type="button" data-do="reset">Reset demo</button></span></div>
 <header><div class="nav"><a class="brand" href="#" data-go="home" aria-label="NoleCareerShield home">{emblem}<span class="brand-name">Nole<b>CareerShield</b></span></a>
 <div class="nav-actions" id="navActions"></div></div></header>

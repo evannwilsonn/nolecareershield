@@ -255,6 +255,9 @@ input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--accent)}
 /* ---------- auth ---------- */
 .auth{max-width:440px;margin:36px auto 12px;background:var(--surface);border:1px solid var(--whisper);border-radius:16px;padding:30px 28px;box-shadow:var(--shadow)}
 .auth-title{font-family:var(--serif);font-weight:500;font-size:28px;text-align:center;color:var(--ink);margin-bottom:6px}
+.auth.start{text-align:center;padding-top:34px}.auth.start .form-field{text-align:left}
+.startmark{width:56px;height:56px;margin:0 auto 14px;display:grid;place-items:center;border-radius:14px;background:var(--accent-tint)}
+.startmark svg{width:34px;height:34px}.start-foot{margin-top:18px;font-size:14px;color:var(--muted)}.start-foot a{color:var(--accent-ink);font-weight:600}
 .auth-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:18px}
 .tabs{display:flex;gap:4px;background:var(--sunk);border-radius:10px;padding:4px;margin:16px 0 22px;box-shadow:0 0 0 1px var(--whisper) inset}
 .tabs a{flex:1;text-align:center;text-decoration:none;color:var(--muted);font-size:14px;font-weight:600;padding:8px 10px;border-radius:7px}
