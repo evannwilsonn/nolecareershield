@@ -335,6 +335,13 @@ def _score_pill(j: dict) -> str:
     return f'<span class="rev-score {esc(j["scam_status"])}">{esc(text)}</span>'
 
 
+def _teaser_card(j: dict) -> str:
+    """What visitors see: title, company and category. Everything else is for signed-in students."""
+    return (f'<a class="job teaser" href="/login?next=/job/{int(j["id"])}"><div class="job-top"><div><div class="job-title">{esc(j["title"])}</div>'
+            f'<div class="job-co">{esc(j["company"])}</div></div><span class="pill">{ui.icon("shield", 13)} Log in to view</span></div>'
+            f'<div class="job-meta"><span class="chip">{esc(j["category"])}</span></div></a>')
+
+
 def _job_card(j: dict) -> str:
     badge = ('<span class="badge verified">✓ Verified</span>' if j["scam_status"]=="clear"
              else '<span class="badge warning">⚠ Check carefully</span>')
@@ -392,7 +399,7 @@ async def security_headers(request: Request, call_next):
     return response
 
 
-_PRIVATE_PREFIXES = ("/admin", "/messages", "/api/", "/profile", "/resume", "/u/", "/talent", "/feed", "/assistant", "/check")
+_PRIVATE_PREFIXES = ("/admin", "/messages", "/api/", "/profile", "/resume", "/u/", "/talent", "/feed", "/assistant", "/check", "/job", "/hiring", "/company")
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
@@ -404,7 +411,7 @@ def healthz():
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
-    return ("User-agent: *\nDisallow: /admin\nDisallow: /post\nDisallow: /messages\nDisallow: /profile\n"
+    return ("User-agent: *\nDisallow: /admin\nDisallow: /post\nDisallow: /messages\nDisallow: /profile\nDisallow: /jobs\nDisallow: /job/\nDisallow: /hiring\n"
             "Disallow: /resume\nDisallow: /u/\nDisallow: /company/\nDisallow: /talent\nDisallow: /feed\n"
             "Disallow: /assistant\nDisallow: /api/\n")
 
@@ -487,30 +494,38 @@ def landing(request: Request):
 <div class="eyebrow">For FSU students · Scam-checked</div>
 <h1>Student jobs, <em>checked for scams</em> before you see them.</h1>
 <p>Every listing is scanned and approved by a person. Build a profile, message verified employers, get matched by the job assistant and sharpen your resume, all in one place.</p>
-<div class="cta"><a class="primary" href="/login">Join with your @fsu.edu email</a><a class="secondary" href="/jobs">Browse jobs</a></div>
+<div class="cta"><a class="primary" href="/login">Join or log in with your @fsu.edu email</a><a class="secondary" href="/check">Try the scam check</a></div>
 <div class="count">{count_line}</div></div>
 <div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
 <b style="font-family:var(--serif);font-weight:500;font-size:19px">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</b>
 <div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
-<div class="mini"><b>{ui.icon("spark", 15)} Job assistant</b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
+<div class="mini"><b>{ui.icon("spark", 15)} Job assistant <span class="pill accent" style="margin-left:4px">FSU students</span></b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
 </div></div></section>
 <section class="how"><div class="how-inner">
 <div class="how-item"><b><span class="n">01</span>Only vetted listings</b><p>Every posting is scam-scanned, then a person approves it. Employers are reviewed before they can message you.</p></div>
 <div class="how-item"><b><span class="n">02</span>Tools that work for you</b><p>A job assistant that knows your skills, a resume reviewer and tailorer, and a checker for any suspicious message.</p></div>
 <div class="how-item"><b><span class="n">03</span>An FSU-only feed</b><p>Only verified students and approved employers post, and employer posts must be opportunities or advice for FSU students.</p></div>
 </div></section>"""
-    jobs = query_public()[:3]
+    jobs = query_public()
     if jobs:
-        cards = "".join(_job_card(j) for j in jobs)
-        body = f'<h3 class="sec">Latest approved listings</h3>{cards}<p style="margin:16px 0 40px"><a href="/jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">See all jobs →</a></p>'
+        with store.db() as conn:
+            employers = conn.execute("SELECT COUNT(*) FROM employer_profiles WHERE status = 'approved'").fetchone()[0]
+        emp = f" from {employers} approved employer{'s' if employers != 1 else ''}" if employers else ""
+        cards = "".join(_teaser_card(j) for j in jobs[:3])
+        body = (f'<h3 class="sec">Latest listings <small>for FSU students</small></h3>'
+                f'<p class="muted" style="margin:-4px 0 14px">{len(jobs)} verified listing{"s" if len(jobs) != 1 else ""}{emp}, every one scam-checked and '
+                f'approved by a person. Log in with your @fsu.edu email to see the details and apply.</p>{cards}'
+                '<p style="margin:16px 0 40px"><a href="/login?next=/jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Log in to see all jobs →</a></p>')
     else:
-        body = '<div class="empty" style="margin:32px 0 48px">No approved listings yet. <a href="/post" style="color:var(--accent-ink);font-weight:600">Submit the first one.</a></div>'
+        body = '<div class="empty" style="margin:32px 0 48px">No approved listings yet. <a href="/employers" style="color:var(--accent-ink);font-weight:600">Hiring? Post the first one.</a></div>'
     return shell(body, hero=hero)
 
 
 @app.get("/jobs", response_class=HTMLResponse)
 def jobs_feed(request: Request, search: str = "", category: str = "", work_type: str = ""):
     enforce_rate_limit(request, general_limiter, "jobs_feed")
+    if not getattr(request.state, "user", None):
+        return RedirectResponse("/login?next=/jobs", status_code=303)       # the board is for FSU students and employers only
     # Query params are attacker-controlled input same as form fields --
     # oversized or malformed values get clipped/rejected here too.
     search = search.strip()[:200]
@@ -551,6 +566,8 @@ def jobs_feed(request: Request, search: str = "", category: str = "", work_type:
 @app.get("/job/{job_id}", response_class=HTMLResponse)
 def job_detail(job_id: int, request: Request):
     enforce_rate_limit(request, general_limiter, "job_detail")
+    if not getattr(request.state, "user", None):
+        return RedirectResponse(f"/login?next=/job/{int(job_id)}", status_code=303)
     j = get_job(job_id)
     if not j or j["review_status"] != "approved":
         return HTMLResponse(shell('<p class="empty" style="margin:40px 0">That listing isn\'t available.</p>'), status_code=404)
@@ -740,6 +757,38 @@ def _contact_line() -> str:
             else "the site operator")
 
 
+@app.get("/employers", response_class=HTMLResponse)
+def employers_landing(request: Request):
+    """The employer side door: what they get, then log in or create an account (separate from students)."""
+    user = getattr(request.state, "user", None)
+    if user and user["role"] == "employer":
+        return RedirectResponse("/hiring", status_code=303)
+    n_students = 0
+    with store.db() as conn:
+        n_students = conn.execute("SELECT COUNT(*) FROM student_profiles s JOIN users u ON u.id = s.user_id "
+                                  "WHERE u.verified = 1 AND s.setup_step >= 1").fetchone()[0]
+    reach = f"{n_students} FSU student{'s' if n_students != 1 else ''} on the board. " if n_students >= 25 else ""
+    hero = f"""<section class="hero emp"><div class="hero-in"><div>
+<div class="eyebrow">For employers</div>
+<h1>Hire FSU students <em>on a board they trust.</em></h1>
+<p>{reach}Every student is a confirmed @fsu.edu account. Every employer and every listing is reviewed by a person, so students answer your messages instead of wondering if you're a scam.</p>
+<div class="cta"><a class="primary" href="/signup/employer">Create an employer account</a><a class="secondary" href="/login/employer">Employer log in</a></div>
+<div class="count"><a href="/post" style="color:inherit">Or write your first listing now and sign up when you send it →</a></div></div>
+<div class="hero-card" aria-label="What employers get"><span class="stamp">Employers</span>
+<div class="mini"><b>{ui.icon("people", 15)} Ranked matches for every listing</b><p>Each student who opted in, scored against your listing on their whole profile, with the evidence: skills, projects, coursework, GPA.</p></div>
+<div class="mini"><b>{ui.icon("chat", 15)} Invite to apply in one click</b><p>A ready-to-send message about the role. Students see you're an approved employer.</p></div>
+<div class="mini"><b>{ui.icon("jobs", 15)} Candidates and listing stats</b><p>Track students from new to hired, and see how many viewed and clicked Apply.</p></div>
+</div></div></section>"""
+    body = """<section class="how"><div class="how-inner">
+<div class="how-item"><b><span class="n">01</span>Create your account</b><p>Use an email on your company's domain. It helps us verify you faster and raises your trust score.</p></div>
+<div class="how-item"><b><span class="n">02</span>Get approved</b><p>A person checks your website, email and how you work with FSU students, usually within a business day.</p></div>
+<div class="how-item"><b><span class="n">03</span>Post and match</b><p>Each listing is scam-scanned and reviewed, then shown to FSU students with your trust score. Your ranked matches are ready as soon as it's live.</p></div>
+</div></section>
+<div class="card" style="margin:24px 0 40px"><h3 class="sec" style="margin-top:0">What students see about you</h3><p>Your company page shows your details, open listings and a trust score from 0 to 100 built from what we can check: reviewer approval, your email domain and website, how your listings were reviewed, how you answer students, and how complete your profile is. <a href="/privacy">How we handle data</a>.</p>
+<div class="row" style="margin-top:14px"><a class="b" href="/signup/employer">Create an employer account</a><a class="b sec" href="/login/employer">Log in</a></div></div>"""
+    return shell(body, hero=hero, title="For employers — NoleCareerShield")
+
+
 @app.get("/about", response_class=HTMLResponse)
 def about():
     body = """<a class="back" href="/">← Home</a><h2 class="page">About NoleCareerShield</h2>
@@ -776,7 +825,9 @@ def privacy():
     body = f"""<a class="back" href="/">← Home</a><h2 class="page">Privacy</h2>
 <div class="prose"><p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, and you can download or delete everything at any time.</p>
 <h3>Anyone browsing</h3>
-<ul><li>You can read every approved listing and use the scam checker without an account. No cookies are set for browsing or searching.</li>
+<ul><li>Job listings are for signed-in FSU students and employers. Visitors see only a few titles on the home page.</li>
+<li>Anyone can use the scam checker without an account, up to 10 checks a day. Visitors see the verdict and the main reasons; signed-in FSU students see every signal and the exact words it caught. No cookies are set for browsing.</li>
+<li>If you tell us which school you'd like NoleCareerShield at, we store only the school name.</li>
 <li>No analytics, advertising or trackers. Pages load only from this site, with no third-party fonts.</li></ul>
 <h3>Students</h3>
 <ul><li>A student account needs an @fsu.edu email address, confirmed by a link we send, and a password. We store the address and a salted hash of the password, never the password itself.</li>
@@ -846,11 +897,10 @@ def _auth_page(heading: str, body: str, *, title: str | None = None, status: int
     return HTMLResponse(shell(inner, title=(title or heading) + " — NoleCareerShield", scripts=True), status_code=status)
 
 
-def _tabs(active: str, kind: str, next_: str = "") -> str:
-    q = f"?next={esc(next_)}" if next_ else ""
-    return ('<div class="tabs">' + "".join(
-        f'<a href="/{kind}/{r}{q}"{" class=active" if r == active else ""}>{lbl}</a>'
-        for r, lbl in (("student", "Student"), ("employer", "Employer"))) + "</div>")
+def _other_side(role: str) -> str:
+    """Students and employers have separate doors; each page points to the other one."""
+    return ('<p class="start-foot" style="text-align:center">Hiring? <a href="/employers">Employer log in or sign up →</a></p>' if role == "student" else
+            '<p class="start-foot" style="text-align:center">Student? <a href="/login">Log in with your @fsu.edu email →</a></p>')
 
 
 def _pw_field(fid: str = "f-password", name: str = "password", label: str = "Password",
@@ -967,7 +1017,7 @@ def _start_page(email: str = "", error: str = "", next_: str = "", status: int =
 <div class="form-field"><input id="s-email" type="email" name="email" required maxlength="254" autocomplete="username" aria-label="Email"
 placeholder="Email" value="{esc(email)}" autofocus></div>
 <button class="submit-btn wide" type="submit">Continue with email</button></form>
-<p class="start-foot">Hiring? <a href="/signup/employer">Sign up as an employer</a></p>"""
+<p class="start-foot">Hiring? <a href="/employers">Employer log in or sign up →</a></p>"""
     return _start_shell(inner, "Log in or sign up", status)
 
 
@@ -1056,13 +1106,13 @@ def _login_page(role: str, email: str = "", error: str = "", notice: str = "", n
                   '<button class="linkbtn" type="submit">Send me a new confirmation email</button></form>')
     ph = "you@fsu.edu" if role == "student" else "you@company.com"
     a_an = "a student" if role == "student" else "an employer"
-    body = f"""{_tabs(role, "login", next_)}{note}{err}{resend}
+    body = f"""{note}{err}{resend}
 <form method="post" action="/login/{role}">{_csrf_input()}<input type="hidden" name="next" value="{esc(next_)}">
 <div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="{ph}" value="{esc(email)}"></div>
 {_pw_field(forgot_role=role)}
 {_turnstile_widget()}<button class="submit-btn wide" type="submit">Log in</button></form>
-<div class="or"><span>Or</span></div><a class="outline-btn" href="/signup/{role}{"?next=" + esc(next_) if next_ else ""}">Create {a_an} account</a>"""
-    return _auth_page("Log in", body, status=status)
+<div class="or"><span>Or</span></div><a class="outline-btn" href="/signup/{role}{"?next=" + esc(next_) if next_ else ""}">Create {a_an} account</a>{_other_side(role)}"""
+    return _auth_page("Student log in" if role == "student" else "Employer log in", body, status=status)
 
 
 @app.get("/login/{role}", response_class=HTMLResponse)
@@ -1150,15 +1200,15 @@ def _signup_page(role: str, email: str = "", error: str = "", next_: str = "", s
     else:
         sub = '<p class="auth-sub">Any email works. We send a link to confirm it before you can post.</p>'
         ph = "you@company.com"
-    body = f"""{_tabs(role, "signup", next_)}{err}
+    body = f"""{err}
 <form method="post" action="/signup/{role}">{_csrf_input()}<input type="hidden" name="next" value="{esc(next_)}">
 <div class="hp" aria-hidden="true"><label for="f-website">Leave this empty</label><input id="f-website" name="website" tabindex="-1" autocomplete="off"></div>
 <div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="{ph}" value="{esc(email)}"></div>
 {_pw_field(autocomplete="new-password", check=True)}{_RULES_LIST}
 {_pw_field(fid="f-password2", name="password2", label="Confirm password", autocomplete="new-password")}
 {_turnstile_widget()}<button class="submit-btn wide" type="submit">Create account</button></form>
-<div class="or"><span>Or</span></div><a class="outline-btn" href="/login/{role}{"?next=" + esc(next_) if next_ else ""}">I already have an account</a>"""
-    return _auth_page("Sign up", body, sub=sub, status=status)
+<div class="or"><span>Or</span></div><a class="outline-btn" href="/login/{role}{"?next=" + esc(next_) if next_ else ""}">I already have an account</a>{_other_side(role)}"""
+    return _auth_page("Create your student account" if role == "student" else "Create your employer account", body, sub=sub, status=status)
 
 
 @app.get("/signup/{role}", response_class=HTMLResponse)

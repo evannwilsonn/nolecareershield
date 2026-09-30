@@ -394,6 +394,8 @@ table.t td{padding:10px;border-bottom:1px solid var(--whisper);vertical-align:to
 .checklist .unknown .st{background:var(--sand);color:var(--muted)}
 .checklist .ev{display:block;font-size:12.5px;color:var(--muted)}
 @media(max-width:620px){.fit{grid-template-columns:1fr}.fitparts .cat{grid-template-columns:120px 1fr 40px}}
+/* ---------- visitors ---------- */
+.job.teaser .pill{white-space:nowrap}.job.teaser .job-title{filter:none}
 /* ---------- hiring ---------- */
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0 8px}
 .stat{background:var(--surface);border-radius:12px;box-shadow:0 0 0 1px var(--whisper) inset;padding:12px 14px}
@@ -1619,7 +1621,7 @@ const EMPLOYER_OF = {"Garnet Analytics": 4, "Bayside Dental": 5, "Coastal Policy
 let S; // the whole demo state
 function reset() {
   S = {users: [], students: {}, employers: {}, jobs: [], convos: [], posts: [], reports: [], inbox: [], tokens: {}, versions: [],
-       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}};
+       session: null, admin: false, route: {name: "home", q: {}}, flash: null, draft: null, pendingDraft: null, nextId: 1, tokN: 0, itemN: 0, timers: [], candidates: [], views: {}, clicks: {}, schoolRequests: [], publicChecks: 0};
   const user = (email, role) => { const u = {id: S.nextId++, email, role, pw: PW, verified: true}; S.users.push(u); return u; };
   const t = NOW();
   const j = user("jordan@fsu.edu", "student"), m = user("maya@fsu.edu", "student"), d = user("dev@fsu.edu", "student");
@@ -1781,7 +1783,7 @@ function nav() {
   $("#inboxBtn").textContent = "Demo inbox" + (S.inbox.length ? ` (${S.inbox.length})` : "");
   const extra = S.admin ? '<a class="ghost" href="#" data-go="admin">Review queue</a>' : "";
   if (me()) $("#navActions").innerHTML = extra + `<span class="who">${esc(me().email)}</span><button class="ghostbtn" type="button" data-do="logout">Log out</button>` + (isEmployer() ? '<a class="btn" href="#" data-go="post">Post a job</a>' : "");
-  else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="jobs">Browse jobs</a><a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="post">Post a job</a>';
+  else $("#navActions").innerHTML = extra + '<a class="ghost opt" href="#" data-go="scam">Scam check</a><a class="ghost" href="#" data-go="start">Log in</a><a class="btn" href="#" data-go="employers">For employers</a>';
 }
 const APP_PAGES = {hiring: "hiring", hjob: "hiring", home: "home", jobs: "jobs", job: "jobs", post: "post", posted: "post", assistant: "assistant", feed: "feed", messages: "messages", newmsg: "messages",
   resume: "resume", scam: "scam", profile: "profile", setup: "profile", item: "profile", talent: "talent", u: "", company: "", about: "", privacy: "", report: ""};
@@ -1795,21 +1797,23 @@ P.home = () => {
 <div class="eyebrow">For FSU students · Scam-checked</div>
 <h1>Student jobs, <em>checked for scams</em> before you see them.</h1>
 <p>Every listing is scanned and approved by a person. Build a profile, message verified employers, get matched by the job assistant and sharpen your resume, all in one place.</p>
-<div class="cta"><a class="primary" href="#" data-go="start">Join with your @fsu.edu email</a><a class="secondary" href="#" data-go="jobs">Browse jobs</a></div>
+<div class="cta"><a class="primary" href="#" data-go="start">Join or log in with your @fsu.edu email</a><a class="secondary" href="#" data-go="scam">Try the scam check</a></div>
 <div class="count">${n ? `${n} approved listing${n !== 1 ? "s" : ""} live right now` : "Approved listings will appear here"}</div></div>
 <div class="hero-card" aria-label="What a checked message looks like"><span class="stamp">Scam check</span>
 <b style="font-family:var(--serif);font-weight:500;font-size:19px">"You've been pre-selected for a remote assistant role. $400/week. Reply from your personal email."</b>
 <div class="mini" style="border-color:var(--bad);background:var(--bad-tint);color:var(--bad)"><b>Scam. Stop here.</b><p style="color:inherit">An offer you never applied for, a flat weekly stipend, and a push off your school email.</p></div>
-<div class="mini"><b>${icon("spark", 15)} Job assistant</b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
-<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="scam">Try the scam check</a><a class="b sm sec" href="#" data-go="start">Log in or sign up</a></div>
+<div class="mini"><b>${icon("spark", 15)} Job assistant <span class="pill accent" style="margin-left:4px">FSU students</span></b><p>"Remote data internships that fit my resume" returns real, reviewed listings with the reasons they match.</p></div>
+<div class="row" style="margin-top:12px"><a class="b sm" href="#" data-go="scam">Try the scam check</a><a class="b sm sec" href="#" data-go="start">Join or log in with @fsu.edu</a></div>
 </div></div></section>
 <section class="how"><div class="how-inner">
 <div class="how-item"><b>Only vetted listings</b><p>Every posting is scam-scanned, then a person approves it. Employers are reviewed before they can message you.</p></div>
 <div class="how-item"><b>Tools that work for you</b><p>A job assistant that knows your skills, a resume reviewer and tailorer, and a checker for any suspicious message.</p></div>
 <div class="how-item"><b>An FSU-only feed</b><p>Only verified students and approved employers post, and employer posts must be opportunities or advice for FSU students.</p></div>
 </div></section>`;
-  const list = approvedJobs().slice().reverse().slice(0, 3);
-  return {hero, body: `<h3 class="sec">Latest approved listings</h3>${list.map(j => jobCard(j)).join("")}<p style="margin:16px 0 8px"><a href="#" data-go="jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">See all jobs →</a></p>`};
+  // Visitors see a teaser only: title, company, category. Listings are for signed-in FSU students and employers.
+  const all = approvedJobs(), list = all.slice().reverse().slice(0, 3), emps = Object.values(S.employers).filter(p => p.status === "approved").length;
+  const teaser = j => `<a class="job teaser" href="#" data-go="start?next=job-${j.id}"><div class="job-top"><div><div class="job-title">${esc(j.title)}</div><div class="job-co">${esc(j.company)}</div></div><span class="pill">${icon("shield", 13)} Log in to view</span></div><div class="job-meta"><span class="chip">${esc(j.category)}</span></div></a>`;
+  return {hero, body: `<h3 class="sec">Latest listings <small>for FSU students</small></h3><p class="muted" style="margin:-4px 0 14px">${all.length} verified listing${all.length !== 1 ? "s" : ""} from ${emps} approved employer${emps !== 1 ? "s" : ""}, every one scam-checked and approved by a person. Log in with your @fsu.edu email to see the details and apply.</p>${list.map(teaser).join("")}<p style="margin:16px 0 8px"><a href="#" data-go="start?next=jobs" style="color:var(--accent-ink);font-weight:600;text-decoration:none">Log in to see all jobs →</a></p>`};
 };
 function studentHome() {
   const p = SP(me().id); if (!p || !p.setup_step) { go("setup?step=1"); return null; }
@@ -1853,6 +1857,7 @@ function completion(p) {
 }
 
 P.jobs = () => {
+  if (!me()) { go("start?next=jobs"); return null; }
   const q = S.route.q, search = (q.search || "").trim().slice(0, 200), category = N.CATEGORIES.includes(q.category) ? q.category : "", wt = N.WORK_TYPES.includes(q.work_type) ? q.work_type : "";
   const term = search.toLowerCase();
   const list = approvedJobs().slice().reverse().filter(j => (!term || [j.title, j.company, j.description].some(t => t.toLowerCase().includes(term))) && (!category || j.category === category) && (!wt || j.work_type === wt));
@@ -1869,6 +1874,7 @@ P.jobs = () => {
     (list.length ? `<div class="results-head">${plural(list.length, "listing")}${search ? ` for "${esc(search)}"` : ""}</div>${list.map(j => jobCard(j, matches[j.id])).join("")}` : '<div class="empty">No listings match. Try clearing filters or a different search.</div>');
 };
 P.job = () => {
+  if (!me()) { go("start?next=job-" + S.route.q.id); return null; }
   const j = S.jobs.find(x => x.id === S.route.q.id);
   if (!j || j.review_status !== "approved") return '<p class="empty" style="margin:40px 0">That listing isn\'t available.</p>';
   const ban = j.scam_status === "clear" ? banner("verified", "✓ This listing passed the scam check and was approved by a reviewer. Still verify the employer through their own website before sharing personal information.")
@@ -1903,6 +1909,21 @@ P.post = () => {
 P.posted = () => `${pageHead("Submitted for review")}${banner("info", "Thanks, your listing was scanned and is now waiting for a person to approve it. Nothing is published automatically. Open the reviewer view to see its score and approve it, and check the demo inbox for the receipt.")}<div class="row"><a class="b" href="#" data-go="admin">Open the reviewer view</a><a class="b sec" href="#" data-go="home">Home</a></div>`;
 
 // ---- scam check ----
+// The full evidence is for FSU students and approved employers (same as msgcheck.full_view): enough to spot a scam, not to tune one.
+const fullView = () => !!me() && (isStudent() || approvedEmp(me().id));
+function publicVerdictHtml(r) {
+  const shown = (r.findings.filter(f => f.severity !== "note").length ? r.findings.filter(f => f.severity !== "note") : r.findings).slice(0, 3), more = r.findings.length - shown.length;
+  const items = shown.map(f => `<li><b>${esc(f.title)}</b><span class="ev">${esc(f.why)}</span></li>`).join("") || '<li><b>No scam patterns matched.</b><span class="ev">The detector checked for more than 30 known student-scam patterns.</span></li>';
+  return `<section class="verdict ${r.key}" aria-live="polite"><div class="eyebrow" style="color:inherit">Verdict</div><h2>${icon("shield", 22)}${esc(r.title)}</h2><p>${esc(r.advice)}</p><ul class="reasons">${items}</ul></section>
+<div class="banner info" style="margin-top:12px">FSU students see ${more > 0 ? `${more} more signal${more !== 1 ? "s" : ""}, ` : ""}the exact words each signal caught and the link and sender checks, and can check messages straight from their inbox. <a href="#" data-go="start">Log in with your @fsu.edu email</a></div>
+<h3 class="sec">What to do next</h3><ol class="next">${N.NEXT_STEPS[r.level].map(s => `<li>${esc(s)}</li>`).join("")}</ol>`;
+}
+function schoolForm() {
+  if (me()) return "";
+  if (S.schoolDone) { const d = S.schoolDone; S.schoolDone = ""; return `<div class="card" style="margin-top:22px"><b>Thanks.</b> <span class="muted">We'll count ${esc(d)}.</span></div>`; }
+  return `<form id="schoolForm" class="card" style="margin-top:22px"><b>Want NoleCareerShield at your school?</b><p class="small muted" style="margin:4px 0 10px">Tell us which one. We only keep the school name, nothing about you.</p>
+<div class="row" style="flex-wrap:nowrap"><label for="c-school" class="hp">Your school</label><input id="c-school" name="school" maxlength="80" required placeholder="e.g. University of Florida" style="flex:1;min-width:0"><button class="b sm" type="submit">Send</button></div></form>`;
+}
 function verdictHtml(r, from) {
   const items = r.findings.slice(0, 8).map(f => `<li><b>${esc(f.title)}</b> <span class="pill ${f.severity === "critical" ? "bad" : f.severity === "warning" ? "warn" : ""}">${{critical: "strong signal", warning: "warning", note: "note"}[f.severity]}</span><span class="ev">${esc(f.why)}</span>${f.matched && f.matched.length ? `<span class="ev">Found: “${esc(f.matched.join("”, “"))}”</span>` : ""}</li>`).join("")
     + (r.lead_gen.flag ? `<li><b>Looks like a data-harvesting or aggregator ad</b><span class="ev">${esc(r.lead_gen.verdict)}</span></li>` : "")
@@ -1922,13 +1943,13 @@ P.scam = () => {
     const c = S.convos.find(c => c.messages.some(m => m.id === q.m)), m = c && c.messages.find(x => x.id === q.m);
     if (m && (c.student === me().id || c.employer === me().id) && m.from !== me().id && m.status === "delivered")
       top = `<div class="card"><div class="eyebrow">The message you're checking</div><p style="white-space:pre-wrap;margin-top:6px">${esc(m.body)}</p><a class="small" href="#" data-go="messages?c=${c.id}">← Back to the conversation</a></div>` + verdictHtml(N.check(m.body), m.from === c.employer ? m.from : 0);
-  } else if (q.run) top = verdictHtml(N.check(text, sender));
+  } else if (q.run) { const r = N.check(text, sender); top = fullView() ? verdictHtml(r) : publicVerdictHtml(r) + schoolForm(); }
   const form = `<form id="scamForm" class="card"><div class="form-field"><label for="c-text">The message</label><p class="hint">Paste the whole thing: text, email, LinkedIn or Handshake DM. Nothing is saved.</p>
 <textarea id="c-text" name="text" required maxlength="8000" placeholder="Hi! I'm Dr. Smith from the Psychology Department. I'm looking for a personal assistant, $400 weekly...">${esc(text)}</textarea></div>
 <div class="form-field"><label for="c-sender">Who sent it (optional)</label><p class="hint">The email address or name it came from. It helps spot fake FSU and company addresses.</p><input id="c-sender" name="sender" maxlength="200" value="${esc(sender)}" placeholder="e.g. careers.fsu.edu@gmail.com"></div>
 <div class="row"><button class="b" type="submit">${icon("shield", 16)} Check it</button><span class="small faint">Or try a sample:</span>${SAMPLES.map((s, i) => `<button class="b sm sec" type="button" data-do="sample" data-i="${i}">${esc(s[0])}</button>`).join("")}</div></form>
 <p class="aimode" style="margin-top:8px">Rule set ${esc(N.ruleset)}. The same text always gets the same verdict. On the live site, an optional AI second opinion can add caution but never lower it.</p>`;
-  return pageHead("Is this message a scam?", "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.", "Scam check") + top + (top ? '<h3 class="sec">Check another message</h3>' : "") + form;
+  return pageHead("Is this message a scam?", "Paste any message about a job, internship or gig. You'll get a clear verdict, the evidence behind it, and what to do next.", "Scam check") + takeFlash() + top + (top ? '<h3 class="sec">Check another message</h3>' : "") + form;
 };
 
 // ---- assistant ----
@@ -2612,11 +2633,30 @@ function needStudent(what) {
 }
 
 // ---- trust pages ----
+P.employers = () => {
+  if (isEmployer()) { go("hiring"); return null; }
+  const hero = `<section class="hero emp"><div class="hero-in"><div><div class="eyebrow">For employers</div>
+<h1>Hire FSU students <em>on a board they trust.</em></h1>
+<p>Every student is a confirmed @fsu.edu account. Every employer and every listing is reviewed by a person, so students answer your messages instead of wondering if you're a scam.</p>
+<div class="cta"><a class="primary" href="#" data-go="signup?role=employer">Create an employer account</a><a class="secondary" href="#" data-go="login?role=employer">Employer log in</a></div>
+<div class="count"><a href="#" data-go="post" style="color:inherit">Or write your first listing now and sign up when you send it →</a></div></div>
+<div class="hero-card" aria-label="What employers get"><span class="stamp">Employers</span>
+<div class="mini"><b>${icon("people", 15)} Ranked matches for every listing</b><p>Each student who opted in, scored against your listing on their whole profile, with the evidence: skills, projects, coursework, GPA.</p></div>
+<div class="mini"><b>${icon("chat", 15)} Invite to apply in one click</b><p>A ready-to-send message about the role. Students see you're an approved employer.</p></div>
+<div class="mini"><b>${icon("jobs", 15)} Candidates and listing stats</b><p>Track students from new to hired, and see how many viewed and clicked Apply.</p></div></div></div></section>`;
+  return {hero, body: `<section class="how"><div class="how-inner">
+<div class="how-item"><b><span class="n">01</span>Create your account</b><p>Use an email on your company's domain. It helps us verify you faster and raises your trust score.</p></div>
+<div class="how-item"><b><span class="n">02</span>Get approved</b><p>A person checks your website, email and how you work with FSU students, usually within a business day.</p></div>
+<div class="how-item"><b><span class="n">03</span>Post and match</b><p>Each listing is scam-scanned and reviewed, then shown to FSU students with your trust score. Your ranked matches are ready as soon as it's live.</p></div></div></section>
+<div class="card" style="margin:24px 0 40px"><h3 class="sec" style="margin-top:0">What students see about you</h3><p>Your company page shows your details, open listings and a trust score from 0 to 100 built from what we can check: reviewer approval, your email domain and website, how your listings were reviewed, how you answer students, and how complete your profile is. <a href="#" data-go="privacy">How we handle data</a>.</p>
+<div class="row" style="margin-top:14px"><a class="b" href="#" data-go="signup?role=employer">Create an employer account</a><a class="b sec" href="#" data-go="login?role=employer">Log in</a></div></div>`};
+};
 P.about = () => `${pageHead("About NoleCareerShield")}<div class="prose"><p>Students get targeted by fake job offers constantly: check-cashing schemes, money-mule "recruiters", and pay-to-work training programs. NoleCareerShield is a job board built around one question: <b>is this safe to respond to?</b></p>
 <h3>How a listing gets on the board</h3><ul><li>Every submission is scored by an open, rule-based scam detector. Each rule that fires is explained in plain language, so the score is never a black box.</li><li>Every submission then waits for a human reviewer. Nothing is published automatically, no matter how clean the score.</li><li>Approved listings show their verdict. Listings that tripped signals are labeled and explain why.</li></ul>
 <h3>Beyond the board</h3><ul><li><b>Profiles</b> that students control, including whether approved employers can find them.</li><li><b>Messaging</b> between students and reviewed employers, with every message scanned for scam signs.</li><li><b>A job assistant</b> that answers in plain words and only suggests listings that passed review.</li><li><b>A resume studio</b> that scores a resume, rewrites weak lines without inventing anything, and tailors it to a job.</li><li><b>A scam checker</b> for any message a student receives, here or anywhere else.</li><li><b>An FSU-only feed</b> where employer posts must be opportunities or advice for FSU students.</li></ul>
 <h3>What this is not</h3><p>A verified badge is not a guarantee. Always confirm an employer through their own website before sharing personal information. This is an independent student project and is not affiliated with Florida State University.</p></div>`;
 P.privacy = () => `${pageHead("Privacy")}<div class="prose"><p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, and you can download or delete everything at any time.</p>
+<h3>Anyone browsing</h3><ul><li>Job listings are for signed-in FSU students and employers. Visitors see only a few titles on the home page.</li><li>Anyone can use the scam checker without an account, up to 10 checks a day. Visitors see the verdict and the main reasons; signed-in FSU students see every signal and the exact words it caught.</li><li>If you tell us which school you'd like NoleCareerShield at, we store only the school name.</li></ul>
 <h3>Students</h3><ul><li>A student account needs a confirmed @fsu.edu address and a password, stored as a salted hash. No student ID, date of birth or SSN.</li><li>Your profile holds only what you type in. Your resume is private unless you share it with approved employers.</li><li>Employers see your profile only if a reviewer approved them and you chose to be visible or are already talking with them. They see your experience, education and projects; other students see only your name, school, headline and skills.</li><li>If you upload a resume, we can fill your profile sections from it. Nothing is added that isn't in your resume, and you can edit or delete every entry.</li><li>Your fit score for a job is worked out when you open it. If you're visible to approved employers, they can see how well you fit their listings: the same score and evidence you see.</li><li>We count which listings students open and whether they press Apply, so employers see totals. They never see who viewed or clicked.</li><li>If you message an employer about a listing, or they invite you or save you from their matches, you appear in that employer's candidate list for it, where they can add a stage and a private note.</li></ul>
 <h3>Messages and the feed</h3><ul><li>Messages are only between students and approved employers, and every one is scanned when sent. Messages that match scam-only patterns are held for a reviewer.</li><li>Email notifications never include message text.</li><li>Only signed-in FSU students and approved employers can read or post on the feed.</li></ul>
 <h3>AI features</h3><ul><li>On the live site the assistant, resume tools and scam checker's second opinion can use Claude. Text is sent only when you use one of those features. This demo runs everything in your browser and sends nothing.</li></ul></div>`;
@@ -2629,7 +2669,7 @@ P.start = () => {
   const nx = okNext(S.route.q.next);
   return startShell(`<h2 class="auth-title">Log in or sign up</h2><p class="auth-sub">Students use their @fsu.edu address.</p>${nx.startsWith("job-") ? banner("info", "Log in with your FSU student account to see how to apply.") : ""}${takeFlash()}
 <form id="startForm" data-next="${nx}"><div class="form-field"><input id="s-email" type="email" name="email" required maxlength="254" autocomplete="username" aria-label="Email" placeholder="Email" value="${esc(S.startEmail || "")}"></div>
-<button class="submit-btn wide" type="submit">Continue with email</button></form><p class="start-foot">Hiring? <a href="#" data-go="signup?role=employer">Sign up as an employer</a></p>
+<button class="submit-btn wide" type="submit">Continue with email</button></form><p class="start-foot">Hiring? <a href="#" data-go="employers">Employer log in or sign up →</a></p>
 <p class="fine" style="margin-top:14px">Demo accounts: <b>jordan@fsu.edu</b> (student) and <b>pat@garnetanalytics.example</b> (employer). Any new @fsu.edu address works too.</p>`);
 };
 P.welcome = () => {
@@ -2663,24 +2703,25 @@ function mail(to, subject, body, link) { S.inbox.unshift({to, subject, body, lin
 function newToken(u, purpose) { const t = "t" + (++S.tokN) + Math.random().toString(36).slice(2, 8); for (const k in S.tokens) if (S.tokens[k].uid === u.id && S.tokens[k].purpose === purpose) S.tokens[k].used = true; S.tokens[t] = {uid: u.id, purpose, used: false}; return t; }
 function sendVerify(u) { mail(u.email, "Confirm your NoleCareerShield account", `Confirm your email to finish creating your ${u.role} account. The link works for 24 hours.\n\nIf you did not sign up, ignore this email and nothing will happen.`, {label: "Open confirmation link", go: "verify?t=" + newToken(u, "verify")}); }
 const okNext = n => /^(?:post|jobs|job-\d+)$/.test(n || "") ? n : "";
-const authTabs = (role, kind, nx) => `<div class="tabs">${["student", "employer"].map(r => `<a href="#" data-go="${kind}?role=${r}${nx}"${r === role ? ' class="active"' : ""}>${r === "student" ? "Student" : "Employer"}</a>`).join("")}</div>`;
+const otherSide = role => role === "student" ? '<p class="start-foot" style="text-align:center">Hiring? <a href="#" data-go="employers">Employer log in or sign up →</a></p>'
+  : '<p class="start-foot" style="text-align:center">Student? <a href="#" data-go="start">Log in with your @fsu.edu email →</a></p>';
 const pwField = (id, name, label, check, forgot) => `<div class="form-field"><div class="label-row"><label for="${id}">${label}</label>${forgot ? `<a class="forgot" href="#" data-go="forgot?role=${forgot}">Forgot password?</a>` : ""}</div><div class="pwbox"><input id="${id}" type="password" name="${name}" required maxlength="128"${check ? " data-pwcheck" : ""}><button type="button" class="showpw" data-do="show">Show</button></div></div>`;
 const RULES_LIST = `<ul class="rules" aria-label="Password requirements">${PW_CHECKS.map(c => `<li data-rule="${c[1]}">${c[0]}</li>`).join("")}</ul>`;
 const auth = (title, inner, sub) => `<div class="auth"><h2 class="auth-title">${title}</h2>${sub ? `<p class="auth-sub">${sub}</p>` : ""}${inner}</div>`;
 P.login = () => {
   const q = S.route.q, role = q.role === "employer" ? "employer" : "student", next = okNext(q.next) || (role === "employer" && S.pendingDraft ? "post" : ""), nx = next ? "&amp;next=" + next : "";
   const note = S.flash ? takeFlash() : role === "employer" && S.pendingDraft ? banner("info", "Log in or create an employer account to send your listing. It's saved and sent for review automatically once you're in.") : "";
-  return auth("Log in", `${authTabs(role, "login", nx)}${note}<form id="loginForm" data-role="${role}" data-next="${next}">
+  return auth(role === "student" ? "Student log in" : "Employer log in", `${note}<form id="loginForm" data-role="${role}" data-next="${next}">
 <div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required autocomplete="username" placeholder="${role === "student" ? "you@fsu.edu" : "you@company.com"}" value="${esc(S.startEmail || "")}"></div>${pwField("f-password", "password", "Password", false, role)}
 <button class="submit-btn wide" type="submit">Log in</button></form><div class="or"><span>Or</span></div><a class="outline-btn" href="#" data-go="signup?role=${role}${nx}">Create ${role === "student" ? "a student" : "an employer"} account</a>
-<p class="fine">Demo accounts: <b>jordan@fsu.edu</b> (student) and <b>pat@garnetanalytics.example</b> (employer), password <b>${PW}</b>.</p>`);
+<p class="fine">Demo accounts: <b>jordan@fsu.edu</b> (student) and <b>pat@garnetanalytics.example</b> (employer), password <b>${PW}</b>.</p>${otherSide(role)}`);
 };
 P.signup = () => {
   const q = S.route.q, role = q.role === "employer" ? "employer" : "student", next = okNext(q.next) || (role === "employer" && S.pendingDraft ? "post" : ""), nx = next ? "&amp;next=" + next : "";
-  return auth("Sign up", `${authTabs(role, "signup", nx)}${takeFlash()}<form id="signupForm" data-role="${role}" data-next="${next}">
+  return auth(role === "student" ? "Create your student account" : "Create your employer account", `${takeFlash()}<form id="signupForm" data-role="${role}" data-next="${next}">
 <div class="form-field"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required autocomplete="username" placeholder="${role === "student" ? "you@fsu.edu" : "you@company.com"}"></div>
 ${pwField("f-password", "password", "Password", true)}${RULES_LIST}${pwField("f-password2", "password2", "Confirm password")}
-<button class="submit-btn wide" type="submit">Create account</button></form><div class="or"><span>Or</span></div><a class="outline-btn" href="#" data-go="login?role=${role}${nx}">I already have an account</a>`,
+<button class="submit-btn wide" type="submit">Create account</button></form><div class="or"><span>Or</span></div><a class="outline-btn" href="#" data-go="login?role=${role}${nx}">I already have an account</a>${otherSide(role)}`,
     role === "student" ? "Use your @fsu.edu email. We send a link to confirm it." : "Any email works. We send a link to confirm it before you can post.");
 };
 P.checkmail = () => auth("Check your email", `${banner("info", `If that address can receive an account, we just sent a confirmation link to ${esc(S.route.q.email || "")}. It works for 24 hours.`, true)}<a class="outline-btn" href="#" data-go="inbox">Open the demo inbox</a><p class="fine">On the real site it lands in your own mailbox.</p>`);
@@ -2700,9 +2741,13 @@ P.inbox = () => pageHead("Demo inbox", "On the real site these go to the person'
   (S.inbox.map(m => `<div class="card"><div class="small faint">To: ${esc(m.to)}</div><b>${esc(m.subject)}</b><pre style="white-space:pre-wrap;font:13px/1.55 var(--mono);background:var(--sunk);padding:10px 12px;border-radius:8px;margin:10px 0">${esc(m.body)}</pre>${m.link ? `<a class="b sm" href="#" data-go="${esc(m.link.go)}">${esc(m.link.label)}</a>` : ""}</div>`).join("") || '<div class="empty">No mail yet. Create an account and the confirmation email appears here.</div>');
 
 // ---- reviewer ----
-const ADMIN_TABS = [["admin", "Listings"], ["aemployers", "Employers"], ["aposts", "Feed"], ["amessages", "Held messages"], ["areports", "Reports"]];
+const ADMIN_TABS = [["admin", "Listings"], ["aemployers", "Employers"], ["aposts", "Feed"], ["amessages", "Held messages"], ["areports", "Reports"], ["aschools", "School requests"]];
 function adminCounts() { return {admin: S.jobs.filter(j => j.review_status === "pending").length, aemployers: Object.values(S.employers).filter(p => p.status === "pending").length,
-  aposts: S.posts.filter(p => ["pending", "held"].includes(p.status)).length, amessages: S.convos.reduce((n, c) => n + c.messages.filter(m => m.status === "held").length, 0), areports: S.reports.filter(r => !r.resolved).length}; }
+  aposts: S.posts.filter(p => ["pending", "held"].includes(p.status)).length, amessages: S.convos.reduce((n, c) => n + c.messages.filter(m => m.status === "held").length, 0), areports: S.reports.filter(r => !r.resolved).length, aschools: new Set(S.schoolRequests.map(x => x.school.toLowerCase())).size}; }
+P.aschools = () => { const m = new Map();
+  for (const x of S.schoolRequests) { const k = x.school.toLowerCase(); const e = m.get(k) || {school: x.school, n: 0, last: 0}; e.n++; e.last = Math.max(e.last, x.at); m.set(k, e); }
+  const rows = [...m.values()].sort((a, b) => b.n - a.n || b.last - a.last).map(e => `<tr><td><b>${esc(e.school)}</b></td><td>${e.n}</td><td class="small muted">${ago(e.last)}</td></tr>`).join("");
+  return adminPage("School requests", "aschools", '<p class="lead">Schools that visitors asked for after using the public scam check. Only the school name is stored.</p>' + (rows ? `<div class="card"><table class="t"><tr><th>School</th><th>Requests</th><th>Latest</th></tr>${rows}</table></div>` : '<div class="empty">No requests yet. Run a scam check while logged out and use the form under the result.</div>')); };
 function adminPage(title, active, body) {
   if (!S.admin) return `${pageHead("Reviewer sign-in", "The review queues are restricted. In this demo any password works.")}<form id="adminLogin" class="card" style="max-width:440px"><div class="form-field"><label for="a-pw">Password</label><input id="a-pw" type="password" name="password" required maxlength="200" autocomplete="off"></div><button class="submit-btn" type="submit">Sign in</button></form>`;
   const c = adminCounts();
@@ -2811,7 +2856,8 @@ document.addEventListener("click", e => {
     "admin-out": () => { S.admin = false; go("home"); },
     reset: () => { S.timers.forEach(clearTimeout); reset(); render(); },
     show: () => { const i = d.parentElement.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; d.textContent = i.type === "password" ? "Show" : "Hide"; },
-    sample: () => { const s = SAMPLES[Number(d.dataset.i)]; go(`scam?run=1&text=${encodeURIComponent(s[1])}&sender=${encodeURIComponent(s[2])}`); },
+    sample: () => { if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam"); }
+      const s = SAMPLES[Number(d.dataset.i)]; go(`scam?run=1&text=${encodeURIComponent(s[1])}&sender=${encodeURIComponent(s[2])}`); },
     ask: () => ask(SUGG[Number(d.dataset.i)]),
     "apply-rewrite": () => { const r = S.lastRewrites[Number(d.dataset.i)], p = SP(me().id); if (r && p.resume_text.includes(r.text)) p.resume_text = p.resume_text.replace(r.text, r.rewrite); flash("verified", "Rewrite applied. Fill in any [placeholder] with your real numbers."); render(true); },
     "sample-resume": () => { const p = SP(me().id); p.resume_text = RESUME; p.resume_name = "Sample resume"; if (!(p.items || []).length) importResume(p); render(); },
@@ -2858,7 +2904,12 @@ document.addEventListener("submit", e => {
   if (id === "searchForm") { const qs = new URLSearchParams(); if (g("search")) qs.set("search", g("search")); if (S.route.q.category) qs.set("category", S.route.q.category); if (S.route.q.work_type) qs.set("work_type", S.route.q.work_type); return go("jobs" + (qs.toString() ? "?" + qs : "")); }
   if (id === "talentForm") return go("talent" + (g("q") ? "?q=" + encodeURIComponent(g("q")) : ""));
   if (id === "adminLogin") { S.admin = true; return go("admin"); }
-  if (id === "scamForm") { if (!g("text")) return; return go(`scam?run=1&text=${encodeURIComponent(g("text").slice(0, 8000))}&sender=${encodeURIComponent(g("sender"))}`); }
+  if (id === "scamForm") { if (!g("text")) return;
+    if (!me() && (S.publicChecks = (S.publicChecks || 0) + 1) > 10) { flash("warning", "Visitors can run 10 checks a day. Log in with your @fsu.edu email for more."); return go("scam"); }
+    return go(`scam?run=1&text=${encodeURIComponent(g("text").slice(0, 8000))}&sender=${encodeURIComponent(g("sender"))}`); }
+  if (id === "schoolForm") { const name = g("school").replace(/\s+/g, " ").slice(0, 80);
+    if (name.length < 3 || !/[A-Za-z]{2}/.test(name) || /[<>{}@]|https?:|www\./.test(name)) { flash("warning", "Type your school's name, like University of Florida."); return render(true); }
+    S.schoolRequests.push({school: name, at: NOW()}); S.schoolDone = name; return render(true); }
   if (id === "askForm") { ask(g("q")); return; }
   if (id === "startForm") {
     const email = g("email").toLowerCase(), nx = f.dataset.next;

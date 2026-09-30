@@ -124,9 +124,12 @@ post_limiter = RateLimiter(max_attempts=10, window_seconds=60 * 60)          # f
 comment_limiter = RateLimiter(max_attempts=40, window_seconds=60 * 60)       # comments per hour
 upload_limiter = RateLimiter(max_attempts=20, window_seconds=60 * 60)        # resume uploads per hour
 profile_limiter = RateLimiter(max_attempts=60, window_seconds=60 * 60)       # profile saves per hour
+public_check_limiter = RateLimiter(max_attempts=10, window_seconds=24 * 3600)  # scam checks per day for visitors who aren't signed in
+school_limiter = RateLimiter(max_attempts=5, window_seconds=24 * 3600)       # "bring it to my school" requests per day
 ALL_LIMITERS = (login_limiter, submit_limiter, general_limiter, user_login_limiter,
                 user_login_email_limiter, signup_limiter, email_limiter, message_limiter, new_convo_limiter,
-                check_limiter, ai_limiter, post_limiter, comment_limiter, upload_limiter, profile_limiter)
+                check_limiter, ai_limiter, post_limiter, comment_limiter, upload_limiter, profile_limiter,
+                public_check_limiter, school_limiter)
 
 
 def client_ip(request: Request) -> str:

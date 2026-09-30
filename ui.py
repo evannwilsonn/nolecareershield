@@ -440,6 +440,8 @@ table.t td{padding:10px;border-bottom:1px solid var(--whisper);vertical-align:to
 .checklist .unknown .st{background:var(--sand);color:var(--muted)}
 .checklist .ev{display:block;font-size:12.5px;color:var(--muted)}
 @media(max-width:620px){.fit{grid-template-columns:1fr}.fitparts .cat{grid-template-columns:120px 1fr 40px}}
+/* ---------- visitors ---------- */
+.job.teaser .pill{white-space:nowrap}.job.teaser .job-title{filter:none}
 /* ---------- hiring ---------- */
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0 8px}
 .stat{background:var(--surface);border-radius:12px;box-shadow:0 0 0 1px var(--whisper) inset;padding:12px 14px}
@@ -526,8 +528,8 @@ def _nav_links(admin: bool) -> str:
     if user:
         post = '<a class="btn" href="/post">Post a job</a>' if user["role"] == "employer" else ''
         return extra + f'<span class="who">{esc(user["email"])}</span>' + _logout_form() + post
-    return (extra + '<a class="ghost opt" href="/jobs">Browse jobs</a><a class="ghost opt" href="/check">Scam check</a>'
-            '<a class="ghost" href="/login">Log in</a><a class="btn" href="/post">Post a job</a>')
+    return (extra + '<a class="ghost opt" href="/check">Scam check</a>'
+            '<a class="ghost" href="/login">Log in</a><a class="btn" href="/employers">For employers</a>')
 
 
 _STUDENT_NAV = [
