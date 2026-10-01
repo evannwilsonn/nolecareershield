@@ -16,6 +16,22 @@ services:
         value: production
       - key: TRUST_PROXY
         value: "1"
+      - key: RATE_LIMIT_PER_MIN
+        value: "300"
+      - key: LOGIN_MAX_ATTEMPTS
+        value: "5"
+      - key: LOGIN_WINDOW_MIN
+        value: "15"
+      - key: ACCOUNT_MAX_FAILS
+        value: "20"
+      - key: MAX_BODY_KB
+        value: "128"
+      - key: MAX_UPLOAD_MB
+        value: "9"
+      - key: PARSE_TIMEOUT_SECONDS
+        value: "10"
+      - key: PARSE_MAX_PARALLEL
+        value: "2"
       - key: DB_PATH
         value: /data/jobs.db
       - key: SECRET_KEY

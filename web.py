@@ -96,3 +96,16 @@ def person(name: str, sub: str, kind: str, href: str = "") -> str:
 
 def plural(n: int, word: str, many: str | None = None) -> str:
     return f"{n} {word if n == 1 else (many or word + 's')}"
+
+
+# ---------- request bodies ----------
+# Handlers that parse files, call the AI or run scam checks are plain `def` functions, which FastAPI runs in a
+# thread pool. They read the body through these async dependencies first, so slow work never blocks the event loop
+# (an async handler doing that work would freeze every other request until it finished).
+
+async def form_data(request: Request):
+    return await request.form()
+
+
+async def body_bytes(request: Request) -> bytes:
+    return await request.body()

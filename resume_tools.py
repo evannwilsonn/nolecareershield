@@ -26,7 +26,7 @@ import json
 import re
 import time
 
-from fastapi import APIRouter, Form, Request, UploadFile, File
+from fastapi import Depends, APIRouter, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 import ai
@@ -446,18 +446,17 @@ def optimize(request: Request, src: str = "main", x: str = "", ok: int = 0):
 
 
 @router.post("/resume/upload", response_class=HTMLResponse)
-async def upload(request: Request):
+def upload(request: Request, form=Depends(web.form_data)):
     user = web.require_user(request, "student")
     security.enforce_key_limit(security.upload_limiter, f"u{user['id']}", "resume uploads")
-    form = await request.form()
     if not web.csrf_ok(request, form.get("csrf")):
         return RedirectResponse("/resume", status_code=303)
     f = form.get("resume")
     paste = str(form.get("paste") or "").strip()
     try:
         if f is not None and hasattr(f, "read") and getattr(f, "filename", ""):
-            data = await f.read(resume_engine.MAX_UPLOAD + 1)
-            text, name = resume_engine.extract_text(f.filename, data), f.filename[:120]
+            data = f.file.read(resume_engine.MAX_UPLOAD + 1)
+            text, name = resume_engine.extract_text_safely(f.filename, data), f.filename[:120]
         elif paste:
             if len(paste) > resume_engine.MAX_TEXT:
                 raise resume_engine.ResumeError("That's longer than 20,000 characters.")
@@ -611,7 +610,7 @@ def bullet_form(request: Request, bullet: str = Form(""), csrf: str = Form("")):
 
 
 @router.post("/api/resume/bullet")
-async def bullet_api(request: Request):
+def bullet_api(request: Request, body: bytes = Depends(web.body_bytes)):
     user = web.current_user(request)
     if not user or user["role"] != "student":
         return JSONResponse({"error": "Log in first."}, status_code=401)
@@ -619,7 +618,7 @@ async def bullet_api(request: Request):
         return JSONResponse({"error": "Refresh the page and try again."}, status_code=400)
     security.enforce_key_limit(security.ai_limiter, f"u{user['id']}", "AI requests")
     try:
-        data = await request.json()
+        data = json.loads(body or b"null")
         bullet = str(data.get("bullet", ""))
     except (ValueError, AttributeError):
         return JSONResponse({"error": "Bad request."}, status_code=400)

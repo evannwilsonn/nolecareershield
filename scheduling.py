@@ -21,7 +21,7 @@ import re
 import time
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
+from fastapi import Depends, APIRouter, BackgroundTasks, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 import mailer
@@ -378,7 +378,7 @@ def propose_button(conn, c: dict, user: dict) -> str:
 # ---------- calendar file ----------
 
 def _ics_text(s: str) -> str:
-    return (s or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\n").replace("\n", "\\n")
+    return (s or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
 
 
 def _fold(line: str) -> str:
@@ -477,9 +477,8 @@ def propose_form(cid: int, request: Request, re_: int = Query(0, alias="re")):
 
 
 @router.post("/messages/{cid}/interview", response_class=HTMLResponse)
-async def propose(cid: int, request: Request, background: BackgroundTasks):
+def propose(cid: int, request: Request, background: BackgroundTasks, form=Depends(web.form_data)):
     user = web.require_user(request)
-    form = await request.form()
     v = {k: str(form.get(k, "") or "") for k in ["re", "format", "location", "note"] + [f"{x}{i}" for i in range(1, MAX_SLOTS + 1) for x in "dtm"]}
     if not web.csrf_ok(request, str(form.get("csrf", "") or "")):
         return RedirectResponse(f"/messages/{int(cid)}/interview", status_code=303)

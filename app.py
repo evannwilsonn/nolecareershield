@@ -55,7 +55,7 @@ from contextlib import closing, asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Form, Cookie, Response, Request, HTTPException, BackgroundTasks
+from fastapi import Depends, FastAPI, Form, Cookie, Response, Request, HTTPException, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, Response, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -504,6 +504,20 @@ async def security_headers(request: Request, call_next):
 _PRIVATE_PREFIXES = ("/admin", "/messages", "/api/", "/profile", "/resume", "/u/", "/talent", "/feed", "/assistant", "/check", "/job", "/hiring", "/company")
 
 
+def _guard_page(status: int, message: str, path: str):
+    heading = {429: "Slow down", 413: "That's too large"}.get(status, "That didn't go through")
+    resp = HTMLResponse(shell(f'<h2 class="page">{esc(heading)}</h2><div class="banner warning">{esc(message)}</div>'
+                              f'<a class="back" href="/">← Home</a>', title=heading), status_code=status)
+    resp.headers["Content-Security-Policy"] = CSP
+    return resp
+
+
+security.GUARD_RENDER = _guard_page
+# Added last, so it is the outermost layer: rate limits, size caps and malformed-input checks run before
+# sessions are looked up or the app reads anything.
+app.add_middleware(security.RequestGuard)
+
+
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
     with closing(sqlite3.connect(DB_PATH)) as db:
@@ -704,6 +718,8 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
     """The submit form. On a rejected submission it is shown again with everything the
     poster typed still in place and the reason at the top, so nobody retypes a long posting.
     With edit_id it is the edit form for that listing (prefilled, posts to /hiring/{id}/edit)."""
+    # Editing a live listing is a signed-in action, so its token is bound to the employer's session.
+    csrf_field = ui.user_csrf_input() if edit_id else f'<input type="hidden" name="csrf" value="{make_csrf("form")}">'
     v = values or {}
 
     def val(name):
@@ -749,7 +765,7 @@ def _post_form_page(values: dict | None = None, error: str = "", status: int = 2
                       f'<option value="{d}"{" selected" if d == cur_days else ""}>{d} days</option>' for d in (7, 14, 30, 45, 60, 90, 120)) + '</select></div>')
     body = f"""{top}
 {err}<form method="post" action="{action}">
-<input type="hidden" name="csrf" value="{make_csrf('form')}">
+{csrf_field}
 <div class="hp" aria-hidden="true"><label for="f-website">Leave this empty</label><input id="f-website" name="website" tabindex="-1" autocomplete="off"></div>
 <div class="form-field"><label for="f-title">Job title</label><input id="f-title" name="title" required maxlength="200" placeholder="e.g. Marketing Data Analyst" value="{val('title')}"></div>
 <div class="form-field"><label for="f-company">Company</label><input id="f-company" name="company" required maxlength="200" placeholder="e.g. Leaf Home" value="{val('company')}"></div>
@@ -946,10 +962,9 @@ def listing_edit_form(job_id: int, request: Request):
 
 
 @app.post("/hiring/{job_id}/edit", response_class=HTMLResponse)
-async def listing_edit_save(job_id: int, request: Request):
+def listing_edit_save(job_id: int, request: Request, f=Depends(web.form_data)):
     user = web.require_user(request, "employer")
     enforce_rate_limit(request, submit_limiter, "listing_edit")
-    f = await request.form()
     one = lambda k: str(f.get(k) or "")                                       # noqa: E731
     many = lambda k: [str(x) for x in f.getlist(k)]                           # noqa: E731
     rkind, rlabel, rmust, qtext, qkind, qreq = (many(k) for k in ("rkind", "rlabel", "rmust", "qtext", "qkind", "qreq"))
@@ -962,7 +977,7 @@ async def listing_edit_save(job_id: int, request: Request):
     j = _own_listing(user, job_id)
     if not j or j["review_status"] in ("rejected", "removed"):
         return web.page(ui.page_head("Listing can't be edited") + '<a class="b sec" href="/hiring">Your listings</a>', "Not found", active="/hiring", status=404)
-    if not verify_csrf(one("csrf"), "form"):
+    if not web.csrf_ok(request, one("csrf")):
         return _post_form_page(typed, "That form had been open too long. Your changes are still here: press Save again.", status=400, edit_id=job_id)
     try:
         clean = _clean_listing(typed, form=True)
@@ -1418,7 +1433,7 @@ def login_start(request: Request, email: str = Form(""), csrf: str = Form(""), n
 
 @app.post("/sso/start")
 def sso_start(request: Request, email: str = Form(""), csrf: str = Form(""), next: str = Form("")):
-    enforce_rate_limit(request, user_login_limiter, "sso_start")
+    # Log-in lockout (failed attempts per IP) is applied to every log-in route by security.RequestGuard.
     if not sso.enabled():
         return RedirectResponse("/login", status_code=303)
     if not verify_csrf(csrf, "form"):
@@ -1435,7 +1450,7 @@ def sso_start(request: Request, email: str = Form(""), csrf: str = Form(""), nex
 
 @app.get("/sso/callback")
 def sso_callback(request: Request, code: str = "", state: str = "", error: str = ""):
-    enforce_rate_limit(request, user_login_limiter, "sso_callback")
+    # Log-in lockout (failed attempts per IP) is applied to every log-in route by security.RequestGuard.
     if error:
         resp = _start_page(status=400, error="FSU sign-in was cancelled or didn't finish. Try again, or log in another way.")
     else:
@@ -1497,7 +1512,7 @@ def login_submit(role: str, request: Request, background: BackgroundTasks, email
                  password: str = Form(""), csrf: str = Form(""), next: str = Form(""),
                  cf_token: str = Form("", alias="cf-turnstile-response")):
     _role(role)
-    enforce_rate_limit(request, user_login_limiter, "user_login")
+    # Log-in lockout (failed attempts per IP) is applied to every log-in route by security.RequestGuard.
     nx = _safe_next(next)
     if not verify_csrf(csrf, "form"):
         return _login_page(role, email=email[:254], next_=nx, status=400,
@@ -1510,14 +1525,19 @@ def login_submit(role: str, request: Request, background: BackgroundTasks, email
         addr = accounts.normalize_email(email)
     except ValueError:
         return _login_page(role, email=email[:254], next_=nx, status=401, error=generic)
-    if not _email_ok(user_login_email_limiter, f"login:{role}:{addr}"):
-        raise HTTPException(status_code=429, detail="Too many attempts for this account. Try again in a few minutes.",
-                            headers={"Retry-After": "600"})
+    verdict, slots = security.account_attempt(role, addr, security.client_ip(request))
+    too_many = HTTPException(status_code=429, detail="Too many failed attempts for this account. Try again in a few minutes.",
+                             headers={"Retry-After": "600"})
+    if verdict == "blocked":
+        raise too_many
     with closing(sqlite3.connect(DB_PATH)) as db:
         user = accounts.get_user(db, addr, role)
     good = accounts.verify_password(password[:accounts.PW_MAX], user["pw_hash"] if user else accounts.DUMMY_HASH)
     if not (user and good):
+        if verdict == "only_correct":
+            raise too_many
         return _login_page(role, email=addr, next_=nx, status=401, error=generic)
+    security.account_success(slots)
     if not user["verified"]:
         return _login_page(role, email=addr, next_=nx, status=403, unverified=True,
                            error="Confirm your email first. We sent you a link when you signed up.")
@@ -1688,7 +1708,7 @@ def _confirm_page(token: str, error: str = "", status: int = 200) -> HTMLRespons
 @app.post("/verify")
 def verify_submit(request: Request, background: BackgroundTasks, token: str = Form(""),
                   password: str = Form(""), csrf: str = Form("")):
-    enforce_rate_limit(request, user_login_limiter, "verify")
+    # Log-in lockout (failed attempts per IP) is applied to every log-in route by security.RequestGuard.
     if not verify_csrf(csrf, "form"):
         return _link_problem("confirmation email")
     with closing(sqlite3.connect(DB_PATH)) as db:
@@ -1696,11 +1716,16 @@ def verify_submit(request: Request, background: BackgroundTasks, token: str = Fo
         owner = accounts.get_user_by_id(db, peeked) if peeked else None
     if not owner:
         return _link_problem("confirmation email")
-    if not _email_ok(user_login_email_limiter, f"login:{owner['role']}:{owner['email']}"):
-        raise HTTPException(status_code=429, detail="Too many attempts for this account. Try again in a few minutes.",
-                            headers={"Retry-After": "600"})
+    verdict, slots = security.account_attempt(owner["role"], owner["email"], security.client_ip(request))
+    too_many = HTTPException(status_code=429, detail="Too many failed attempts for this account. Try again in a few minutes.",
+                             headers={"Retry-After": "600"})
+    if verdict == "blocked":
+        raise too_many
     if not accounts.verify_password(password[:accounts.PW_MAX], owner["pw_hash"]):
+        if verdict == "only_correct":
+            raise too_many
         return _confirm_page(token, "That is not the password this account was created with.", 401)
+    security.account_success(slots)
     with closing(sqlite3.connect(DB_PATH)) as db:
         uid = accounts.consume_token(db, token, "verify")
         if not uid:

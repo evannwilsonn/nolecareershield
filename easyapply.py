@@ -14,7 +14,7 @@ import json
 import re
 import time
 
-from fastapi import APIRouter, Form, Request
+from fastapi import Depends, APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 import hiring
@@ -191,9 +191,8 @@ def easy_form(job_id: int, request: Request):
 
 
 @router.post("/job/{job_id}/easy", response_class=HTMLResponse)
-async def easy_send(job_id: int, request: Request):
+def easy_send(job_id: int, request: Request, form=Depends(web.form_data)):      # question fields are dynamic (a0, a1, ...)
     user = web.require_user(request, "student")
-    form = await request.form()                    # the question fields are dynamic (a0, a1, ...)
     if not web.csrf_ok(request, str(form.get("csrf", ""))):
         return RedirectResponse(f"/job/{job_id}/easy", status_code=303)
     security.enforce_key_limit(security.profile_limiter, f"u{user['id']}", "applications")

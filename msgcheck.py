@@ -406,8 +406,23 @@ def check_form(request: Request, m: int = 0, kind: str = "listing"):
     return _page(_form())
 
 
+def analyze_upload_safely(data: bytes, filename: str, content_type: str) -> dict:
+    """artifacts.analyze_upload() in a separate process with a time limit (a crafted PDF can take minutes)."""
+    import sandbox
+    from scam_detector import artifacts
+    try:
+        return sandbox.run(artifacts.analyze_upload, data, filename, content_type)
+    except sandbox.ParseBusy:
+        note = "We're reading a lot of files right now, so this one wasn't checked. Try again in a minute, or paste the text."
+    except sandbox.ParseTimeout:
+        note = "That file took too long to read, so it wasn't checked. Paste the text of the message instead."
+    except Exception:                          # noqa: BLE001
+        note = "We couldn't read that file. Paste the text of the message instead."
+    return {"kind": "unsupported", "text": "", "findings": [], "meta": {}, "notes": [note], "urls": []}
+
+
 @router.post("/check", response_class=HTMLResponse)
-async def check_submit(request: Request, text: str = Form(""), sender: str = Form(""), csrf: str = Form(""), ai_: str = Form("", alias="ai"),
+def check_submit(request: Request, text: str = Form(""), sender: str = Form(""), csrf: str = Form(""), ai_: str = Form("", alias="ai"),
                        file: UploadFile | None = File(None)):
     security.enforce_rate_limit(request, security.check_limiter, "check")
     user = web.current_user(request)
@@ -419,8 +434,8 @@ async def check_submit(request: Request, text: str = Form(""), sender: str = For
     art, art_note = None, ""
     if file is not None and file.filename:
         from scam_detector import artifacts
-        data = await file.read(8 * 1024 * 1024 + 1)
-        art = artifacts.analyze_upload(data, file.filename, file.content_type or "")
+        data = file.file.read(8 * 1024 * 1024 + 1)
+        art = analyze_upload_safely(data, file.filename, file.content_type or "")
         art_note = "".join(ui.banner("info", n) for n in art.get("notes", []))
         if art.get("text") and len(text) < 15:
             text = art["text"][:8000]

@@ -64,6 +64,8 @@ def test_fsu_check_only_for_an_address_the_server_checked(client):
     for email in ("jane@fsu.edu.evil.com", "jane@notfsu.edu", "not an email"):
         r = client.post("/login/student", data={"csrf": tok, "email": email, "password": "x", "next": ""})
         assert "FSU.EDU VERIFIED" not in r.text, email
+    import security
+    security.login_fail_limiter.reset_all()          # that was 5 failed log-ins; the 6th would (rightly) be locked out
     r = client.post("/login/employer", data={"csrf": tok, "email": "jane@fsu.edu", "password": "x", "next": ""})
     assert "FSU.EDU VERIFIED" not in r.text and "Work email" in r.text
 

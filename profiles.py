@@ -19,7 +19,7 @@ import json
 import re
 import time
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import Depends, APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 import accounts
@@ -288,18 +288,22 @@ def setup_step(step: int, request: Request):
         return _employer_step(ensure_employer(conn, store.org_id(user)), step)
 
 
-async def _read_upload(upload: UploadFile | None) -> tuple[str, bytes]:
+def _site_host(url: str) -> str:
+    host = re.sub(r"^https?://", "", (url or "").strip().lower()).split("/")[0].split(":")[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def _read_upload(upload: UploadFile | None) -> tuple[str, bytes]:
     if not upload or not upload.filename:
         return "", b""
-    data = await upload.read(resume_engine.MAX_UPLOAD + 1)
+    data = upload.file.read(resume_engine.MAX_UPLOAD + 1)
     return upload.filename[:120], data
 
 
 @router.post("/profile/setup/{step}", response_class=HTMLResponse)
-async def setup_save(step: int, request: Request):
+def setup_save(step: int, request: Request, form=Depends(web.form_data)):
     user = web.require_user(request)
     security.enforce_key_limit(security.profile_limiter, f"u{user['id']}", "profile updates")
-    form = await request.form()
     if not web.csrf_ok(request, form.get("csrf")):
         return RedirectResponse(f"/profile/setup/{step}", status_code=303)
     g = lambda k: str(form.get(k) or "")
@@ -338,12 +342,12 @@ async def setup_save(step: int, request: Request):
                                   allow_connections=1 if g("allow_connections") else 0,
                                   setup_step=3)
                     upload = form.get("resume")
-                    fname, data = await _read_upload(upload if hasattr(upload, "read") else None)
+                    fname, data = _read_upload(upload if hasattr(upload, "read") else None)
                     paste = g("resume_paste").strip()
                     if data:
                         security.enforce_key_limit(security.upload_limiter, f"u{user['id']}", "resume uploads")
                         try:
-                            fields.update(resume_text=resume_engine.extract_text(fname, data), resume_name=fname, resume_updated=time.time())
+                            fields.update(resume_text=resume_engine.extract_text_safely(fname, data), resume_name=fname, resume_updated=time.time())
                         except resume_engine.ResumeError as e:
                             raise ProfileError(str(e))
                     elif paste:
@@ -379,10 +383,18 @@ async def setup_save(step: int, request: Request):
                 founded = _t(g("founded"), 4, "Founded")
                 if founded and not (re.fullmatch(r"(?:18|19|20)\d{2}", founded) and int(founded) <= time.gmtime().tm_year):
                     raise ProfileError("Founded should be a year, like 2015.")
-                save_employer(conn, org, company=_t(g("company"), 120, "Organization name", True), website=website,
+                company = _t(g("company"), 120, "Organization name", True)
+                extra = {}
+                # A reviewer approved this name and website. Changing either sends the profile back for review, so an
+                # approved account can't rename itself to a famous brand and keep the "Approved employer" badge.
+                if p.get("status") == "approved" and (company.strip().lower() != (p.get("company") or "").strip().lower()
+                                                      or _site_host(website) != _site_host(p.get("website") or "")):
+                    extra["status"] = "pending"
+                save_employer(conn, org, company=company, website=website,
                               industry=g("industry") if g("industry") in INDUSTRIES else "",
                               size=g("size") if g("size") in SIZES else "", location=_t(g("location"), 120, "Location"), about=about,
-                              tagline=_t(g("tagline"), 120, "Tagline"), founded=founded, linkedin=_url(g("linkedin"), "LinkedIn", "linkedin.com"))
+                              tagline=_t(g("tagline"), 120, "Tagline"), founded=founded, linkedin=_url(g("linkedin"), "LinkedIn", "linkedin.com"),
+                              **extra)
                 return RedirectResponse("/profile/setup/2", status_code=303)
             if step == 2:
                 if not p.get("company"):
@@ -551,7 +563,8 @@ def talent(request: Request, q: str = "", skill: str = ""):
         hay = " ".join([p["display_name"], p["major"], p["minor"], p["headline"], p["bio"], " ".join(p["skills"]), " ".join(p["interests"])]).lower()
         if ql and not all(w in hay for w in ql.split()):
             continue
-        if skill and skill not in p["skills"] and skill.lower() not in (p["resume_text"] or "").lower():
+        resume = (p["resume_text"] or "") if p.get("share_resume") else ""     # a private resume is never searched
+        if skill and skill not in p["skills"] and skill.lower() not in resume.lower():
             continue
         results.append(p)
     top_skills = POPULAR[:14]

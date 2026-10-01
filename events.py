@@ -24,7 +24,7 @@ import re
 import time
 from urllib.parse import quote, urlparse
 
-from fastapi import APIRouter, Cookie, Form, Request
+from fastapi import Depends, APIRouter, Cookie, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 import css_events  # noqa: F401  (appends the event styles to ui.CSS)
@@ -617,8 +617,7 @@ def _clean(conn, uid: int, f: dict) -> tuple[dict | None, str]:
             "scan_json": json.dumps([{"title": x["title"], "severity": x["severity"]} for x in scan["findings"][:5]])}, ""
 
 
-async def _formdata(request: Request) -> dict:
-    form = await request.form()
+def _formdata(form) -> dict:
     out = {k: str(form.get(k) or "") for k in ("title", "kind", "description", "date", "time", "duration", "format", "location",
                                                   "meeting_url", "capacity", "majors", "job_id", "csrf")}
     out["class_years"] = [str(x) for x in form.getlist("class_years")][:10]
@@ -698,10 +697,10 @@ def new_form(request: Request):
 
 
 @router.post("/events/new", response_class=HTMLResponse)
-async def create(request: Request):
+def create(request: Request, form=Depends(web.form_data)):
     user = web.require_user(request, "employer")
     security.enforce_rate_limit(request, security.general_limiter, "event_create")
-    f = await _formdata(request)
+    f = _formdata(form)
     if not web.csrf_ok(request, f["csrf"]):
         return RedirectResponse("/events/new", status_code=303)
     with store.db() as conn:
@@ -891,10 +890,10 @@ def edit_form(eid: int, request: Request):
 
 
 @router.post("/events/{eid}/edit", response_class=HTMLResponse)
-async def edit(eid: int, request: Request):
+def edit(eid: int, request: Request, form=Depends(web.form_data)):
     user = web.require_user(request, "employer")
     security.enforce_rate_limit(request, security.general_limiter, "event_create")
-    f = await _formdata(request)
+    f = _formdata(form)
     if not web.csrf_ok(request, f["csrf"]):
         return RedirectResponse(f"/events/{eid}", status_code=303)
     out = []

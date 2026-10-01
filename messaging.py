@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import time
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request
+from fastapi import Depends, APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 import css_msg  # noqa: F401  (appends the scheduling and template styles to ui.CSS)
@@ -439,10 +439,10 @@ def send_form(cid: int, request: Request, background: BackgroundTasks, body: str
 
 
 @router.post("/api/messages/{cid}")
-async def send_api(cid: int, request: Request, background: BackgroundTasks):
+def send_api(cid: int, request: Request, background: BackgroundTasks, body: bytes = Depends(web.body_bytes)):
     web.require_user(request)
     try:
-        data = await request.json()
+        data = json.loads(body or b"null")
     except ValueError:
         return JSONResponse({"error": "Bad request."}, status_code=400)
     if not isinstance(data, dict) or not isinstance(data.get("body", ""), str):

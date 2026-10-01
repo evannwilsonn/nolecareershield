@@ -13,7 +13,7 @@ LOCAL_MODULES = ("security", "app", "ui", "web", "store", "accounts", "mailer", 
                  "profiles", "messaging", "msgcheck", "assistant", "resume_tools", "feed", "admin_extra", "profile_page", "hiring",
                  "employer_page", "learning", "defense", "defense_web", "cases", "release", "metrics", "sso", "fit", "jobfit", "easyapply", "network", "quals", "emails", "jobboard", "css_feed", "css_jobs", "css_resume", "css_assist",
                  "scheduling", "msg_templates", "css_msg", "employer_dash", "css_employer", "events", "css_events", "css_hiring", "teams", "css_team", "guardian", "css_guardian",
-                 "public_ui", "css_public")
+                 "public_ui", "css_public", "sandbox")
 
 
 @pytest.fixture()
@@ -565,9 +565,62 @@ def test_student_and_employer_accounts_are_separate(client):
 
 def test_login_rate_limits(client):
     make_verified(client, "student", "jane@fsu.edu")
-    codes = [user_login(client, "student", "jane@fsu.edu", pw="Wrong1!pass").status_code for _ in range(9)]
-    assert codes[:8] == [401] * 8 and codes[8] == 429                     # per-account cap of 8 per 15 minutes
+    codes = [user_login(client, "student", "jane@fsu.edu", pw="Wrong1!pass").status_code for _ in range(6)]
+    assert codes[:5] == [401] * 5 and codes[5] == 429                     # 5 attempts per 15 minutes
     assert user_login(client, "student", "jane@fsu.edu").status_code == 429   # even the right password waits
+    assert "Retry-After" in user_login(client, "student", "jane@fsu.edu").headers
+
+
+def test_login_lockout_is_per_ip_across_accounts(client):
+    """Five failed log-ins from one address, spread over different accounts, lock that address out."""
+    for i in range(5):
+        make_verified(client, "student", f"s{i}@fsu.edu")
+    codes = [user_login(client, "student", f"s{i}@fsu.edu", pw="Wrong1!pass").status_code for i in range(5)]
+    assert codes == [401] * 5
+    make_verified(client, "employer", "boss@acme.com")
+    r = user_login(client, "employer", "boss@acme.com")
+    assert r.status_code == 429 and "failed log-in attempts" in r.text
+    tok = csrf_from(client.get("/admin").text)
+    assert client.post("/admin/login", data={"password": "correct-horse-battery", "csrf": tok}).status_code == 429
+
+
+def test_successful_logins_dont_count_toward_lockout(client):
+    for i in range(8):
+        make_verified(client, "student", f"ok{i}@fsu.edu")
+        assert user_login(client, "student", f"ok{i}@fsu.edu").status_code == 303
+        client.cookies.clear()
+
+
+def test_every_endpoint_is_rate_limited(client, monkeypatch):
+    monkeypatch.setattr(client.security.global_limiter, "max_attempts", 5)
+    codes = [client.get(p).status_code for p in ("/", "/about", "/login", "/privacy", "/nope", "/")]
+    assert codes[-1] == 429 and 429 not in codes[:5]
+    assert client.get("/healthz").status_code == 200                       # the host's health check is exempt
+    assert client.get("/static/app.js").status_code == 200                 # so are the fixed, cached site files
+    api = client.post("/api/assistant", json={"text": "hi"})
+    assert api.status_code == 429 and api.json()["error"].startswith("Too many")
+
+
+def test_oversized_and_malformed_input_is_rejected(client):
+    tok = csrf_from(client.get("/login/student").text)
+    big = client.post("/login/student", data={"email": "a@fsu.edu", "password": "x" * 200_000, "csrf": tok})
+    assert big.status_code == 413
+    field = client.post("/login/student", data={"email": "a@fsu.edu", "password": "x" * 60_000, "csrf": tok})
+    assert field.status_code == 413
+    nul = client.post("/login/student", content=b"email=a%00b%40fsu.edu&csrf=" + tok.encode(),
+                      headers={"content-type": "application/x-www-form-urlencoded"})
+    assert nul.status_code == 400
+    bad_utf8 = client.post("/login/student", content=b"email=%ff%fe&csrf=x",
+                           headers={"content-type": "application/x-www-form-urlencoded"})
+    assert bad_utf8.status_code == 400
+    assert client.post("/api/assistant", content=b"{not json", headers={"content-type": "application/json"}).status_code == 400
+    deep = b"[" * 50 + b"]" * 50
+    assert client.post("/api/assistant", content=deep, headers={"content-type": "application/json"}).status_code == 400
+    assert client.post("/api/assistant", content=b"<x/>", headers={"content-type": "application/xml"}).status_code == 415
+    assert client.get("/?q=" + "a" * 5000).status_code == 414
+    assert client.get("/jobs?q=%00").status_code == 400
+    r = client.get("/jobs?q=%ff")
+    assert r.status_code == 400 and r.headers["x-content-type-options"] == "nosniff"
 
 
 def test_forgot_and_reset_password(client):

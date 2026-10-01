@@ -161,6 +161,12 @@ sensitive is in the code or the repository.
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | optional, both or neither | Cloudflare Turnstile bot check on sign-up, login and reset forms |
 | `OUTBOX_LOG` | development only | File where dev-mode emails are written instead of sent |
 | `TRUST_PROXY` | `1` behind one proxy | Use the proxy's client IP for rate limits |
+| `RATE_LIMIT_PER_MIN` | `300` | Requests per IP per minute, every endpoint (site files and `/healthz` excepted) |
+| `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_MIN` | `5` / `15` | Failed log-ins allowed per IP, and per account per IP, in the window |
+| `ACCOUNT_MAX_FAILS` | `20` | Failed log-ins allowed per account from all addresses together, in the window |
+| `MAX_BODY_KB` / `MAX_UPLOAD_MB` | `128` / `9` | Largest form or JSON body, and largest file upload |
+| `PARSE_TIMEOUT_SECONDS` | `10` | Uploaded files are parsed in a separate process, stopped after this long |
+| `PARSE_MAX_PARALLEL` | `2` | Uploaded files parsed at once; extra uploads are asked to retry |
 | `LISTING_TTL_DAYS` | 90 | How long approved listings show |
 | `PURGE_REJECTED_DAYS` | 90 | Retention for rejected/removed rows |
 | `ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_DAILY_LIMIT`, `AI_SITE_DAILY_LIMIT` | optional | AI for the career assistant, resume tools and the scam check's second opinion, with per-person and site-wide daily caps |

@@ -18,7 +18,7 @@ import os
 import re
 import time
 
-from fastapi import APIRouter, Cookie, Form, Request
+from fastapi import Depends, APIRouter, Cookie, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 import admin_extra
@@ -27,6 +27,7 @@ import learning
 import mailer
 import store
 import ui
+import web
 from ui import esc
 
 log = logging.getLogger("nolecareershield.defense")
@@ -377,11 +378,10 @@ def verdict_email(r: dict, thread: dict | None) -> str:
 
 
 @router.post("/inbound/email")
-async def inbound_email(request: Request, token: str = ""):
+def inbound_email(request: Request, token: str = "", form=Depends(web.form_data)):
     want = os.environ.get("INBOUND_EMAIL_TOKEN", "")
     if not want or not hmac.compare_digest(token, want):
         return JSONResponse({"error": "not found"}, status_code=404)
-    form = await request.form()
     get = lambda *ks: next((str(form.get(k)) for k in ks if form.get(k)), "")
     student = _addr(get("from", "sender", "From"))
     text = get("text", "body-plain", "stripped-text")

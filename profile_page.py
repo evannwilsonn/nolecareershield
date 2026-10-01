@@ -18,7 +18,7 @@ import json
 import re
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import Depends, APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 import resume_parse
@@ -364,10 +364,9 @@ def edit_item(iid: int, request: Request):
 
 
 @router.post("/profile/items", response_class=HTMLResponse)
-async def save_item(request: Request):
+def save_item(request: Request, form=Depends(web.form_data)):
     user = web.require_user(request, "student")
     security.enforce_key_limit(security.profile_limiter, f"u{user['id']}", "profile updates")
-    form = await request.form()
     if not web.csrf_ok(request, form.get("csrf")):
         return RedirectResponse("/profile", status_code=303)
     raw = {k: str(form.get(k) or "") for k in ("kind", "title", "org", "location", "start", "end", "description", "url")}
@@ -394,9 +393,8 @@ async def save_item(request: Request):
 
 
 @router.post("/profile/items/{iid}/delete")
-async def delete_item(iid: int, request: Request):
+def delete_item(iid: int, request: Request, form=Depends(web.form_data)):
     user = web.require_user(request, "student")
-    form = await request.form()
     if web.csrf_ok(request, form.get("csrf")):
         with store.db() as conn:
             conn.execute("DELETE FROM profile_items WHERE id = ? AND user_id = ?", (iid, user["id"]))
@@ -404,10 +402,9 @@ async def delete_item(iid: int, request: Request):
 
 
 @router.post("/profile/import")
-async def import_route(request: Request):
+def import_route(request: Request, form=Depends(web.form_data)):
     user = web.require_user(request, "student")
     security.enforce_key_limit(security.profile_limiter, f"u{user['id']}", "profile updates")
-    form = await request.form()
     if not web.csrf_ok(request, form.get("csrf")):
         return RedirectResponse("/profile", status_code=303)
     with store.db() as conn:

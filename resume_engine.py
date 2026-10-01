@@ -77,13 +77,53 @@ def _docx_text(data: bytes) -> str:
             raise ResumeError("That document is too large to read.")
         xml = zf.read(info).decode("utf-8", "replace")
     paras = []
-    for p in re.findall(r"<w:p[ >].*?</w:p>|<w:p/>", xml, flags=re.DOTALL):
-        p = re.sub(r"<w:tab/>", "\t", p)
-        p = re.sub(r"<w:br[^>]*/>", "\n", p)
+    for p in _between(xml, _P_TAG, self_closing=True):
         bullet = "• " if "<w:numPr>" in p else ""
-        runs = re.findall(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", p, flags=re.DOTALL)
+        runs = _between(p, _T_TAG)
         paras.append(bullet + html.unescape("".join(runs)))
     return "\n".join(paras)
+
+
+# Opening/closing tags for paragraphs and text runs. Attribute runs are bounded ({0,2000}) and pairing is done in one
+# pass, so a hostile document (thousands of unclosed tags) costs linear time. A non-greedy ".*?</w:p>" search, by
+# contrast, rescans to the end of the file from every unclosed tag: quadratic, minutes of CPU from a few KB.
+_P_TAG = re.compile(r"<w:p(?:\s[^>]{0,2000})?>|<w:p/>|</w:p>")
+_T_TAG = re.compile(r"<w:t(?:\s[^>]{0,2000})?>|</w:t>")
+
+
+def _between(text: str, tags: re.Pattern, self_closing: bool = False) -> list[str]:
+    """Contents of each <tag>...</tag> pair, in order (and "" for each <tag/> when self_closing)."""
+    out, start = [], None
+    for m in tags.finditer(text):
+        tok = m.group(0)
+        if tok.startswith("</"):
+            if start is not None:
+                out.append(text[start:m.start()])
+                start = None
+        elif tok.endswith("/>"):
+            if self_closing:
+                out.append("")
+            start = None
+        else:
+            start = m.end()
+    return out
+
+
+def extract_text_safely(filename: str, data: bytes) -> str:
+    """extract_text() in a separate process with a time limit, for uploads from users (see sandbox.py)."""
+    import sandbox
+    if len(data) > MAX_UPLOAD:
+        raise ResumeError("That file is larger than 2 MB.")
+    try:
+        return sandbox.run(extract_text, filename, data)
+    except sandbox.ParseBusy as e:
+        raise ResumeError("We're reading a lot of files right now. Try again in a minute, or paste the text.") from e
+    except sandbox.ParseTimeout as e:
+        raise ResumeError("That file took too long to read. Try exporting it again, or paste the text.") from e
+    except ResumeError:
+        raise
+    except Exception as e:                    # noqa: BLE001 - the parser process failing is a user-facing "couldn't read"
+        raise ResumeError("Couldn't read that file. Try exporting it again, or paste the text.") from e
 
 
 def extract_text(filename: str, data: bytes) -> str:

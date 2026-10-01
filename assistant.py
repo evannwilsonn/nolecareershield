@@ -33,7 +33,7 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Form, Request
+from fastapi import Depends, APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 import ai
@@ -790,7 +790,7 @@ def _clean_history(raw) -> list[dict] | None:
 
 # ---------- markdown-lite (escaped first; only on-site links) ----------
 
-_MD_LINK = re.compile(r"\[([^\]\n]{1,120})\]\((/(?:[A-Za-z0-9_\-/.?=#%]|&amp;){0,200})\)")
+_MD_LINK = re.compile(r"\[([^\]\n]{1,120})\]\((/(?!/)(?:[A-Za-z0-9_\-/.?=#%]|&amp;){0,200})\)")   # same-site paths only (not //host)
 _MD_BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
 _MD_CODE = re.compile(r"`([^`\n]{1,120})`")
 _MD_UL = re.compile(r"^\s*(?:[-*•])\s+(.*)$")
@@ -1386,8 +1386,7 @@ def memory_clear(request: Request, csrf: str = Form("")):
 
 # ---------- JSON (used by /static/app.js; every feature also works without it) ----------
 
-async def _json_body(request: Request, limit: int = 80_000):
-    body = await request.body()
+def _json_body(body: bytes, limit: int = 80_000):
     if len(body) > limit:
         return None, JSONResponse({"error": "That's too long. Refresh to start a new chat."}, status_code=413)
     try:
@@ -1407,13 +1406,13 @@ def _api_user(request: Request):
 
 
 @router.post("/api/assistant/send")
-async def api_send(request: Request):
+def api_send(request: Request, body: bytes = Depends(web.body_bytes)):
     """Ask in a chat (or start one) and get the rendered reply and side panel back."""
     user, err = _api_user(request)
     if err:
         return err
     security.enforce_key_limit(security.ai_limiter, f"u{user['id']}", "asking the assistant")
-    data, err = await _json_body(request, 20_000)
+    data, err = _json_body(body, 20_000)
     if err:
         return err
     cid, why = _post_question(user["id"], str(data.get("q", "")), data.get("cid"))
@@ -1434,13 +1433,13 @@ async def api_send(request: Request):
 
 
 @router.post("/api/assistant")
-async def api(request: Request):
+def api(request: Request, body: bytes = Depends(web.body_bytes)):
     """Stateless ask with the history the page keeps (older pages and tests)."""
     user, err = _api_user(request)
     if err:
         return err
     security.enforce_key_limit(security.ai_limiter, f"u{user['id']}", "asking the assistant")
-    data, err = await _json_body(request)
+    data, err = _json_body(body)
     if err:
         return err
     hist = _clean_history(data.get("history"))
