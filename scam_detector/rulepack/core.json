@@ -1,5 +1,5 @@
 {
- "version": "2026.09.30.1",
+ "version": "2026.09.30.2",
  "rules": [
   {
    "id": "advance_fee",
@@ -504,12 +504,12 @@
    "severity": "warning",
    "weight": 18,
    "title": "A flat weekly amount for part-time work",
-   "why": "Scam offers quote a round weekly sum ('$350 weekly', '$550 per week') for a few hours of vague remote work. Real part-time jobs quote an hourly rate.",
+   "why": "Scam offers quote a round weekly sum ('$350 weekly', '$550 per week') for a few hours of vague remote work. Real part-time jobs quote an hourly rate. Writing 'every 7 days' instead of 'weekly' doesn't change it.",
    "phrases": [],
    "patterns": [
-    "\\$\\s?\\d{3}(?:[.,]\\d{2})?\\s*(?:\\(?usd\\)?\\s*)?(?:weekly|per\\s+week|a\\s+week|each\\s+week|every\\s+week|/\\s?(?:week|wk))\\b",
+    "\\$\\s?\\d{3}(?:[.,]\\d{2})?\\s*(?:\\(?usd\\)?\\s*)?(?:weekly|per\\s+week|a\\s+week|each\\s+week|every\\s+week|every\\s+(?:7|seven)\\s+days|/\\s?(?:week|wk))\\b",
     "\\bweekly\\s+(?:pay|salary|remuneration|allowance|wages?|compensation|stipend)\\s*(?:of|:|is)?\\s*(?:up\\s+to\\s+)?\\$\\s?\\d{3}\\b",
-    "\\b(?:earn|make|get\\s+paid)\\s+(?:up\\s+to\\s+)?\\$\\s?\\d{3}(?:\\.\\d\\d)?\\s*(?:\\(?usd\\)?\\s*)?weekly\\b"
+    "\\b(?:earn|make|get\\s+paid)\\s+(?:up\\s+to\\s+)?\\$\\s?\\d{3}(?:\\.\\d\\d)?\\s*(?:\\(?usd\\)?\\s*)?(?:weekly|every\\s+(?:7|seven)\\s+days)\\b"
    ],
    "guards": [],
    "min_matches": 1,
@@ -792,6 +792,25 @@
    "bonus": 3,
    "added": "2026-09-30",
    "source": "field test Sept 2026 (Evan's labeled reasons)"
+  },
+  {
+   "id": "weekly_pay_assistant",
+   "status": "active",
+   "severity": "warning",
+   "weight": 35,
+   "title": "An assistant job that leads with being paid weekly",
+   "why": "The 'research / personal assistant, part-time, get paid weekly' offer is a common script aimed at students, and scammers drop the dollar amount to slip past filters. Real postings say what the work is and the hourly rate.",
+   "phrases": [],
+   "patterns": [
+    "\\b(?:research|personal|virtual|administrative|office|executive)\\s+assistants?\\b[^.\\n]{0,200}?\\b(?:get|be|are|is|being)\\s+paid\\b[^.\\n]{0,40}?\\b(?:weekly|per\\s+week|every\\s+week|each\\s+week|every\\s+(?:7|seven)\\s+days)\\b",
+    "\\b(?:get|be)\\s+paid\\b[^.\\n]{0,40}?\\b(?:weekly|per\\s+week|every\\s+week|each\\s+week|every\\s+(?:7|seven)\\s+days)\\b[^.\\n]{0,200}?\\b(?:research|personal|virtual|administrative|office|executive)\\s+assistants?\\b",
+    "\\b(?:research|personal|virtual|administrative|office|executive)\\s+assistants?\\b[\\s\\S]{0,300}?\\b(?:compensation|pay|salary|stipend|wages?)\\s*:\\s*[a-z ]{0,30}\\b(?:weekly|per\\s+week|every\\s+week|each\\s+week|every\\s+(?:7|seven)\\s+days)\\b"
+   ],
+   "guards": [],
+   "min_matches": 1,
+   "bonus": 3,
+   "added": "2026-09-30",
+   "source": "red team: dollar amounts removed"
   }
  ]
 }

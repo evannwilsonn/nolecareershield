@@ -212,6 +212,7 @@ Built around "emerging scam → verified evidence → candidate update → evalu
   check of a safe result", masked, unlabeled until a reviewer decides. `/admin/intel` shows confirmed misses, false
   alarms, what the sample found (with a 95% range for the share of "safe" results that are scams), reviewer workload,
   first report to detection for resolved cases, and what the model served.
+- **Red-team fixes (Sept 30, evening):** `weekly_stipend` also catches "every 7 days", and a new rule `weekly_pay_assistant` (sends to review) catches the "research/personal assistant, part-time, get paid weekly" script with the dollar amount removed. 0 new false alarms in `tools/regress.py`. The 6 variants it fixed are in `data/redteam_regression.jsonl`. A fresh run (seed 20260930) leaves 2 slipping: "competitive pay per sale" and "per day" with the amount removed (MLM and data-entry scripts), not fixed yet.
 - **Red team:** every run uses a new seed. `--save-regression` adds the variants a fix was made for to
   `data/redteam_regression.jsonl`, which the release gate checks; they're never reported as new again.
 
