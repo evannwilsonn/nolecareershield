@@ -5,6 +5,7 @@ services:
   - type: web
     name: nolecareershield
     runtime: docker
+    region: oregon           # US; the privacy page says data is stored in the United States
     plan: starter            # persistent disks require a paid instance
     healthCheckPath: /healthz
     disk:

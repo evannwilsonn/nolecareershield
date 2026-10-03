@@ -1134,7 +1134,8 @@ def privacy():
 <li>Nothing is sent for browsing, messaging or anything you don't ask the AI to do. Each account has a daily limit.</li></ul>""" if ai_on else
                 """<h3>AI features</h3><ul><li>AI features are currently off. The job assistant, resume tools and scam checker run entirely on this site's own rules, so nothing is sent to an AI provider.</li></ul>""")
     body = f"""<a class="back" href="/">← Home</a><h2 class="page">Privacy</h2>
-<div class="prose"><p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, and you can download or delete everything at any time.</p>
+<div class="prose"><p class="muted">Last updated October 3, 2026.</p>
+<p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, we never sell your data or use it for advertising, and you can download or delete everything at any time.</p>
 <h3>Anyone browsing</h3>
 <ul><li>Job listings are for signed-in FSU students and employers. Visitors see only a few titles on the home page.</li>
 <li>Anyone can use the scam checker without an account, up to 10 checks a day. Visitors see the verdict and the main reasons; signed-in FSU students see every signal and the exact words it caught. No cookies are set for browsing. Pages with a log-in, sign-up or scam-check form set one security cookie, which stops other sites from submitting those forms in your name.</li>
@@ -1182,10 +1183,18 @@ def privacy():
 <li>Accounts that never confirm their email are deleted after 7 days. Questions: {_contact_line()}.</li></ul>
 <h3>Cookies and logs</h3>
 <ul><li>Logging in sets one session cookie (HttpOnly, 7 days). Sending a listing before you log in sets a short-lived cookie that holds only a random reference to your saved listing.</li>
-{bot}<li>Server logs may briefly hold IP addresses for security and abuse prevention. IP addresses are also held in memory, temporarily, to enforce rate limits.</li>
+<li>Logging in also sets a "known browser" cookie (HttpOnly, about a year) holding a random browser code and your account number, signed so it can't be forged. It only means that if someone else keeps guessing your password, your own browser can still log you in. It isn't used to track you.</li>
+<li>Signing in with FSU single sign-on sets a short-lived cookie that's only used to finish that sign-in.</li>
+{bot}<li>Server logs may briefly hold IP addresses for security and abuse prevention. To enforce rate limits (for example, 5 failed log-ins per 15 minutes), the server keeps a record of recent requests by IP address and deletes it within two days.</li>
 <li>We send email only for account confirmation, password reset, listing receipts and "you have a new message" notices. No marketing.</li></ul>
 <h3>Reviewers</h3>
-<p>The review queue uses a separate session cookie, set only after a reviewer signs in, marked HttpOnly and expired after 8 hours.</p></div>"""
+<p>The review queue uses a separate session cookie, set only after a reviewer signs in, marked HttpOnly and expired after 8 hours.</p>
+<h3>Who runs this and who helps</h3>
+<ul><li>NoleCareerShield is an independent student project. It isn't run by, or affiliated with, Florida State University, and FSU doesn't send us any student records.</li>
+<li>We never sell or rent personal data, and never share it for advertising.</li>
+<li>Services that handle data for us: our hosting provider (the site and its database run on servers in the United States), our email provider (to send the emails listed above){", Anthropic (only for the AI features above)" if ai_on else ""}{", Cloudflare (the bot check)" if security.turnstile_enabled() else ""}{", and Microsoft (FSU single sign-on)" if sso.enabled() else ""}. They may only use it to provide their service to us.</li>
+<li>We'd share information with authorities only when the law requires it, or to report a confirmed scam targeting students.</li>
+<li>If this policy changes, we'll update the date at the top. If a change affects what we do with data you've already given us, we'll tell you by email or on the site first.</li></ul></div>"""
     return shell(body, title="Privacy — NoleCareerShield")
 
 
