@@ -569,7 +569,7 @@ def static_media(name: str):
 
 @app.get("/static/fonts/{name}")
 def static_font(name: str):
-    # Playfair Display, Inter and JetBrains Mono, SIL Open Font License 1.1 (static/fonts/OFL.txt). Self-hosted: no
+    # Fraunces, Graduate, Plus Jakarta Sans and Martian Mono, SIL Open Font License 1.1 (static/fonts/OFL.txt). Self-hosted: no
     # third-party font requests. Only the files in ui.FONT_FILES can be named.
     data = _FONTS.get(name)
     if data is None:

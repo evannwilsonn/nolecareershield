@@ -3,6 +3,10 @@
 Read this first in a new chat. The README has the full feature table and settings; this file is where things
 stand, what was decided and why, and what's next.
 
+> **Oct 3, 2026: git history was rewritten once (with Evan's OK)** to strip real people's emails, phone numbers and
+> names from the labeled test data in every past commit. Any clone made before then is on the old history: re-clone
+> (or `git fetch` then reset to `origin/main`) instead of pulling, and never push from an old clone.
+
 ## Where everything lives
 
 - **Code:** github.com/evannwilsonn/nolecareershield (branch `main`). Python / FastAPI / SQLite, deployed on Render (`render.yaml`, `DEPLOY.md`).
@@ -71,7 +75,7 @@ stand, what was decided and why, and what's next.
     about 9.7 of Evan's 10 free credits). They show no real FSU buildings, people, logos or marks.
   - Reduced motion, Save-Data, slow connections and no-JS all get a still photo with the first caption and nothing
     pinned. Photos are served from `/static/media/` with a year-long cache; the page policy needed no change.
-- **Theme (Oct 2026, "elite"):** dark everywhere: midnight navy, gold foil, garnet. Fonts are self-hosted in `static/fonts/` (OFL): Playfair Display (headings, brand, big numbers), Inter (body), JetBrains Mono (small-caps labels). Tokens are in `ui.CSS`; shared components and overrides of older page styles are in `ui.THEME_CSS` (rendered after everything). Helpers: `ui.crest(size)` (the original garnet shield with a gold-foil star, also the favicon; the wordmark `ui.brand_mark()` is "NoleCareer" in ivory + "Shield" in gold foil), `ui.verified_badge()`, `ui.scan_chip(state, score, label)`, `ui.stat_row()`, `ui.page_head(..., em=)`; each has a twin in `demo/app.js`.
+- **Theme (Oct 2026, "elite"):** dark everywhere: midnight navy, gold foil, garnet. Fonts are self-hosted in `static/fonts/` (OFL): Fraunces (headlines, SOFT 60 + WONK via `--dx`), Graduate (`--varsity`: gold kickers, sidebar groups, badges), Plus Jakarta Sans (body/UI), Martian Mono (scanner, scores, data; narrow by default via `wdth` 82, `.wide` for readouts). Tokens are in `ui.CSS`; shared components and overrides of older page styles are in `ui.THEME_CSS` (rendered after everything). Helpers: `ui.crest(size)` (the original garnet shield with a gold-foil star, also the favicon; the wordmark `ui.brand_mark()` is "NoleCareer" in ivory + "Shield" in gold foil), `ui.verified_badge()`, `ui.scan_chip(state, score, label)`, `ui.stat_row()`, `ui.page_head(..., em=)`; each has a twin in `demo/app.js`.
   (`.display`), normal width for body.
 - **The listing scanner** (one effect, merging this chat's teardown with the `scan-hero` branch from another chat,
   commit 583902f): a fake listing on the student home ("Know it's real before you apply"). As you scroll, a gold

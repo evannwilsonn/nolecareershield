@@ -338,7 +338,7 @@ def _review_html(rv: dict) -> str:
                     '<button class="b sm sec" type="submit">Use this rewrite</button> <span class="small faint">Fill in any [placeholder] after.</span></form></div>')
     stats = rv["stats"]
     return f"""<div class="split"><div class="card"><div class="score"><div class="ring" style="--p:{rv['score']}"><b>{rv['score']}</b></div>
-<div><div class="eyebrow">Resume score</div><h2 style="font-family:var(--serif);font-weight:500;font-size:24px">{esc(rv['grade'])}</h2>
+<div><div class="eyebrow">Resume score</div><h2 style="font-family:var(--serif);font-variation-settings:var(--dx);font-weight:500;font-size:24px">{esc(rv['grade'])}</h2>
 <p class="small muted">{stats['words']} words · {stats['bullets']} bullets · {stats['quantified']} with numbers</p></div></div>
 <div style="margin-top:14px">{cats}</div></div>
 <div class="card"><h3 class="sec" style="margin-top:0">What to fix first</h3><ul style="list-style:none;padding:0" class="stack">{finds}</ul></div></div>

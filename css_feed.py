@@ -11,7 +11,7 @@ CSS = """
 .fd-main{min-width:0;max-width:660px;width:100%;margin:0 auto}
 .fd-top{position:relative;margin:24px 0 0;padding-bottom:14px;border-bottom:1px solid var(--line)}
 .fd-bar{display:flex;align-items:center;gap:14px;min-height:40px;padding-right:150px;flex-wrap:wrap}
-.fd-bar h1{font-family:var(--display);font-weight:700;font-stretch:80%;font-size:30px;line-height:1;letter-spacing:-.005em;margin:0;color:var(--ink)}
+.fd-bar h1{font-family:var(--display);font-variation-settings:var(--dx);font-weight:700;font-stretch:80%;font-size:30px;line-height:1;letter-spacing:-.005em;margin:0;color:var(--ink)}
 .fd-views{display:flex;gap:4px;width:100%;max-width:100%;min-width:0;align-self:stretch;margin-top:14px;overflow-x:auto;scrollbar-width:none;border-bottom:0}
 .fd-views::-webkit-scrollbar{display:none}
 .fd-views a{flex:none;display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;font-size:14px;font-weight:550;color:var(--muted);text-decoration:none;white-space:nowrap}
@@ -93,7 +93,7 @@ CSS = """
 .fd-empty h2{font-size:18px;color:var(--ink);margin:0 0 6px}
 .fd-empty p{margin:0 auto 14px;max-width:34ch;font-size:14.5px}
 .fd-rail{min-width:0;margin-top:24px;padding-left:28px;border-left:1px solid var(--whisper)}
-.fd-rail-h{font-family:var(--display);font-stretch:84%;font-size:13px;font-weight:650;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-ink);margin:6px 0 4px}
+.fd-rail-h{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-size:13px;font-weight:650;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-ink);margin:6px 0 4px}
 .fd-sec{padding:14px 0;border-top:1px solid var(--whisper)}
 .fd-rail-h+.fd-sec{border-top:0;padding-top:8px}
 .fd-sec h3{display:flex;align-items:baseline;gap:6px;font-size:14px;font-weight:650;margin:0 0 6px}
@@ -117,7 +117,7 @@ CSS = """
 .fd-quiet{font-size:13px;color:var(--muted);margin:0}
 .fd-stats{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px}
 .fd-stats small{white-space:nowrap}
-.fd-stats b{display:block;font-family:var(--display);font-stretch:84%;font-size:24px;line-height:1.1;color:var(--ink)}
+.fd-stats b{display:block;font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-size:24px;line-height:1.1;color:var(--ink)}
 .fd-stats small{font-size:11.5px;color:var(--muted)}
 .fd-topics{display:flex;flex-wrap:wrap;gap:4px 14px}
 .fd-topics a{font-size:13px;color:var(--ink-2);text-decoration:none}

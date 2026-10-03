@@ -8,7 +8,7 @@ CSS = """
 /* ---------- employer dashboard (employer_dash.py) ---------- */
 .ed-hello{display:flex;align-items:flex-end;justify-content:space-between;gap:16px 24px;flex-wrap:wrap;padding:6px 0 18px;margin:0 0 18px;border-bottom:1px solid var(--line)}
 .ed-hi{min-width:0}
-.ed-hi h1{font-family:var(--display);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:clamp(28px,3.4vw,42px);line-height:.95;margin:8px 0 6px;letter-spacing:-.005em;overflow-wrap:anywhere}
+.ed-hi h1{font-family:var(--display);font-variation-settings:var(--dx);font-weight:800;font-stretch:72%;text-transform:uppercase;font-size:clamp(28px,3.4vw,42px);line-height:.95;margin:8px 0 6px;letter-spacing:-.005em;overflow-wrap:anywhere}
 .ed-hi h1 em{font-style:normal;color:var(--accent-ink)}
 .ed-hi p{color:var(--muted);font-size:14.5px;margin:0}
 .ed-quick{display:flex;gap:8px;flex-wrap:wrap}
@@ -43,7 +43,7 @@ CSS = """
 .ed-name{font-weight:650;color:var(--ink);text-decoration:none;overflow-wrap:anywhere;margin-right:2px}
 .ed-name:hover{color:var(--accent-ink);text-decoration:underline}
 .ed-m{display:flex;flex-direction:column;min-width:0}
-.ed-m b{font-family:var(--display);font-stretch:80%;font-weight:650;font-size:22px;line-height:1.05;font-variant-numeric:tabular-nums}
+.ed-m b{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:80%;font-weight:650;font-size:22px;line-height:1.05;font-variant-numeric:tabular-nums}
 .ed-m span{font-size:11.5px;color:var(--muted);font-weight:600}
 .ed-ac{text-align:right}
 .ed-pv{font-size:13px;font-weight:600;color:var(--accent-ink);text-decoration:none;white-space:nowrap}
@@ -62,7 +62,7 @@ CSS = """
 .ps .phead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .ps-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .ps-c{background:var(--sunk);border-radius:12px;box-shadow:0 0 0 1px var(--whisper) inset;padding:12px 14px;display:flex;flex-direction:column;min-width:0}
-.ps-c b{font-family:var(--display);font-stretch:80%;font-weight:650;font-size:30px;line-height:1.05;color:var(--accent-ink);font-variant-numeric:tabular-nums}
+.ps-c b{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:80%;font-weight:650;font-size:30px;line-height:1.05;color:var(--accent-ink);font-variant-numeric:tabular-nums}
 .ps-c span{font-size:13px;font-weight:600}
 .ps-c em{font-style:normal;font-size:12px;color:var(--muted);margin-top:2px}
 .ps-h{font-size:14px;margin:16px 0 8px}

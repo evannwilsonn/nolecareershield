@@ -7,14 +7,14 @@ follows for free. Class names all start with rs-.
 CSS = """
 /* ---------- Resume studio: optimizer ---------- */
 .rs-tabs{margin-bottom:22px}
-.rs-h1{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:clamp(26px,3.2vw,36px);line-height:1.1;letter-spacing:-.01em;margin:0 0 12px;color:var(--ink)}
+.rs-h1{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-weight:650;font-size:clamp(26px,3.2vw,36px);line-height:1.1;letter-spacing:-.01em;margin:0 0 12px;color:var(--ink)}
 .rs-lede{font-size:16px;color:var(--muted);max-width:52ch;margin:0 0 18px}
 .rs-checks{list-style:none;margin:0;padding:0;display:grid;gap:12px}
 .rs-checks li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;align-items:start;font-size:16px;color:var(--ink)}
 .rs-checks .tick{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--canvas);display:grid;place-items:center}
 .rs-checks .tick svg{width:14px;height:14px}
 .rs-add{padding:28px 26px 22px;box-shadow:var(--shadow);border-radius:16px}
-.rs-add h2{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:28px;text-align:center;margin:0 0 6px}
+.rs-add h2{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-weight:650;font-size:28px;text-align:center;margin:0 0 6px}
 .rs-add .sub{text-align:center;color:var(--muted);font-size:15px;margin:0 0 18px}
 .rs-add select{width:100%}
 .rs-pickmeta{font-size:12.5px;color:var(--faint);margin:6px 2px 0}
@@ -44,7 +44,7 @@ CSS = """
 .rs-score .ring b{width:106px;height:106px;font-size:38px}
 .rs-score .ring b,.rs-job .ring b{display:flex;align-items:center;justify-content:center;gap:0}
 .rs-score .ring b small,.rs-job .ring b small{margin-top:.35em;font-size:16px;font-weight:600;margin-left:1px}
-.rs-score h2{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:22px;margin:0}
+.rs-score h2{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-weight:650;font-size:22px;margin:0}
 .rs-score p{font-size:13px;color:var(--muted);margin:4px 0 0}
 .rs-nav{display:grid;gap:4px;margin-top:16px;text-align:left}
 .rs-nav a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;padding:8px 10px;border-radius:8px;text-decoration:none;color:var(--ink);font-size:14px;font-weight:600}
@@ -81,7 +81,7 @@ CSS = """
 /* ---------- tailor to a job ---------- */
 .rs-job{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center}
 .rs-job .ring{width:104px;height:104px}.rs-job .ring b{width:82px;height:82px;font-size:30px}
-.rs-job h2{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:22px;margin:2px 0 2px}
+.rs-job h2{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-weight:650;font-size:22px;margin:2px 0 2px}
 .rs-cover{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:16px}
 .rs-cover h4{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
 .rs-note{font-size:13px;color:var(--muted);margin:10px 0 0}
@@ -108,7 +108,7 @@ CSS = """
 .rs-ln.sp{min-height:10px}
 .rs-txt{font-size:14px;line-height:1.5;padding:3px 8px;border-radius:6px;color:var(--ink-2);overflow-wrap:anywhere}
 .rs-ln.lh .rs-txt{font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12.5px;color:var(--ink);padding-top:8px}
-.rs-ln.ln .rs-txt{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:20px;color:var(--ink)}
+.rs-ln.ln .rs-txt{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-weight:650;font-size:20px;color:var(--ink)}
 .rs-ln.lb .rs-txt{padding-left:18px;text-indent:-10px}
 .rs-ln.hl .rs-txt{background:var(--gold-tint);box-shadow:inset 3px 0 0 var(--gold,#c9a227);color:var(--ink)}
 .rs-margin{border-left:1px dashed var(--line-2);padding:0 0 0 14px;min-height:100%}
@@ -120,7 +120,7 @@ CSS = """
 /* ---------- the new resume: preview + panel ---------- */
 .rs-jtabs{margin:6px 0 18px}
 .rs-gen-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
-.rs-t1{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:clamp(24px,3vw,32px);line-height:1.12;margin:0 0 4px;color:var(--ink)}
+.rs-t1{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-weight:650;font-size:clamp(24px,3vw,32px);line-height:1.12;margin:0 0 4px;color:var(--ink)}
 .rs-gen{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}
 .rs-gen.one{grid-template-columns:minmax(0,1fr) 360px}
 .rs-paper{background:var(--sunk);border:1px solid var(--whisper);border-radius:14px;padding:22px}
@@ -132,7 +132,7 @@ CSS = """
 .rs-mm{display:flex;align-items:center;gap:14px;margin:8px 0 10px}
 .rs-mm div{display:grid}
 .rs-mm .lbl{font-size:12px;color:var(--muted)}
-.rs-mm b{font-family:var(--display);font-stretch:84%;font-size:34px;line-height:1;font-variant-numeric:tabular-nums;color:var(--muted)}
+.rs-mm b{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-size:34px;line-height:1;font-variant-numeric:tabular-nums;color:var(--muted)}
 .rs-mm .new b{color:var(--ok,#2f7a4a)}
 .rs-mm .arr{font-size:22px;color:var(--faint)}
 .rs-match .meter{margin:6px 0}
@@ -154,7 +154,7 @@ CSS = """
 .rs-kept.off{color:var(--faint)}
 .rs-gaps .reasons li{font-size:13.5px}
 .rs-need{max-width:640px}
-.rs-need h2{font-family:var(--display);font-stretch:84%;font-weight:650;font-size:24px;margin:0 0 6px}
+.rs-need h2{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:84%;font-weight:650;font-size:24px;margin:0 0 6px}
 .rs-aibox p{margin:0 0 8px}
 .rs-tpick .b{margin-top:2px}
 .rs-draft textarea.resume{min-height:520px}

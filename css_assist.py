@@ -33,7 +33,7 @@ CSS = """
 .cs-ctxd{position:sticky;top:57px}
 .cs-ctxd>summary{display:none}
 .cs-ctx-in{padding:16px 16px 20px;display:flex;flex-direction:column;gap:18px;max-height:calc(100vh - 70px);overflow-y:auto}
-.cs-sec h2{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:650;font-stretch:88%;font-size:17px;margin:0 0 10px;color:var(--ink)}
+.cs-sec h2{display:flex;align-items:center;gap:8px;font-family:var(--display);font-variation-settings:var(--dx);font-weight:650;font-stretch:88%;font-size:17px;margin:0 0 10px;color:var(--ink)}
 .cs-sec h2 .ic,.cs-sec h3 .ic{color:var(--accent-ink)}
 .cs-sec h3{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:650;margin:14px 0 6px;color:var(--ink-2)}
 .cs-str{display:flex;justify-content:space-between;font-size:13.5px;color:var(--muted);margin-bottom:6px}
@@ -59,7 +59,7 @@ CSS = """
 .cs-memnote a{color:var(--info);font-weight:650}
 /* home */
 .cs-home{margin:auto;width:100%;max-width:720px;padding:48px 20px;text-align:center}
-.cs-home h1{display:flex;align-items:center;justify-content:center;gap:12px;font-family:var(--display);font-weight:650;font-stretch:88%;font-size:clamp(28px,4.6vw,40px);letter-spacing:-.01em;line-height:1.15}
+.cs-home h1{display:flex;align-items:center;justify-content:center;gap:12px;font-family:var(--display);font-variation-settings:var(--dx);font-weight:650;font-stretch:88%;font-size:clamp(28px,4.6vw,40px);letter-spacing:-.01em;line-height:1.15}
 .cs-home h1 .ic{color:var(--accent-ink);flex:none}
 .cs-sub{font-size:20px;color:var(--ink-2);margin:6px 0 22px}
 .cs-chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:22px}
@@ -95,7 +95,7 @@ CSS = """
 .cs-stop{margin-left:8px}
 /* memory page */
 .cs-memory{padding:22px clamp(14px,4vw,40px) 40px;max-width:760px;width:100%;margin:0 auto}
-.cs-memory h1{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:650;font-stretch:88%;font-size:clamp(24px,3.6vw,32px);margin:6px 0 6px}
+.cs-memory h1{display:flex;align-items:center;gap:10px;font-family:var(--display);font-variation-settings:var(--dx);font-weight:650;font-stretch:88%;font-size:clamp(24px,3.6vw,32px);margin:6px 0 6px}
 .cs-memory h1 .ic{color:var(--accent-ink)}
 .cs-sub2{color:var(--ink-2);font-size:15px;line-height:1.6;margin:0 0 16px}
 .cs-memlist{list-style:none;padding:0;margin:16px 0;display:flex;flex-direction:column;gap:8px}
@@ -116,7 +116,7 @@ CSS = """
 .cs-tag{font-size:12px;font-weight:650;padding:2px 9px;border-radius:6px}
 .cs-tag.ea{background:var(--info-tint);color:var(--info)}
 .cs-tag.nw{background:var(--accent-tint);color:var(--accent-ink)}
-.cs-title{font-family:var(--display);font-weight:650;font-stretch:88%;font-size:19px;line-height:1.25;color:var(--ink);text-decoration:none;overflow-wrap:anywhere}
+.cs-title{font-family:var(--display);font-variation-settings:var(--dx);font-weight:650;font-stretch:88%;font-size:19px;line-height:1.25;color:var(--ink);text-decoration:none;overflow-wrap:anywhere}
 .cs-title::after{content:"";position:absolute;inset:0;border-radius:16px}
 .cs-co,.cs-loc{font-size:14.5px;color:var(--muted)}
 .cs-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
@@ -127,7 +127,7 @@ CSS = """
 .cs-more[open]>summary .ic{transform:rotate(180deg)}
 /* qualifications */
 .cs-quals{border-top:1px solid var(--whisper);padding-top:14px}
-.cs-quals h3{font-family:var(--display);font-weight:650;font-stretch:88%;font-size:20px;margin:0 0 8px}
+.cs-quals h3{font-family:var(--display);font-variation-settings:var(--dx);font-weight:650;font-stretch:88%;font-size:20px;margin:0 0 8px}
 .cs-quals h3 small{display:block;font:500 13px var(--sans);color:var(--faint);margin-top:2px}
 .cs-quals ul{list-style:none;padding:0;margin:10px 0;display:flex;flex-wrap:wrap;gap:8px}
 .cs-quals li{display:inline-flex;align-items:center;gap:8px;background:var(--sunk);border-radius:8px;padding:6px 12px 6px 8px;font-size:14px;color:var(--muted);box-shadow:0 0 0 1px var(--whisper) inset}

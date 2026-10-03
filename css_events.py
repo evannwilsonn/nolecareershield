@@ -10,7 +10,7 @@ CSS = """
 /* ---------- events (date block, list rows, event page, feed cards) ---------- */
 .ev-date{flex:none;display:inline-flex;flex-direction:column;align-items:center;width:52px;border-radius:10px;overflow:hidden;background:var(--surface);box-shadow:0 0 0 1px var(--line-2) inset;line-height:1;text-align:center}
 .ev-date small{display:block;width:100%;background:var(--accent);color:var(--on-accent);font-size:10.5px;font-weight:700;letter-spacing:.09em;padding:4px 0 3px}
-.ev-date b{display:block;font-family:var(--display);font-stretch:85%;font-size:23px;font-weight:700;color:var(--ink);padding:5px 0 1px}
+.ev-date b{display:block;font-family:var(--display);font-variation-settings:var(--dx);font-stretch:85%;font-size:23px;font-weight:700;color:var(--ink);padding:5px 0 1px}
 .ev-date i{display:block;font-style:normal;font-size:10.5px;color:var(--muted);padding:0 0 5px;text-transform:uppercase;letter-spacing:.06em}
 .ev-kind{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
 .ev-kind::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--line-2)}
@@ -39,7 +39,7 @@ CSS = """
 .ev-hero{display:flex;gap:18px;align-items:center;margin-bottom:14px;padding:20px 22px}
 .ev-hero .ev-date{width:66px}.ev-hero .ev-date b{font-size:30px}
 .ev-hero-t{min-width:0}
-.ev-hero h1{font-family:var(--display);font-stretch:82%;font-weight:700;font-size:clamp(24px,4vw,32px);line-height:1.08;margin:6px 0 4px;overflow-wrap:anywhere}
+.ev-hero h1{font-family:var(--display);font-variation-settings:var(--dx);font-stretch:82%;font-weight:700;font-size:clamp(24px,4vw,32px);line-height:1.08;margin:6px 0 4px;overflow-wrap:anywhere}
 .ev-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
 .ev-mainc{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;min-width:0}
 .ev-aside{position:sticky;top:76px;display:grid;gap:14px}

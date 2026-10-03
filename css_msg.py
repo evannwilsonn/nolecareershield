@@ -16,7 +16,7 @@ CSS = """
 .iv-h{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
 .iv-h b{font-size:15px;color:var(--ink)}
 .iv-sub{font-size:12.5px;color:var(--muted)}
-.iv-when{margin:12px 0 0;font-family:var(--display);font-weight:700;font-stretch:84%;font-size:22px;line-height:1.15;color:var(--ink)}
+.iv-when{margin:12px 0 0;font-family:var(--display);font-variation-settings:var(--dx);font-weight:700;font-stretch:84%;font-size:22px;line-height:1.15;color:var(--ink)}
 .iv-strike{text-decoration:line-through;color:var(--muted)}
 .iv-slots{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .iv-pick{margin:0}

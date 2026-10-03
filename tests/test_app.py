@@ -921,10 +921,12 @@ def test_reviewer_pill_names_aggregators_instead_of_score_zero(client):
 def test_font_and_effects_are_self_hosted(client):
     csp = client.get("/").headers["content-security-policy"]
     assert "font-src 'self'" in csp and "fonts.googleapis" not in csp
-    for f in ("playfair-600.woff2", "playfair-700.woff2", "playfair-700-italic.woff2", "inter.woff2", "jetbrains-mono.woff2"):
+    import ui
+    for f in ui.FONT_FILES:
         r = client.get(f"/static/fonts/{f}")
         assert r.status_code == 200 and r.headers["content-type"] == "font/woff2" and r.content[:4] == b"wOF2", f
     assert client.get("/static/fonts/archivo.woff2").status_code == 404
+    assert client.get("/static/fonts/inter.woff2").status_code == 404           # the old set is gone
     assert client.get("/static/fonts/..%2Fapp.py").status_code == 404
     r = client.get("/static/fx.js")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript") and "immutable" in r.headers["cache-control"]

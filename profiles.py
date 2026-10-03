@@ -436,7 +436,7 @@ def _student_card(p: dict, *, show_links: bool, show_resume: bool, owner: bool =
                   f'{esc(p["resume_text"])}</div></div>')
     return f"""<div class="card"><div class="row" style="gap:16px;align-items:flex-start">
 <span class="avatar lg">{ui.initials(name)}</span><div style="flex:1;min-width:0">
-<h2 style="font-family:var(--serif);font-weight:500;font-size:26px;line-height:1.2">{esc(name)}{pron}</h2>
+<h2 style="font-family:var(--serif);font-variation-settings:var(--dx);font-weight:500;font-size:26px;line-height:1.2">{esc(name)}{pron}</h2>
 <p class="muted">{sub or "FSU student"}</p>{f'<p style="margin-top:8px">{esc(p["headline"])}</p>' if p.get("headline") else ""}
 <div class="row" style="margin-top:12px">{_links_html(p.get("links") or {}) if show_links else ""}</div></div></div>
 {f'<p style="margin-top:14px;white-space:pre-wrap">{esc(p["bio"])}</p>' if p.get("bio") else ""}
