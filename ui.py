@@ -1269,7 +1269,7 @@ def shell(body: str, title: str = "NoleCareerShield", hero: str = "", admin: boo
     in_app = bool(user and not admin and active is not None)
     body_cls = ' class="inapp"' if in_app else ""
     head = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>{csrf_meta}
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)}</title>{csrf_meta}
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#050A14"><link rel="icon" href="{FAVICON}">{FONT_PRELOADS}<style>{CSS}{THEME_CSS}</style></head><body{body_cls}>
 <header><div class="nav">
 <a class="brand" href="/" aria-label="NoleCareerShield home">{crest(30, key="hdr")}{brand_mark()}</a>

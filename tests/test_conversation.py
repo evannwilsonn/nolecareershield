@@ -48,7 +48,7 @@ Your mentor will train you today.
 10/13/26, 9:20 AM - Evan: <Media omitted>
 10/13/26, 9:21 AM - Evan: I don't have that much"""
 
-RESHIPPING_EMAIL = """From: Riley Moss <person15@qy-shippers.com>
+RESHIPPING_EMAIL = """From: Riley Moss <person30@qy-shippers.com>
 Sent: Monday, November 30, 2026 10:39 AM
 To: evan.wilson@fsu.edu
 Subject: RE: WELCOME TO QY SHIPPERS

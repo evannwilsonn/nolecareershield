@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import os
 import re
 import secrets
@@ -32,6 +33,24 @@ IS_PROD = ENV == "production"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "").strip()
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
+
+
+def _env_int(name: str, default: int, low: int, high: int) -> int:
+    try:
+        return max(low, min(high, int(os.environ.get(name, str(default)))))
+    except ValueError:
+        return default
+
+
+# Where the real visitor address is, when TRUST_PROXY=1. Checked in order:
+#   1. CLIENT_IP_HEADER: a header your CDN overwrites with the visitor's address. On Render (RENDER=true, set by Render
+#      itself) this defaults to CF-Connecting-IP, then True-Client-IP: Render sits behind Cloudflare, whose edge sets
+#      those, and its X-Forwarded-For reads "visitor, cloudflare, render-internal".
+#   2. X-Forwarded-For, the entry TRUST_PROXY_HOPS from the right (1 = one proxy that appends the address).
+# Check what the server sees on the admin page /admin/client-ip after deploying.
+_default_ip_headers = "cf-connecting-ip,true-client-ip" if os.environ.get("RENDER", "").lower() == "true" else ""
+CLIENT_IP_HEADERS = [h.strip().lower() for h in os.environ.get("CLIENT_IP_HEADER", _default_ip_headers).split(",") if h.strip()]
+PROXY_HOPS = _env_int("TRUST_PROXY_HOPS", 1, 1, 10)
 # Absolute address of the site. Links in emails are built from this and never from the
 # request's Host header, which an attacker controls.
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000").strip().rstrip("/")
@@ -75,54 +94,171 @@ def secret_key() -> bytes:
 
 # ---------- rate limiting ----------
 
-class RateLimiter:
-    def __init__(self, max_attempts: int, window_seconds: int):
-        self.max_attempts = max_attempts
-        self.window_seconds = window_seconds
-        self._hits: dict[str, deque[float]] = defaultdict(deque)
+class _MemoryStore:
+    """Sliding-window hit log in this process's memory. Right for one process (and for tests)."""
+
+    def __init__(self):
+        self._hits: dict[tuple[str, str], deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
-    def check(self, key: str) -> tuple[bool, int]:
+    def _dq(self, name, key, window, now):
+        dq = self._hits[(name, key)]
+        while dq and now - dq[0] > window:
+            dq.popleft()
+        return dq
+
+    def take(self, name, key, limit, window, record=True):
         now = time.monotonic()
         with self._lock:
-            dq = self._hits[key]
-            while dq and now - dq[0] > self.window_seconds:
-                dq.popleft()
-            if len(dq) >= self.max_attempts:
-                retry_after = int(self.window_seconds - (now - dq[0])) + 1
-                return False, max(retry_after, 1)
+            dq = self._dq(name, key, window, now)
+            if len(dq) >= limit:
+                return False, max(int(window - (now - dq[0])) + 1, 1)
+            if record:
+                dq.append(now)
             return True, 0
 
-    def hit(self, key: str) -> None:
+    def hit(self, name, key, window):
         now = time.monotonic()
         with self._lock:
-            dq = self._hits[key]
-            while dq and now - dq[0] > self.window_seconds:
-                dq.popleft()
-            dq.append(now)
+            self._dq(name, key, window, now).append(now)
 
-    def take(self, key: str) -> tuple[bool, int]:
-        """Check and record in one step, so concurrent requests can't all slip past the check."""
-        now = time.monotonic()
+    def refund(self, name, key):
         with self._lock:
-            dq = self._hits[key]
-            while dq and now - dq[0] > self.window_seconds:
-                dq.popleft()
-            if len(dq) >= self.max_attempts:
-                return False, max(int(self.window_seconds - (now - dq[0])) + 1, 1)
-            dq.append(now)
-            return True, 0
-
-    def refund(self, key: str) -> None:
-        """Give back one recorded attempt (a log-in that turned out to succeed)."""
-        with self._lock:
-            dq = self._hits.get(key)
+            dq = self._hits.get((name, key))
             if dq:
                 dq.pop()
 
-    def reset_all(self) -> None:
+    def reset(self, name):
         with self._lock:
-            self._hits.clear()
+            for k in [k for k in self._hits if k[0] == name]:
+                del self._hits[k]
+
+
+class _SqliteStore:
+    """The same hit log in a SQLite file, so every worker process on the server shares one set of limits.
+    (The app keeps all its data in one SQLite file on one disk, so it runs on one server; this covers several worker
+    processes on it.) If the file can't be used, it falls back to memory rather than taking the site down."""
+
+    MAX_WINDOW = 2 * 24 * 3600
+
+    def __init__(self, path: str):
+        import sqlite3
+        self._sqlite3, self.path = sqlite3, path
+        self._local = threading.local()
+        self._fallback = _MemoryStore()
+        self._ops = 0
+        with self._conn() as _:
+            pass
+
+    def _conn(self):
+        c = getattr(self._local, "conn", None)
+        if c is None:
+            c = self._sqlite3.connect(self.path, timeout=5, isolation_level=None, check_same_thread=False)
+            c.execute("PRAGMA journal_mode=WAL")
+            c.execute("PRAGMA synchronous=NORMAL")
+            c.execute("CREATE TABLE IF NOT EXISTS hits (lim TEXT NOT NULL, k TEXT NOT NULL, ts REAL NOT NULL)")
+            c.execute("CREATE INDEX IF NOT EXISTS hits_lk ON hits (lim, k, ts)")
+            self._local.conn = c
+        return _Tx(c)
+
+    def _tidy(self, c, now):
+        self._ops += 1
+        if self._ops % 500 == 0:
+            c.execute("DELETE FROM hits WHERE ts < ?", (now - self.MAX_WINDOW,))
+
+    def take(self, name, key, limit, window, record=True):
+        try:
+            now = time.time()
+            with self._conn() as c:
+                c.execute("DELETE FROM hits WHERE lim = ? AND k = ? AND ts <= ?", (name, key, now - window))
+                n, first = c.execute("SELECT COUNT(*), MIN(ts) FROM hits WHERE lim = ? AND k = ?", (name, key)).fetchone()
+                if n >= limit:
+                    return False, max(int(window - (now - first)) + 1, 1)
+                if record:
+                    c.execute("INSERT INTO hits (lim, k, ts) VALUES (?, ?, ?)", (name, key, now))
+                    self._tidy(c, now)
+                return True, 0
+        except self._sqlite3.Error:
+            return self._fallback.take(name, key, limit, window, record)
+
+    def hit(self, name, key, window):
+        try:
+            with self._conn() as c:
+                c.execute("INSERT INTO hits (lim, k, ts) VALUES (?, ?, ?)", (name, key, time.time()))
+        except self._sqlite3.Error:
+            self._fallback.hit(name, key, window)
+
+    def refund(self, name, key):
+        try:
+            with self._conn() as c:
+                c.execute("DELETE FROM hits WHERE rowid = (SELECT rowid FROM hits WHERE lim = ? AND k = ? ORDER BY ts DESC LIMIT 1)",
+                          (name, key))
+        except self._sqlite3.Error:
+            self._fallback.refund(name, key)
+
+    def reset(self, name):
+        try:
+            with self._conn() as c:
+                c.execute("DELETE FROM hits WHERE lim = ?", (name,))
+        except self._sqlite3.Error:
+            pass
+        self._fallback.reset(name)
+
+
+class _Tx:
+    """BEGIN IMMEDIATE ... COMMIT, so a check-and-record is atomic across processes."""
+
+    def __init__(self, conn):
+        self.c = conn
+
+    def __enter__(self):
+        self.c.execute("BEGIN IMMEDIATE")
+        return self.c
+
+    def __exit__(self, exc_type, *_):
+        self.c.execute("ROLLBACK" if exc_type else "COMMIT")
+        return False
+
+
+def _make_store():
+    kind = os.environ.get("RATE_LIMIT_STORE", "sqlite" if IS_PROD else "memory").strip().lower()
+    if kind == "sqlite":
+        default = os.path.join(os.path.dirname(os.path.abspath(os.environ.get("DB_PATH", "jobs.db"))), "ratelimit.db")
+        try:
+            return _SqliteStore(os.environ.get("RATE_LIMIT_DB", default))
+        except Exception:                        # noqa: BLE001 - never stop the site from starting over the limiter
+            pass
+    return _MemoryStore()
+
+
+STORE = _make_store()
+
+
+class RateLimiter:
+    """A sliding-window limit: at most max_attempts per window_seconds per key. Its name (set below from the variable
+    it's assigned to) keeps limiters apart in the shared store."""
+
+    def __init__(self, max_attempts: int, window_seconds: int, name: str = ""):
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self.name = name
+
+    def check(self, key: str) -> tuple[bool, int]:
+        return STORE.take(self.name, key, self.max_attempts, self.window_seconds, record=False)
+
+    def hit(self, key: str) -> None:
+        STORE.hit(self.name, key, self.window_seconds)
+
+    def take(self, key: str) -> tuple[bool, int]:
+        """Check and record in one step, so concurrent requests can't all slip past the check."""
+        return STORE.take(self.name, key, self.max_attempts, self.window_seconds)
+
+    def refund(self, key: str) -> None:
+        """Give back one recorded attempt (a log-in that turned out to succeed)."""
+        STORE.refund(self.name, key)
+
+    def reset_all(self) -> None:
+        STORE.reset(self.name)
 
 
 login_limiter = RateLimiter(max_attempts=5, window_seconds=15 * 60)
@@ -145,13 +281,6 @@ upload_limiter = RateLimiter(max_attempts=20, window_seconds=60 * 60)        # r
 profile_limiter = RateLimiter(max_attempts=60, window_seconds=60 * 60)       # profile saves per hour
 public_check_limiter = RateLimiter(max_attempts=10, window_seconds=24 * 3600)  # scam checks per day for visitors who aren't signed in
 school_limiter = RateLimiter(max_attempts=5, window_seconds=24 * 3600)       # "bring it to my school" requests per day
-def _env_int(name: str, default: int, low: int, high: int) -> int:
-    try:
-        return max(low, min(high, int(os.environ.get(name, str(default)))))
-    except ValueError:
-        return default
-
-
 # Every endpoint: requests per client IP per minute (RequestGuard below).
 GLOBAL_RATE_PER_MIN = _env_int("RATE_LIMIT_PER_MIN", 300, 30, 100_000)
 # Log-in routes: failed attempts per client IP per window. A successful log-in doesn't count, so a campus network
@@ -167,6 +296,53 @@ user_login_email_limiter.max_attempts = LOGIN_MAX_ATTEMPTS
 user_login_email_limiter.window_seconds = LOGIN_WINDOW_SECONDS
 ACCOUNT_MAX_FAILS = _env_int("ACCOUNT_MAX_FAILS", 20, LOGIN_MAX_ATTEMPTS, 1000)
 account_fail_limiter = RateLimiter(max_attempts=ACCOUNT_MAX_FAILS, window_seconds=LOGIN_WINDOW_SECONDS)
+# Known devices. A browser that has logged in here before carries a signed cookie, and its failed log-ins are counted on
+# their own (5 per window) instead of against the whole address. So when a campus network puts hundreds of students
+# behind one public IP, a few strangers' typos don't lock everyone out. Browsers without the cookie share the address's
+# 5; all known devices on one address together get LOGIN_SHARED_IP_MAX, so minting cookies doesn't buy endless guesses.
+LOGIN_SHARED_IP_MAX = _env_int("LOGIN_SHARED_IP_MAX", 50, LOGIN_MAX_ATTEMPTS, 10_000)
+login_shared_limiter = RateLimiter(max_attempts=LOGIN_SHARED_IP_MAX, window_seconds=LOGIN_WINDOW_SECONDS)
+DEVICE_COOKIE = "ncs_dev"
+PRE_COOKIE = "ncs_pre"
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{16,64}")
+
+
+# The cookie is "<device id>.<user id>.<signature>": bound to the account that last logged in on that browser. For
+# per-account limits it only changes how that one account's attempts are counted, so logging into your own account a
+# dozen times doesn't buy extra guesses at anyone else's.
+
+def _device_sig(dev_id: str, uid: int) -> str:
+    return hmac.new(secret_key(), f"device|{dev_id}|{uid}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def new_device_cookie(uid: int, dev_id: str = "") -> str:
+    dev_id = dev_id or secrets.token_urlsafe(12)
+    return f"{dev_id}.{int(uid)}.{_device_sig(dev_id, int(uid))}"
+
+
+def _device_parts(cookie_value: str | None) -> tuple[str, int]:
+    parts = (cookie_value or "").split(".")
+    if len(parts) == 3 and _TOKEN_RE.fullmatch(parts[0]) and parts[1].isdigit() and len(parts[1]) < 12 \
+            and hmac.compare_digest(parts[2], _device_sig(parts[0], int(parts[1]))):
+        return parts[0], int(parts[1])
+    return "", 0
+
+
+def device_id(cookie_value: str | None) -> str:
+    """The id in a valid known-device cookie, else ""."""
+    return _device_parts(cookie_value)[0]
+
+
+def device_cookie_for(uid: int) -> str:
+    """A cookie value binding this browser to the account that just logged in (keeps its device id if it had one)."""
+    return new_device_cookie(uid, _pre_session.get().get("dev", ""))
+
+
+def login_identity(ip: str, device_cookie: str | None, uid: int | None) -> str:
+    """Who a log-in attempt at account `uid` is counted against: the address, or, on a browser that has logged into
+    this same account before, the address plus that browser."""
+    dev, owner = _device_parts(device_cookie)
+    return f"{ip}|d:{dev}" if dev and uid and owner == uid else ip
 
 
 def account_attempt(role: str, email: str, ip: str) -> tuple[str, list[tuple["RateLimiter", str]]]:
@@ -183,7 +359,12 @@ def account_attempt(role: str, email: str, ip: str) -> tuple[str, list[tuple["Ra
     acct = (account_fail_limiter, f"login:{role}:{email}")
     ok, _ = acct[0].take(acct[1])
     if not ok:
-        return "only_correct", [pair]
+        # Someone is guessing from many addresses. Only the owner's own known browser still gets a password check;
+        # everyone else waits out the window without one, so a refusal never tells a guesser anything.
+        if "|d:" in ip:
+            return "only_correct", [pair]
+        pair[0].refund(pair[1])
+        return "blocked", []
     return "ok", [pair, acct]
 
 
@@ -191,29 +372,53 @@ def account_success(slots) -> None:
     for lim, key in slots:
         lim.refund(key)
 
+for _n, _v in list(globals().items()):
+    if isinstance(_v, RateLimiter) and not _v.name:
+        _v.name = _n
+
 ALL_LIMITERS = (login_limiter, submit_limiter, general_limiter, user_login_limiter,
                 user_login_email_limiter, signup_limiter, email_limiter, message_limiter, new_convo_limiter,
                 check_limiter, ai_limiter, post_limiter, comment_limiter, upload_limiter, profile_limiter,
-                public_check_limiter, school_limiter, global_limiter, login_fail_limiter, account_fail_limiter)
+                public_check_limiter, school_limiter, global_limiter, login_fail_limiter, account_fail_limiter,
+                login_shared_limiter)
+
+
+def _valid_ip(value: str) -> str:
+    value = (value or "").strip()
+    if value.startswith("[") and "]" in value:              # [ipv6]:port
+        value = value[1:value.index("]")]
+    elif value.count(":") == 1:                             # ipv4:port
+        value = value.split(":")[0]
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return ""
+
+
+def resolve_ip(peer: str, header) -> tuple[str, str]:
+    """(client address, where it came from). `header(name)` returns that header's value(s), comma-joined.
+    Without TRUST_PROXY nothing the client sends is believed: the address is the connection's own."""
+    peer = peer or "unknown"
+    if not TRUST_PROXY:
+        return peer, "connection"
+    for name in CLIENT_IP_HEADERS:
+        ip = _valid_ip((header(name) or "").split(",")[0])
+        if ip:
+            return ip, name
+    parts = [p.strip() for p in (header("x-forwarded-for") or "").split(",") if p.strip()]
+    if len(parts) >= PROXY_HOPS:
+        ip = _valid_ip(parts[-PROXY_HOPS])
+        if ip:
+            return ip, f"x-forwarded-for (entry {PROXY_HOPS} from the right)"
+    return peer, "connection"
 
 
 def _ip_from(peer: str, forwarded: str) -> str:
-    """
-    Direct peer address by default. X-Forwarded-For is honored only when
-    TRUST_PROXY=1 (i.e. you are behind exactly one proxy that appends the real
-    client address). We take the LAST entry: anything to its left was supplied
-    by the client and can be forged.
-    """
-    ip = peer or "unknown"
-    if TRUST_PROXY:
-        parts = [p.strip() for p in (forwarded or "").split(",") if p.strip()]
-        if parts:
-            ip = parts[-1][:64]
-    return ip
+    return resolve_ip(peer, lambda n: forwarded if n == "x-forwarded-for" else "")[0]
 
 
 def client_ip(request: Request) -> str:
-    return _ip_from(request.client.host if request.client else "", ",".join(request.headers.getlist("x-forwarded-for")))
+    return resolve_ip(request.client.host if request.client else "", lambda n: ",".join(request.headers.getlist(n)))[0]
 
 
 def enforce_rate_limit(request: Request, limiter: RateLimiter, bucket: str) -> None:
@@ -247,7 +452,22 @@ def enforce_key_limit(limiter: RateLimiter, key: str, what: str = "that") -> Non
 # use scope "form": they exist to stop blind cross-site auto-posts and bots that
 # never loaded the page, not to identify anyone (the site has no user accounts).
 
+# Pre-log-in forms (log in, sign up, reset, the public scam check) have no session to bind a token to, so each browser
+# gets a random pre-session cookie and "form" tokens are bound to it. A token fetched by someone else is useless in your
+# browser, which closes login CSRF (an attacker silently logging you into their account). RequestGuard sets the cookie.
+import contextvars as _cv
+# The cookie is only sent with a page that actually contains such a form, so just browsing sets no cookies.
+_pre_session: _cv.ContextVar[dict] = _cv.ContextVar("pre_session", default={})
+
+
+def _scoped(scope: str) -> str:
+    return f"form|{_pre_session.get().get('id', '')}" if scope == "form" else scope
+
+
 def make_csrf(scope: str) -> str:
+    if scope == "form":
+        _pre_session.get()["used"] = True
+    scope = _scoped(scope)
     ts = str(int(time.time()))
     sig = hmac.new(secret_key(), f"{scope}|{ts}".encode(), hashlib.sha256).hexdigest()
     return f"{ts}.{sig}"
@@ -256,6 +476,9 @@ def make_csrf(scope: str) -> str:
 def verify_csrf(token: str | None, scope: str, max_age: int = 2 * 60 * 60) -> bool:
     if not token or "." not in token:
         return False
+    if scope == "form" and (not _pre_session.get().get("id") or _pre_session.get().get("new")):
+        return False                             # no cookie came with the request: the token can't be this browser's
+    scope = _scoped(scope)
     ts, sig = token.split(".", 1)
     if not ts.isdigit():
         return False
@@ -461,6 +684,23 @@ def check_target(path_raw: bytes, query: bytes) -> None:
         raise _Reject(400, "That address isn't valid.")
 
 
+_NO_COOKIE_PATHS = ("/static/", "/healthz", "/robots.txt", "/inbound/")
+
+
+def _cookies(header: str) -> dict:
+    out = {}
+    for part in (header or "").split(";"):
+        k, _, v = part.strip().partition("=")
+        if k and k not in out:
+            out[k] = v.strip().strip('"')
+    return out
+
+
+def _set_cookie(name: str, value: str, max_age: int) -> tuple[bytes, bytes]:
+    flags = f"{name}={value}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Lax" + ("; Secure" if IS_PROD else "")
+    return (b"set-cookie", flags.encode("latin-1"))
+
+
 class RequestGuard:
     """Pure ASGI middleware (so it can stop a request before the body is read into the app)."""
 
@@ -475,8 +715,16 @@ class RequestGuard:
         raw_headers = [(k.decode("latin-1").lower(), v.decode("latin-1")) for k, v in scope.get("headers", [])]
         headers = dict(raw_headers)
         peer = (scope.get("client") or ("", 0))[0]
-        ip = _ip_from(peer, ",".join(v for k, v in raw_headers if k == "x-forwarded-for"))
-        login_key = ""
+        ip = resolve_ip(peer, lambda n: ",".join(v for k, v in raw_headers if k == n))[0]
+        cookies = _cookies(headers.get("cookie", ""))
+        login_slots: list[tuple[RateLimiter, str]] = []
+        dev = device_id(cookies.get(DEVICE_COOKIE))
+        pre = cookies.get(PRE_COOKIE, "")
+        new_pre = ""
+        if not _TOKEN_RE.fullmatch(pre):
+            pre = new_pre = secrets.token_urlsafe(24)
+        pre_state = {"id": pre, "new": bool(new_pre), "used": False, "dev": dev}
+        _pre_session.set(pre_state)
         try:
             check_target(scope.get("raw_path") or path.encode("utf-8", "surrogateescape"), scope.get("query_string", b""))
             if not path.startswith(_NO_GLOBAL_LIMIT):
@@ -487,10 +735,18 @@ class RequestGuard:
             if _LOGIN_PATH.match(path) and (method == "POST" or path.startswith("/sso/callback")):
                 # Reserve the slot now and give it back if the log-in succeeds. Checking now and counting only
                 # when the response goes out would let a burst of parallel guesses all get through.
-                ok, wait = login_fail_limiter.take(f"login:{ip}")
-                if ok:
-                    login_key = f"login:{ip}"
+                wanted = ([(login_fail_limiter, f"login:{ip}|d:{dev}"), (login_shared_limiter, f"login:{ip}")] if dev
+                          else [(login_fail_limiter, f"login:{ip}")])
+                ok, wait = True, 0
+                for lim, key in wanted:
+                    ok, wait = lim.take(key)
+                    if not ok:
+                        break
+                    login_slots.append((lim, key))
                 if not ok:
+                    for lim, key in login_slots:
+                        lim.refund(key)
+                    login_slots = []
                     mins = max(1, round(wait / 60))
                     raise _Reject(429, f"Too many failed log-in attempts. Try again in about {mins} minute{'s' if mins != 1 else ''}.", wait)
             body = b""
@@ -531,12 +787,21 @@ class RequestGuard:
                 return {"type": "http.request", "body": body, "more_body": False}
             return await receive()
 
+        quiet = path.startswith(_NO_COOKIE_PATHS)
+
         async def watch(message):
-            if login_key and message["type"] == "http.response.start" and message["status"] < 400:
-                login_fail_limiter.refund(login_key)              # it worked: successful log-ins don't count
+            if message["type"] == "http.response.start":
+                extra = []
+                if login_slots and message["status"] < 400:
+                    for lim, key in login_slots:                  # it worked: successful log-ins don't count
+                        lim.refund(key)
+                if new_pre and pre_state["used"] and not quiet:
+                    extra.append(_set_cookie(PRE_COOKIE, new_pre, 30 * 24 * 3600))
+                if extra:
+                    message = {**message, "headers": list(message.get("headers", [])) + extra}
             await send(message)
 
-        await self.app(scope, replay if method not in ("GET", "HEAD", "OPTIONS") else receive, watch if login_key else send)
+        await self.app(scope, replay if method not in ("GET", "HEAD", "OPTIONS") else receive, watch)
 
     async def _refuse(self, scope, receive, send, r: _Reject):
         from starlette.responses import JSONResponse, PlainTextResponse

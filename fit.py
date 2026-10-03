@@ -275,7 +275,7 @@ def fit_score(job: dict, profile: dict | None, today: tuple[int, int] | None = N
                           for it in profile.get("items") or [] if it.get("kind") == "education"]
                          + [it.get("title") or "" for it in profile.get("items") or [] if it.get("kind") == "course"]).lower()
     if req["majors"]:
-        hit = [m for m in req["majors"] if any(re.search(r"\b" + NOT_MAJOR.get(w, re.escape(w)) + r"\b", my_majors) for w in MAJORS[m])]
+        hit = [m for m in req["majors"] if any(re.search(r"\b" + NOT_MAJOR.get(w, re.escape(w)) + r"\b", my_majors) for w in (MAJORS.get(m) or [m.lower()]))]   # an employer-typed major not in the list matches its own name
         if hit:
             edu_scores.append(1.0); edu_notes.append("Your major or coursework covers " + " and ".join(hit[:2]))
         elif re.search(r"related field|similar field|or related|quantitative field", (job.get("description") or ""), re.IGNORECASE) and \

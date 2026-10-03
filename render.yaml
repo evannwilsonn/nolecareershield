@@ -16,6 +16,12 @@ services:
         value: production
       - key: TRUST_PROXY
         value: "1"
+      - key: CLIENT_IP_HEADER          # Render is behind Cloudflare; check /admin/client-ip after deploying
+        value: cf-connecting-ip,true-client-ip
+      - key: LOGIN_SHARED_IP_MAX
+        value: "50"
+      - key: RATE_LIMIT_STORE
+        value: sqlite
       - key: RATE_LIMIT_PER_MIN
         value: "300"
       - key: LOGIN_MAX_ATTEMPTS

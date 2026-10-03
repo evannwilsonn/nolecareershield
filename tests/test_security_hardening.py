@@ -50,10 +50,7 @@ def test_account_cap_across_many_addresses(client, monkeypatch):
                          data={"email": "target@fsu.edu", "password": "Wrong1!pass", "csrf": tok, "next": ""}).status_code
              for i in range(cap + 1)]
     assert codes[:cap] == [401] * cap and codes[cap] == 429
-    # ...but the owner, with the right password from an address of their own, still gets in.
-    owner = client.post("/login/student", headers={"x-forwarded-for": "198.51.100.77"},
-                        data={"email": "target@fsu.edu", "password": PW, "csrf": tok, "next": ""})
-    assert owner.status_code == 303
+    # (the owner's own known browser still gets in: test_after_the_account_cap_only_the_owners_own_browser_gets_a_check)
 
 
 def test_one_ip_reading_for_every_limit(client, monkeypatch):
@@ -186,3 +183,204 @@ def test_private_resume_text_isnt_searchable_in_talent(net):
         db.execute("UPDATE student_profiles SET share_resume = 1 WHERE user_id = ?", (sid,))
         db.commit()
     assert "Jordan" in emp.get("/talent?skill=secretphrase917").text
+
+
+# ---------- client address behind Render / Cloudflare ----------
+
+def test_render_uses_the_cloudflare_client_header(monkeypatch):
+    import security
+    monkeypatch.setattr(security, "TRUST_PROXY", True)
+    monkeypatch.setattr(security, "CLIENT_IP_HEADERS", ["cf-connecting-ip", "true-client-ip"])
+    h = {"cf-connecting-ip": "81.97.145.24", "x-forwarded-for": "81.97.145.24, 172.71.195.123, 10.226.90.65"}
+    assert security.resolve_ip("10.0.0.1", lambda n: h.get(n, "")) == ("81.97.145.24", "cf-connecting-ip")
+    h = {"true-client-ip": "2001:db8::7", "x-forwarded-for": "10.1.1.1"}
+    assert security.resolve_ip("10.0.0.1", lambda n: h.get(n, ""))[0] == "2001:db8::7"
+    h = {"cf-connecting-ip": "not-an-ip", "x-forwarded-for": "9.9.9.9"}
+    assert security.resolve_ip("10.0.0.1", lambda n: h.get(n, ""))[0] == "9.9.9.9"     # junk header ignored
+    monkeypatch.setattr(security, "TRUST_PROXY", False)
+    assert security.resolve_ip("10.0.0.1", lambda n: h.get(n, "")) == ("10.0.0.1", "connection")
+
+
+def test_proxy_hops_picks_the_right_forwarded_entry(monkeypatch):
+    import security
+    monkeypatch.setattr(security, "TRUST_PROXY", True)
+    monkeypatch.setattr(security, "CLIENT_IP_HEADERS", [])
+    monkeypatch.setattr(security, "PROXY_HOPS", 3)
+    h = {"x-forwarded-for": "1.2.3.4, 81.97.145.24, 172.71.195.123, 10.226.90.65"}
+    assert security.resolve_ip("p", lambda n: h.get(n, ""))[0] == "81.97.145.24"
+
+
+def test_admin_can_see_which_address_the_limits_use(client):
+    tok = csrf_from(client.get("/admin").text)
+    assert client.post("/admin/login", data={"password": "correct-horse-battery", "csrf": tok}).status_code == 303
+    r = client.get("/admin/client-ip", headers={"cf-connecting-ip": "81.97.145.24"})
+    assert r.status_code == 200 and "Address the limits use" in r.text and "81.97.145.24" in r.text
+    client.cookies.clear()
+    assert client.get("/admin/client-ip").status_code == 303
+
+
+# ---------- known devices on a shared network ----------
+
+def test_known_devices_dont_share_the_campus_lockout(client):
+    """Five strangers' typos on the campus address lock out new browsers there, not students who've logged in before."""
+    make_verified(client, "student", "regular@fsu.edu")
+    tok = csrf_from(client.get("/login/student").text)
+    ok = client.post("/login/student", data={"email": "regular@fsu.edu", "password": PW, "csrf": tok, "next": ""})
+    assert ok.status_code == 303 and "ncs_dev" in client.cookies
+    known = client.cookies.get("ncs_dev")
+    from fastapi.testclient import TestClient
+    with TestClient(client.appmod.app, follow_redirects=False) as stranger:
+        t2 = csrf_from(stranger.get("/login/student").text)
+        codes = [stranger.post("/login/student", data={"email": f"x{i}@fsu.edu", "password": "Wrong1!pass", "csrf": t2,
+                                                          "next": ""}).status_code for i in range(6)]
+        assert codes[-1] == 429
+    client.cookies.clear()
+    client.cookies.set("ncs_dev", known)
+    tok = csrf_from(client.get("/login/student").text)
+    assert client.post("/login/student", data={"email": "regular@fsu.edu", "password": PW, "csrf": tok, "next": ""}).status_code == 303
+
+
+def test_device_cookies_only_come_from_real_logins_and_cant_be_forged(client):
+    tok = csrf_from(client.get("/login").text)
+    client.post("/login", data={"email": "someone@fsu.edu", "csrf": tok})       # step one: no log-in happens
+    assert "ncs_dev" not in client.cookies
+    import security
+    assert security.device_id("abcdefghijklmnop.1.0000") == ""
+    good = security.new_device_cookie(7)
+    assert security.device_id(good) != ""
+    dev, uid, sig = good.split(".")
+    assert security.device_id(f"{dev}.8.{sig}") == ""                # can't re-bind it to another account
+
+
+def test_rotating_device_cookies_buys_no_extra_guesses_at_someone_elses_account(client):
+    """An attacker logs into their own account over and over to collect device cookies, then uses each one to guess
+    at a victim's password from the same address. The victim's account still only gets 5 tries per address."""
+    make_verified(client, "employer", "attacker@evil.example")
+    victim = make_verified(client, "student", "victim@fsu.edu")
+    from fastapi.testclient import TestClient
+    cookies = []
+    for _ in range(4):
+        with TestClient(client.appmod.app, follow_redirects=False) as c:
+            t = csrf_from(c.get("/login/employer").text)
+            assert c.post("/login/employer", data={"email": "attacker@evil.example", "password": PW, "csrf": t,
+                                                   "next": ""}).status_code == 303
+            cookies.append(c.cookies.get("ncs_dev"))
+    assert len(set(cookies)) == 4
+    codes = []
+    for ck in cookies:
+        with TestClient(client.appmod.app, follow_redirects=False) as c:
+            c.cookies.set("ncs_dev", ck)
+            t = csrf_from(c.get("/login/student").text)
+            codes += [c.post("/login/student", data={"email": "victim@fsu.edu", "password": "Wrong1!pass", "csrf": t,
+                                                     "next": ""}).status_code for _ in range(5)]
+    assert codes.count(401) == 5                                     # the 6th onward never reaches a password check
+    import security
+    assert security.login_identity("1.2.3.4", cookies[0], victim) == "1.2.3.4"
+
+
+def test_after_the_account_cap_only_the_owners_own_browser_gets_a_check(client, monkeypatch):
+    """Guessing from many addresses fills the account cap. Then a stranger with the right password gets no answer
+    (no oracle), while the owner's usual browser still logs in."""
+    monkeypatch.setattr(client.security, "TRUST_PROXY", True)
+    monkeypatch.setattr(client.security, "CLIENT_IP_HEADERS", [])
+    make_verified(client, "student", "owner@fsu.edu")
+    tok = csrf_from(client.get("/login/student").text)
+    post = lambda ip, pw: client.post("/login/student", headers={"x-forwarded-for": ip},
+                                      data={"email": "owner@fsu.edu", "password": pw, "csrf": tok, "next": ""})
+    assert post("198.51.100.1", PW).status_code == 303                 # the owner's browser earns its device cookie
+    owned = client.cookies.get("ncs_dev")
+    client.cookies.clear()
+    tok = csrf_from(client.get("/login/student").text)
+    cap = client.security.ACCOUNT_MAX_FAILS
+    for i in range(cap):
+        assert post(f"192.0.2.{i}", "Wrong1!pass").status_code == 401
+    assert post("203.0.113.5", PW).status_code == 429                 # right password, unknown browser: no check
+    client.cookies.set("ncs_dev", owned)
+    tok = csrf_from(client.get("/login/student").text)
+    assert post("198.51.100.1", PW).status_code == 303
+
+
+def test_known_devices_on_one_address_have_a_shared_ceiling(client, monkeypatch):
+    import security
+    monkeypatch.setattr(security.login_shared_limiter, "max_attempts", 7)
+    from fastapi.testclient import TestClient
+    codes = []
+    for d in range(3):
+        with TestClient(client.appmod.app, follow_redirects=False) as c:
+            c.cookies.set("ncs_dev", security.new_device_cookie(900 + d))
+            t = csrf_from(c.get("/login/student").text)
+            codes += [c.post("/login/student", data={"email": f"d{d}{i}@fsu.edu", "password": "Wrong1!pass", "csrf": t,
+                                                      "next": ""}).status_code for i in range(3)]
+    assert codes.count(401) == 7 and codes[-1] == 429
+
+
+# ---------- shared limit store ----------
+
+def test_sqlite_store_is_shared_between_processes(tmp_path):
+    """Two stores on one file stand in for two worker processes: a limit used up in one holds in the other."""
+    import security
+    a, b = security._SqliteStore(str(tmp_path / "rl.db")), security._SqliteStore(str(tmp_path / "rl.db"))
+    assert [a.take("login", "1.2.3.4", 5, 900)[0] for _ in range(3)] == [True] * 3
+    assert [b.take("login", "1.2.3.4", 5, 900)[0] for _ in range(3)] == [True, True, False]
+    b.refund("login", "1.2.3.4")
+    assert a.take("login", "1.2.3.4", 5, 900)[0] is True
+    assert a.take("other", "1.2.3.4", 5, 900)[0] is True           # limiters don't share counts
+    ok, wait = a.take("login", "1.2.3.4", 5, 900)
+    assert not ok and 0 < wait <= 901
+    a.reset("login")
+    assert b.take("login", "1.2.3.4", 5, 900)[0] is True
+
+
+def test_sqlite_store_survives_a_broken_file(tmp_path):
+    import security
+    st = security._SqliteStore(str(tmp_path / "rl.db"))
+    st._local.conn.close()
+    st._local.conn = None
+    st.path = str(tmp_path / "missing-dir" / "rl.db")              # can't be opened: falls back to memory
+    assert st.take("x", "k", 1, 60) == (True, 0) and st.take("x", "k", 1, 60)[0] is False
+
+
+def test_the_app_runs_on_the_sqlite_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_STORE", "sqlite")
+    monkeypatch.setenv("RATE_LIMIT_DB", str(tmp_path / "rl.db"))
+    from test_app import LOCAL_MODULES
+    for m in LOCAL_MODULES:
+        sys.modules.pop(m, None)
+    import security
+    assert isinstance(security.STORE, security._SqliteStore)
+    for m in LOCAL_MODULES:
+        sys.modules.pop(m, None)
+
+
+def test_the_full_login_lockout_on_the_sqlite_store(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(client.security, "STORE", client.security._SqliteStore(str(tmp_path / "rl.db")))
+    make_verified(client, "student", "jane@fsu.edu")
+    tok = csrf_from(client.get("/login/student").text)
+    codes = [client.post("/login/student", data={"email": "jane@fsu.edu", "password": "Wrong1!pass", "csrf": tok,
+                                                 "next": ""}).status_code for _ in range(6)]
+    assert codes == [401] * 5 + [429]
+
+
+# ---------- login CSRF ----------
+
+def test_log_in_tokens_only_work_in_the_browser_they_were_issued_to(client):
+    """Login CSRF: an attacker's own valid token can't be planted in a victim's browser."""
+    make_verified(client, "student", "attacker@fsu.edu")
+    attacker_tok = csrf_from(client.get("/login/student").text)
+    from fastapi.testclient import TestClient
+    with TestClient(client.appmod.app, follow_redirects=False) as victim:
+        victim.get("/login/student")                                 # the victim has their own browser cookie
+        r = victim.post("/login/student", data={"email": "attacker@fsu.edu", "password": PW, "csrf": attacker_tok, "next": ""})
+        assert r.status_code == 400 and "usession" not in victim.cookies
+        cold = TestClient(client.appmod.app, follow_redirects=False)  # and a browser with no cookie at all
+        assert cold.post("/login/student", data={"email": "attacker@fsu.edu", "password": PW, "csrf": attacker_tok,
+                                                 "next": ""}).status_code == 400
+    assert client.post("/login/student", data={"email": "attacker@fsu.edu", "password": PW, "csrf": attacker_tok,
+                                               "next": ""}).status_code == 303
+
+
+def test_browsing_sets_no_cookies_but_forms_do(client):
+    assert "set-cookie" not in client.get("/jobs").headers
+    assert "set-cookie" not in client.get("/static/app.js").headers
+    r = client.get("/login/student")
+    assert "ncs_pre=" in r.headers.get("set-cookie", "") and "HttpOnly" in r.headers["set-cookie"]

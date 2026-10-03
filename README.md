@@ -164,6 +164,10 @@ sensitive is in the code or the repository.
 | `RATE_LIMIT_PER_MIN` | `300` | Requests per IP per minute, every endpoint (site files and `/healthz` excepted) |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_MIN` | `5` / `15` | Failed log-ins allowed per IP, and per account per IP, in the window |
 | `ACCOUNT_MAX_FAILS` | `20` | Failed log-ins allowed per account from all addresses together, in the window |
+| `LOGIN_SHARED_IP_MAX` | `50` | Failed log-ins from browsers that have logged in before, together, per address per window |
+| `CLIENT_IP_HEADER` | `cf-connecting-ip,true-client-ip` on Render | Header holding the visitor's address (TRUST_PROXY=1); check `/admin/client-ip` |
+| `TRUST_PROXY_HOPS` | `1` | Otherwise, which X-Forwarded-For entry from the right is the visitor |
+| `RATE_LIMIT_STORE` / `RATE_LIMIT_DB` | `sqlite` in production / next to `DB_PATH` | Where limits are kept, shared by all worker processes |
 | `MAX_BODY_KB` / `MAX_UPLOAD_MB` | `128` / `9` | Largest form or JSON body, and largest file upload |
 | `PARSE_TIMEOUT_SECONDS` | `10` | Uploaded files are parsed in a separate process, stopped after this long |
 | `PARSE_MAX_PARALLEL` | `2` | Uploaded files parsed at once; extra uploads are asked to retry |

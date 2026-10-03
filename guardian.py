@@ -381,7 +381,7 @@ def job_report_page(job_id: int, request: Request, scan: int = 0, hidden: int = 
     title = f'Security report: {j["title"]}'
     if role == "reviewer" and not user:
         return HTMLResponse(ui.shell(page, title=f"{esc(title)} — NoleCareerShield", admin=True))
-    return web.page(page, esc(title), active="/jobs" if role == "student" else "/hiring")
+    return web.page(page, title, active="/jobs" if role == "student" else "/hiring")
 
 
 def _toggle_hidden(job_id: int, request: Request, csrf: str, on: bool):

@@ -698,7 +698,7 @@ def job_detail(job_id: int, request: Request):
             pill = lambda x: guardian.chip(x, None, link=own)
         body = '<div class="jb jb-page">' + jobboard.detail(conn, viewer, j, prof, pill=pill, risk=_risk, next_=f"/job/{int(j['id'])}",
                                                            record=True, saved=saved, extra=after) + "</div>"
-    return shell(body, title=esc(j["title"]) + " — NoleCareerShield", active="/jobs", js=bool(after))
+    return shell(body, title=j["title"] + " — NoleCareerShield", active="/jobs", js=bool(after))
 
 
 @app.get("/job/{job_id}/apply")
@@ -1137,7 +1137,7 @@ def privacy():
 <div class="prose"><p>Short version: browsing is anonymous, you choose what goes on your profile and who sees it, and you can download or delete everything at any time.</p>
 <h3>Anyone browsing</h3>
 <ul><li>Job listings are for signed-in FSU students and employers. Visitors see only a few titles on the home page.</li>
-<li>Anyone can use the scam checker without an account, up to 10 checks a day. Visitors see the verdict and the main reasons; signed-in FSU students see every signal and the exact words it caught. No cookies are set for browsing.</li>
+<li>Anyone can use the scam checker without an account, up to 10 checks a day. Visitors see the verdict and the main reasons; signed-in FSU students see every signal and the exact words it caught. No cookies are set for browsing. Pages with a log-in, sign-up or scam-check form set one security cookie, which stops other sites from submitting those forms in your name.</li>
 <li>If you tell us which school you'd like NoleCareerShield at, we store only the school name.</li>
 <li>No analytics, advertising or trackers. Pages load only from this site, with no third-party fonts.</li></ul>
 <h3>Students</h3>
@@ -1331,6 +1331,11 @@ def _mail_listing_received(email: str, title: str) -> None:
 def _login_cookie(resp, token: str):
     resp.set_cookie("usession", token, httponly=True, samesite="lax", secure=IS_PROD,
                     max_age=accounts.SESSION_TTL, path="/")
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        user = accounts.session_user(db, token)
+    if user:        # remember this browser for this account (see security.login_identity)
+        resp.set_cookie(security.DEVICE_COOKIE, security.device_cookie_for(user["id"]), httponly=True, samesite="lax",
+                        secure=IS_PROD, max_age=400 * 24 * 3600, path="/")
     return resp
 
 
@@ -1525,13 +1530,15 @@ def login_submit(role: str, request: Request, background: BackgroundTasks, email
         addr = accounts.normalize_email(email)
     except ValueError:
         return _login_page(role, email=email[:254], next_=nx, status=401, error=generic)
-    verdict, slots = security.account_attempt(role, addr, security.client_ip(request))
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        user = accounts.get_user(db, addr, role)
+    who = security.login_identity(security.client_ip(request), request.cookies.get(security.DEVICE_COOKIE),
+                                  user["id"] if user else None)
+    verdict, slots = security.account_attempt(role, addr, who)
     too_many = HTTPException(status_code=429, detail="Too many failed attempts for this account. Try again in a few minutes.",
                              headers={"Retry-After": "600"})
     if verdict == "blocked":
         raise too_many
-    with closing(sqlite3.connect(DB_PATH)) as db:
-        user = accounts.get_user(db, addr, role)
     good = accounts.verify_password(password[:accounts.PW_MAX], user["pw_hash"] if user else accounts.DUMMY_HASH)
     if not (user and good):
         if verdict == "only_correct":
@@ -1716,7 +1723,7 @@ def verify_submit(request: Request, background: BackgroundTasks, token: str = Fo
         owner = accounts.get_user_by_id(db, peeked) if peeked else None
     if not owner:
         return _link_problem("confirmation email")
-    verdict, slots = security.account_attempt(owner["role"], owner["email"], security.client_ip(request))
+    verdict, slots = security.account_attempt(owner["role"], owner["email"], security.login_identity(security.client_ip(request), request.cookies.get(security.DEVICE_COOKIE), owner["id"]))
     too_many = HTTPException(status_code=429, detail="Too many failed attempts for this account. Try again in a few minutes.",
                              headers={"Retry-After": "600"})
     if verdict == "blocked":
@@ -1903,6 +1910,24 @@ def admin_home(session: str | None = Cookie(default=None)):
             f'The scam score is advisory; you decide what publishes. '
             f'<form method="post" action="/admin/logout" style="display:inline">{csrf}<button style="background:none;border:none;color:var(--accent-ink);text-decoration:underline;cursor:pointer;font:inherit">Sign out</button></form></p>{inner}')
     return shell(body, title="Review queue", admin=True)
+
+
+@app.get("/admin/client-ip", response_class=HTMLResponse)
+def admin_client_ip(request: Request, session: str | None = Cookie(default=None)):
+    """Shows which address the rate limits see for you, and where it came from. Open it once after deploying: the
+    address should be your own public IP (search "what is my ip"), not a Cloudflare or Render one."""
+    if not _is_admin(session):
+        return RedirectResponse("/admin", status_code=303)
+    ip, source = security.resolve_ip(request.client.host if request.client else "", lambda n: ",".join(request.headers.getlist(n)))
+    rows = [("Address the limits use", ip), ("Taken from", source), ("TRUST_PROXY", "on" if security.TRUST_PROXY else "off"),
+            ("Headers checked first", ", ".join(security.CLIENT_IP_HEADERS) or "none (set CLIENT_IP_HEADER)"),
+            ("Connection address", request.client.host if request.client else "unknown")]
+    rows += [(h, request.headers.get(h, "(not sent)")) for h in ("cf-connecting-ip", "true-client-ip", "x-forwarded-for", "x-real-ip")]
+    table = "".join(f'<tr><th scope="row">{esc(k)}</th><td><code>{esc(v)}</code></td></tr>' for k, v in rows)
+    body = (f'{admin_extra.tabs("/admin/live", "Client address check")}<p class="lead">If "Address the limits use" isn\'t your own '
+            f'public IP, every visitor is sharing one rate limit. Set CLIENT_IP_HEADER (or TRUST_PROXY_HOPS) in Render to fix it.</p>'
+            f'<table class="kv">{table}</table>')
+    return HTMLResponse(shell(body, title="Client address check", admin=True), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/admin/live", response_class=HTMLResponse)

@@ -7,10 +7,10 @@ from test_network import add_job, employer, net, student, ucsrf  # noqa: F401
 
 
 def _post(emp, **kw):
-    import app as _a
+    from test_app import csrf_from
     base = {"title": "Tutor", "company": "Acme Analytics", "category": "Other", "work_type": "remote", "location": "",
             "description": "Tutor FSU students in statistics twice a week. Paid $20/hour.", "apply_url": "", "contact": "",
-            "csrf": _a.make_csrf("form"), "direct": "1"}
+            "csrf": csrf_from(emp.get("/post").text), "direct": "1"}
     base.update(kw)
     return emp.post("/post", data=base)
 

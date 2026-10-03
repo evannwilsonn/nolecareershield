@@ -432,7 +432,7 @@ def _form_page(conn, c: dict, user: dict, v: dict | None = None, error: str = ""
     fmt = v.get("format") or "video"
     chips = "".join(f'<label class="chk"><input type="radio" name="format" value="{k}"{" checked" if k == fmt else ""}><span>{esc(lab)}</span></label>'
                     for k, lab in FORMATS.items())
-    re_id = int(v.get("re") or 0)
+    re_id = int(v.get("re")) if str(v.get("re") or "").isdigit() else 0
     err = ui.banner("warning", error) if error else ""
     body = (f'<a class="back" href="/messages/{int(c["id"])}">← Back to the conversation</a>' +
             ui.page_head("Reschedule the interview" if re_id else "Propose interview times",

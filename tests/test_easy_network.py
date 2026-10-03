@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from test_app import csrf_from  # noqa: E402
 from test_network import add_job, employer, net, student, ucsrf  # noqa: E402,F401
 
 
@@ -115,8 +116,7 @@ def test_easy_apply_questions_are_validated_and_scanned(net):
             "description": "Tutor FSU students in statistics twice a week. Paid $20/hour.", "apply_url": "", "contact": ""}
 
     def post(**kw):
-        import app as _a
-        tok = _a.make_csrf("form")
+        tok = csrf_from(emp.get("/post").text)        # pre-log-in form tokens are bound to the browser that loaded the page
         return emp.post("/post", data={**base, "csrf": tok, "direct": "1", **kw})
     r = post(easy_apply="1", qtext=["What is your SSN?", ""], qkind=["short", "short"], qreq=["1", "0"])
     assert r.status_code == 400 and "can't ask for SSNs" in r.text
