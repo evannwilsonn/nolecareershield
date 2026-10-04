@@ -150,3 +150,14 @@ def test_demo_mirrors_the_public_pages():
     assert 'class="vx-card"' in js and "FSU.EDU VERIFIED" in js and "Sign in securely" in js
     import public_ui
     assert set(public_ui.SEALS) >= {"lock", "mail", "key", "check", "alert"}
+
+
+def test_terms_page_is_linked_and_covers_the_key_rules(client):
+    t = client.get("/terms")
+    assert t.status_code == 200 and "Terms of Use" in t.text and "Last updated" in t.text
+    for must in ("Third-party", "Never charge students", "not run by, sponsored by or endorsed by Florida State",
+                 "not guarantees", "laws of the State of Florida", 'href="/privacy"'):
+        assert must in t.text, must
+    assert 'href="/terms"' in client.get("/").text                      # footer
+    assert 'href="/terms"' in client.get("/signup/student").text        # agreement line on sign-up
+    assert 'href="/terms"' in client.get("/privacy").text

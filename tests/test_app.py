@@ -98,7 +98,7 @@ def login(client, pw="correct-horse-battery"):
 
 
 def test_public_pages_ok(client):
-    for path in ("/", "/post", "/about", "/privacy", "/report", "/healthz", "/robots.txt", "/employers", "/check", "/login"):
+    for path in ("/", "/post", "/about", "/privacy", "/terms", "/report", "/healthz", "/robots.txt", "/employers", "/check", "/login"):
         assert client.get(path).status_code == 200, path
     # The board itself is for signed-in FSU students and employers: visitors go to sign-in and come back after.
     for path, nxt in (("/jobs", "/jobs"), ("/job/1", "/job/1")):

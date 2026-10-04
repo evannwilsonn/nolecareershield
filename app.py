@@ -1189,6 +1189,7 @@ def privacy():
 <li>We send email only for account confirmation, password reset, listing receipts and "you have a new message" notices. No marketing.</li></ul>
 <h3>Reviewers</h3>
 <p>The review queue uses a separate session cookie, set only after a reviewer signs in, marked HttpOnly and expired after 8 hours.</p>
+<p>The rules for using the site are in the <a href="/terms">Terms of Use</a>.</p>
 <h3>Who runs this and who helps</h3>
 <ul><li>NoleCareerShield is an independent student project. It isn't run by, or affiliated with, Florida State University, and FSU doesn't send us any student records.</li>
 <li>We never sell or rent personal data, and never share it for advertising.</li>
@@ -1196,6 +1197,107 @@ def privacy():
 <li>We'd share information with authorities only when the law requires it, or to report a confirmed scam targeting students.</li>
 <li>If this policy changes, we'll update the date at the top. If a change affects what we do with data you've already given us, we'll tell you by email or on the site first.</li></ul></div>"""
     return shell(body, title="Privacy — NoleCareerShield")
+
+
+TERMS_UPDATED = "October 4, 2026"
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms():
+    body = f"""<a class="back" href="/">← Home</a><h2 class="page">Terms of Use</h2>
+<div class="prose"><p class="muted">Last updated {TERMS_UPDATED}.</p>
+<p>These terms cover your use of NoleCareerShield, a job board for Florida State University students with a built-in scam
+checker. By creating an account or using the site you agree to them. How we handle your data is in the
+<a href="/privacy">Privacy Policy</a>, which is part of these terms.</p>
+
+<h3>1. Who runs this</h3>
+<p>NoleCareerShield is an independent student project. It is not run by, sponsored by or endorsed by Florida State
+University, and it doesn't use FSU's trademarks or logos. Questions about these terms go to {_contact_line()}.</p>
+
+<h3>2. Who can use it</h3>
+<ul><li><b>Students:</b> you need an @fsu.edu email address that you control. Accounts are personal: don't share yours or
+use someone else's.</li>
+<li><b>Employers:</b> you must work for the organization you post for and be authorized to hire on its behalf. Third-party
+recruiters, staffing agencies and anyone posting "on behalf of a client" are not allowed. Your company profile is reviewed
+before you can message students or post to the feed, and approval can be withdrawn.</li>
+<li>You must be at least 18, or have a parent or guardian's permission, to use the site.</li>
+<li>Keep your password private and tell us right away if you think someone else has used your account. You're responsible
+for what happens under your account.</li></ul>
+
+<h3>3. Rules for employers</h3>
+<ul><li>Post only real, currently open positions at your own organization, with an honest description of the work, pay and
+location.</li>
+<li>Never charge students anything: no fees for applying, training, equipment, background checks or "starter kits," and no
+requests for payment, gift cards, crypto or bank transfers.</li>
+<li>Don't ask for Social Security numbers, bank details, ID photos or similar sensitive information before a real job
+offer, and never through site messages.</li>
+<li>Follow employment and anti-discrimination laws. Don't post listings that discriminate based on race, color, religion,
+sex, sexual orientation, gender identity, national origin, age, disability, veteran status or any other protected
+characteristic.</li>
+<li>Use what you learn about students only to recruit for the role they were considered for. Don't sell it, add students to
+marketing lists or contact them about unrelated products.</li>
+<li>Pyramid schemes, multi-level marketing, commission-only "opportunities," reshipping, payment processing and other
+schemes are not jobs and will be removed.</li></ul>
+
+<h3>4. Rules for everyone</h3>
+<ul><li>Don't post anything false, misleading, harassing, hateful, sexually explicit, threatening or illegal, or anything
+that infringes someone else's rights.</li>
+<li>Don't impersonate a person, company, FSU or any of its offices.</li>
+<li>Don't scrape the site, collect other users' information, send spam, or use bots or automated tools against it.</li>
+<li>Don't try to get around the scam scanner, the rate limits, reviews or any other security measure, or probe or test
+the site's security without our written permission. If you find a security problem, please report it to
+{_contact_line()}.</li>
+<li>Messages are scanned for scam signs and some are held for a reviewer, as the Privacy Policy explains.</li></ul>
+
+<h3>5. Your content</h3>
+<p>You keep ownership of what you post: your profile, resume, listings, messages and feed posts. You give us permission to
+store, display and process it only as needed to run the site, for example showing your profile to the people you've
+chosen, scanning messages for scams, and showing listings to students. That permission ends when you delete the content or
+your account, except for copies we're required to keep or that were already shared with someone you chose. You're
+responsible for having the right to post what you post.</p>
+
+<h3>6. The scam checker, scores and AI features</h3>
+<ul><li>The scam checker, risk scores, employer trust scores, fit scores and resume feedback are automated estimates meant
+to help you decide. They are not guarantees. A clean result doesn't prove a job is real, and a warning doesn't prove it's
+a scam. Always confirm an employer through their own website before sharing personal information or money.</li>
+<li>Listings are reviewed before they appear, but we can't verify everything an employer says. Decisions about applying,
+interviewing and accepting offers are yours.</li>
+<li>AI features can make mistakes. Check anything important they tell you, and review AI-written resume text before you
+send it to an employer.</li></ul>
+
+<h3>7. Removing content and accounts</h3>
+<p>We may review, hold, edit the visibility of, or remove any listing, message, post or account that breaks these terms or
+looks like a scam, and we may suspend or close accounts, with or without notice where needed to protect students. You can
+delete your account at any time from your profile. If we remove something by mistake, contact us and we'll take another
+look.</p>
+
+<h3>8. Reporting scams</h3>
+<p>If you think a listing or message is a scam, use Report or the <a href="/report">report page</a>. If you've lost money or
+shared banking details, contact your bank right away and report it at reportfraud.ftc.gov.</p>
+
+<h3>9. No warranties</h3>
+<p>The site is provided "as is" and "as available." To the fullest extent the law allows, we make no promises that it will
+be uninterrupted, error-free or secure, that listings or employers are genuine, or that you'll get a job or any other
+result.</p>
+
+<h3>10. Limits on liability</h3>
+<p>To the fullest extent the law allows, we aren't liable for indirect, incidental or consequential losses, or for losses
+caused by employers, other users or third parties, including scams that get past our checks. Nothing in these terms limits
+liability that can't be limited by law.</p>
+
+<h3>11. If you break these terms</h3>
+<p>If your use of the site breaks these terms or the law and that causes a claim against us, you agree to cover the
+reasonable costs of that claim.</p>
+
+<h3>12. Governing law</h3>
+<p>These terms are governed by the laws of the State of Florida and applicable U.S. federal law. Any dispute will be
+handled in the state or federal courts located in Leon County, Florida, unless the law gives you a right to bring it
+somewhere else.</p>
+
+<h3>13. Changes</h3>
+<p>We may update these terms. The date at the top shows the latest version. If a change is significant, we'll tell you on
+the site or by email before it takes effect. Using the site after a change means you accept the updated terms.</p></div>"""
+    return shell(body, title="Terms of Use — NoleCareerShield")
 
 
 @app.get("/report", response_class=HTMLResponse)
@@ -1608,7 +1710,7 @@ def _signup_page(role: str, email: str = "", error: str = "", next_: str = "", s
 {field}
 {_pw_field(autocomplete="new-password", check=True)}{_RULES_LIST}
 {_pw_field(fid="f-password2", name="password2", label="Confirm password", autocomplete="new-password")}
-{_turnstile_widget()}<button class="submit-btn wide" type="submit">Create account</button></form>
+{_turnstile_widget()}<p class="fine">By creating an account you agree to the <a href="/terms">Terms of Use</a> and <a href="/privacy">Privacy Policy</a>.</p><button class="submit-btn wide" type="submit">Create account</button></form>
 <div class="or"><span>or</span></div><a class="outline-btn" href="/login/{role}{"?next=" + esc(next_) if next_ else ""}">I already have an account</a>{_other_side(role)}"""
     return _auth_page("Create your student account" if role == "student" else "Create your employer account", body, sub=sub,
                       status=status, role=role, kicker="Student sign-up" if role == "student" else "Employer sign-up", icon="key")

@@ -1250,7 +1250,7 @@ def me_pill(user: dict, href: str = 'href="/profile"') -> str:
 
 def _footer() -> str:
     return """<footer>Every listing is scanned for scam signals and reviewed by a human before it appears. A verified badge is not a guarantee. Always confirm an employer through their own website before sharing personal information.
-<span class="tm"><a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="/report">Report a listing</a> · <a href="/check">Scam check</a></span>
+<span class="tm"><a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/report">Report a listing</a> · <a href="/check">Scam check</a></span>
 <span class="tm">An independent student project. Not affiliated with, sponsored by, or endorsed by Florida State University; uses no university trademarks or logos.</span></footer>"""
 
 
