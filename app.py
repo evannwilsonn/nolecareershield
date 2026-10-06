@@ -46,6 +46,7 @@ import re
 import json
 import base64
 import hashlib
+import hmac
 import secrets
 import time
 import sqlite3
@@ -53,7 +54,7 @@ import contextvars
 import datetime as dt
 from contextlib import closing, asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import Depends, FastAPI, Form, Cookie, Response, Request, HTTPException, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
@@ -480,7 +481,7 @@ async def security_headers(request: Request, call_next):
                 extra["requests"] = network.incoming_count(conn, user["id"])
     marker = _viewer.set({"user": user, "token": raw if user else None, "extra": extra})
     try:
-        response = await call_next(request)
+        response = _beta_gate(request) or await call_next(request)
     finally:
         _viewer.reset(marker)
     h = response.headers
@@ -493,6 +494,8 @@ async def security_headers(request: Request, call_next):
     if IS_PROD:
         h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     path = request.url.path
+    if BETA_CODE:
+        h["X-Robots-Tag"] = "noindex, nofollow"
     if path.startswith(_PRIVATE_PREFIXES):
         h["Cache-Control"] = "no-store"
         h["X-Robots-Tag"] = "noindex, nofollow"
@@ -518,6 +521,73 @@ security.GUARD_RENDER = _guard_page
 app.add_middleware(security.RequestGuard)
 
 
+# ---------- private beta ----------
+# With PRIVATE_BETA_CODE set, the site is live but closed: every page asks for the code once per browser (a signed cookie,
+# so changing the code locks everyone out again), nothing is indexed, and robots.txt disallows everything. The reviewer
+# desk (/admin, which has its own password), the health check, site files and the mail webhook stay reachable.
+# Remove the setting to open the site.
+BETA_CODE = os.environ.get("PRIVATE_BETA_CODE", "").strip()
+BETA_COOKIE = "ncs_beta"
+_BETA_OPEN = ("/beta", "/healthz", "/robots.txt", "/static/", "/admin", "/inbound/")
+
+
+def _beta_next(value: str) -> str:
+    """Where to return after the code: any path on this site (email links carry tokens, so the whole path and query are
+    kept), never another site."""
+    value = (value or "").strip()
+    if not value.startswith("/") or value.startswith("//") or "\\" in value or len(value) > 600 or any(ord(c) < 32 for c in value):
+        return ""
+    return value
+
+
+def _beta_token() -> str:
+    return hmac.new(security.secret_key(), ("beta|" + BETA_CODE).encode(), hashlib.sha256).hexdigest()[:40]
+
+
+def _beta_gate(request: Request):
+    if not BETA_CODE or request.url.path.startswith(_BETA_OPEN):
+        return None
+    if hmac.compare_digest(request.cookies.get(BETA_COOKIE, ""), _beta_token()):
+        return None
+    if request.method in ("GET", "HEAD"):
+        nx = _beta_next(request.url.path + (("?" + request.url.query) if request.url.query else ""))
+        return RedirectResponse("/beta" + (f"?next={quote(nx, safe='')}" if nx and nx != "/" else ""), status_code=303)
+    return HTMLResponse(shell('<h2 class="page">Private beta</h2><p class="lead">Enter the access code first.</p>'
+                              '<a class="back" href="/beta">Enter code</a>', title="Private beta"), status_code=403)
+
+
+def _beta_page(next_: str = "", error: str = "", status: int = 200) -> HTMLResponse:
+    err = f'<div class="banner warning" role="alert">{esc(error)}</div>' if error else ""
+    body = f"""{err}<form method="post" action="/beta"><input type="hidden" name="csrf" value="{make_csrf('form')}">
+<input type="hidden" name="next" value="{esc(next_)}"><div class="field"><label for="f-code">Access code</label>
+<input id="f-code" name="code" type="password" autocomplete="off" required maxlength="200"></div>
+<button class="submit-btn wide" type="submit">Continue</button></form>"""
+    return _auth_page("NoleCareerShield isn't open yet", body, title="Private beta — NoleCareerShield", status=status,
+                      kicker="Private beta", icon="lock",
+                      sub="It's being tested by a small group. If you were given an access code, enter it here.")
+
+
+@app.get("/beta", response_class=HTMLResponse)
+def beta_form(next: str = ""):
+    if not BETA_CODE:
+        return RedirectResponse("/", status_code=303)
+    return _beta_page(_beta_next(next))
+
+
+@app.post("/beta", response_class=HTMLResponse)
+def beta_submit(code: str = Form(""), csrf: str = Form(""), next: str = Form("")):
+    if not BETA_CODE:
+        return RedirectResponse("/", status_code=303)
+    nx = _beta_next(next)
+    if not verify_csrf(csrf, "form"):
+        return _beta_page(nx, "That page had been open too long. Please try again.", 400)
+    if not secrets.compare_digest(code.strip()[:200].encode(), BETA_CODE.encode()):
+        return _beta_page(nx, "That code isn't right.", 401)          # 5 wrong codes per 15 minutes per address (RequestGuard)
+    resp = RedirectResponse(nx or "/", status_code=303)
+    resp.set_cookie(BETA_COOKIE, _beta_token(), httponly=True, samesite="lax", secure=IS_PROD, max_age=90 * 24 * 3600, path="/")
+    return resp
+
+
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
     with closing(sqlite3.connect(DB_PATH)) as db:
@@ -527,6 +597,8 @@ def healthz():
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
+    if BETA_CODE:
+        return "User-agent: *\nDisallow: /\n"
     return ("User-agent: *\nDisallow: /admin\nDisallow: /post\nDisallow: /messages\nDisallow: /profile\nDisallow: /jobs\nDisallow: /job/\nDisallow: /hiring\n"
             "Disallow: /resume\nDisallow: /u/\nDisallow: /company/\nDisallow: /talent\nDisallow: /feed\n"
             "Disallow: /assistant\nDisallow: /api/\n")
@@ -1128,6 +1200,8 @@ def privacy():
     bot = ("<li>The sign-up and log-in pages load a bot check from Cloudflare (Turnstile), which sees your IP address and browser details.</li>"
            if security.turnstile_enabled() else "")
     ai_on = ai.enabled()
+    beta = ("<li>While the site is in private beta, entering the access code sets a cookie that remembers it for 90 days.</li>"
+            if BETA_CODE else "")
     ai_block = ("""<h3>AI features</h3>
 <ul><li>The job assistant, resume review, resume tailoring, the scam checker's second opinion and feed moderation can use Claude, made by Anthropic.</li>
 <li>Text is sent to Anthropic only when you use one of those features: your question, your resume or profile summary, the job you picked, or the message you asked us to check. Anthropic processes it to answer and, under its commercial terms, does not use it to train models.</li>
@@ -1185,7 +1259,7 @@ def privacy():
 <ul><li>Logging in sets one session cookie (HttpOnly, 7 days). Sending a listing before you log in sets a short-lived cookie that holds only a random reference to your saved listing.</li>
 <li>Logging in also sets a "known browser" cookie (HttpOnly, about a year) holding a random browser code and your account number, signed so it can't be forged. It only means that if someone else keeps guessing your password, your own browser can still log you in. It isn't used to track you.</li>
 <li>Signing in with FSU single sign-on sets a short-lived cookie that's only used to finish that sign-in.</li>
-{bot}<li>Server logs may briefly hold IP addresses for security and abuse prevention. To enforce rate limits (for example, 5 failed log-ins per 15 minutes), the server keeps a record of recent requests by IP address and deletes it within two days.</li>
+{beta}{bot}<li>Server logs may briefly hold IP addresses for security and abuse prevention. To enforce rate limits (for example, 5 failed log-ins per 15 minutes), the server keeps a record of recent requests by IP address and deletes it within two days.</li>
 <li>We send email only for account confirmation, password reset, listing receipts and "you have a new message" notices. No marketing.</li></ul>
 <h3>Reviewers</h3>
 <p>The review queue uses a separate session cookie, set only after a reviewer signs in, marked HttpOnly and expired after 8 hours.</p>

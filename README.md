@@ -160,6 +160,7 @@ sensitive is in the code or the repository.
 | `SMTP_HOST`, `SMTP_FROM` | required | Outgoing mail server and From address (`SMTP_USER`, `SMTP_PASSWORD`, `SMTP_PORT`, `SMTP_SSL=1` optional) |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | optional, both or neither | Cloudflare Turnstile bot check on sign-up, login and reset forms |
 | `OUTBOX_LOG` | development only | File where dev-mode emails are written instead of sent |
+| `PRIVATE_BETA_CODE` | empty | When set, the site is closed: every page asks for this code once per browser, nothing is indexed |
 | `TRUST_PROXY` | `1` behind one proxy | Use the proxy's client IP for rate limits |
 | `RATE_LIMIT_PER_MIN` | `300` | Requests per IP per minute, every endpoint (site files and `/healthz` excepted) |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_MIN` | `5` / `15` | Failed log-ins allowed per IP, and per account per IP, in the window |

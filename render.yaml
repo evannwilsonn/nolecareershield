@@ -43,6 +43,8 @@ services:
         value: /data/jobs.db
       - key: SECRET_KEY
         generateValue: true
+      - key: PRIVATE_BETA_CODE        # set it to keep the site closed to everyone without the code; remove to launch
+        sync: false
       - key: ADMIN_PASSWORD
         sync: false
       - key: CONTACT_EMAIL
