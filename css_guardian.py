@@ -187,6 +187,18 @@ CSS = """
 @keyframes gd-fade{from{opacity:0}to{opacity:1}}
 @keyframes gd-blink{50%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.gd-stage.anim .gd-scan{display:none}.gd-stage.anim .gd-report{animation:none}}
+/* ---------- scam check: the pasted text, marked up ---------- */
+.mk-card{margin-top:14px}
+.mk-legend{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px;font:500 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.mk-legend span{padding:6px 9px;border-radius:6px}
+.mk-text{white-space:pre-wrap;word-break:break-word;font-size:15px;line-height:1.75;color:var(--ivory,#F6F1E6)}
+.mk-red,.mk-amb,.mk-grn{color:inherit;border-radius:4px;padding:1px 3px}
+.mk-red{background:rgba(229,48,79,.2);box-shadow:inset 0 -2px #E5304F;color:#FFB3BF}
+.mk-amb{background:rgba(232,162,26,.18);box-shadow:inset 0 -2px #E8A21A;color:#FFD98A}
+.mk-grn{background:rgba(46,204,113,.16);box-shadow:inset 0 -2px #2ECC71;color:#9EF0C2}
+.mk-cleared{list-style:none;margin:16px 0 8px;padding:0;display:grid;gap:10px}
+.mk-cleared li{display:grid;gap:4px;font-size:14px;color:#B7C3D3}
+.mk-cleared b{color:#9EF0C2}
 @media(max-width:620px){.gd-hud,.gd-scan{padding:20px 16px;border-radius:14px}.gd-ht{font-size:21px}
   .gd-threat{grid-template-columns:minmax(0,1fr);gap:12px;padding:16px}.gd-tnum{border-right:0;border-bottom:1px solid rgba(var(--t),.35);padding:0 0 10px;display:flex;align-items:baseline;gap:12px;justify-content:flex-start}
   .gd-tnum b{font-size:44px}.gd-tnum small{margin:0}

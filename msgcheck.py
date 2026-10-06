@@ -294,6 +294,8 @@ def render_result(r: dict, full: bool = True) -> str:
     the verdict and up to three plain reasons (no matched words); FSU students and approved employers get everything."""
     import guardian
     out = guardian.check_report(r, full)
+    if full:
+        out += marked_text_html(r)
     if not full:
         shown = [f for f in r["findings"] if f["severity"] != "note"][:PUBLIC_REASONS] or r["findings"][:PUBLIC_REASONS]
         more = len(r["findings"]) - len(shown)
@@ -574,6 +576,8 @@ def enrich(r: dict, *, text: str, sender: str = "", title: str = "", company: st
     found = defense.extra_findings(text, sender=sender, title=title, company=company, url=url) + list(extra or [])
     r["asks"] = extract_asks("\n".join(x for x in (title, text) if x))
     _rescore(r, found, listing)
+    r["text_shown"] = text[:8000]
+    r["cleared"] = cleared(text, r)
     money = [a for a in r["asks"] if a["ask"] in MONEY_ASKS]
     if money and r["band"] in ("clear", "caution"):
         _rescore(r, [{"rule_id": "money_ask", "severity": "warning", "weight": 25, "title": "It asks you for money or financial details",
@@ -591,6 +595,73 @@ def enrich(r: dict, *, text: str, sender: str = "", title: str = "", company: st
             if p.get("uncertain"):
                 defense.bump("model_uncertain")
     return r
+
+
+def cleared(text: str, r: dict) -> list[dict]:
+    """Wording that looked like a scam tactic but was ruled out by its context ("we will never ask for a fee", "SSN for payroll
+    upon hire"). Rules that still fired elsewhere in the text are left out, so a green line never contradicts a red one."""
+    from scam_detector.rules import cleared_matches
+    from scam_detector.asks import cleared_asks
+    fired = {f["rule_id"] for f in r.get("findings") or []} | {"ask:" + a["ask"] for a in r.get("asks") or []}
+    out, seen = [], set()
+    for c in cleared_matches(text) + cleared_asks(text):
+        key = c["clause"].lower()
+        if c["rule_id"] in fired or key in seen:
+            continue
+        seen.add(key)
+        out.append(c)
+    return out[:6]
+
+
+def _words_rx(phrase: str) -> re.Pattern | None:
+    words = re.findall(r"[\w$@.'/%-]+", phrase or "")
+    if not words or len(" ".join(words)) < 3:
+        return None
+    return re.compile(r"[\s\W]{0,3}".join(re.escape(w) for w in words), re.IGNORECASE)
+
+
+def marked_text_html(r: dict) -> str:
+    """The pasted text with what we found marked: red for critical signals, amber for warnings, green for wording that was
+    ruled out by its context. Every mark is escaped text plus a fixed class, so nothing from the paste is rendered as HTML."""
+    text = r.get("text_shown") or ""
+    if not text.strip():
+        return ""
+    spans: list[tuple[int, int, str]] = []
+
+    def add(phrase: str, cls: str) -> None:
+        rx = _words_rx(phrase)
+        if not rx:
+            return
+        for m in rx.finditer(text):
+            a, b = m.span()
+            if not any(a < y and x < b for x, y, _ in spans):
+                spans.append((a, b, cls))
+
+    for f in r.get("findings") or []:
+        cls = "mk-red" if f.get("severity") == "critical" else "mk-amb"
+        for e in f.get("matched") or []:
+            add(e, cls)
+    for a in r.get("asks") or []:
+        add(a.get("evidence", ""), "mk-red" if a.get("money") else "mk-amb")
+    for c in r.get("cleared") or []:
+        add(c["clause"], "mk-grn")
+    if not spans:
+        return ""
+    spans.sort()
+    parts, at = [], 0
+    for a, b, cls in spans:
+        parts.append(ui.esc(text[at:a]))
+        parts.append(f'<mark class="{cls}">{ui.esc(text[a:b])}</mark>')
+        at = b
+    parts.append(ui.esc(text[at:]))
+    greens = "".join(f'<li><mark class="mk-grn">“{ui.esc(c["clause"][:160])}”</mark><span><b>Not counted:</b> {ui.esc(c["title"])}. '
+                     f'{ui.esc(c["why"])}</span></li>' for c in r.get("cleared") or [])
+    used = {cls for _, _, cls in spans}
+    legend = '<p class="mk-legend">' + "".join(f'<span class="{c}">{t}</span>' for c, t in (
+        ("mk-red", "Scam signal"), ("mk-amb", "Warning"), ("mk-grn", "Ruled out by context")) if c in used) + "</p>"
+    why = (f'<ul class="mk-cleared">{greens}</ul><p class="small faint">Green explains why a phrase didn\'t count against the message. It '
+           'doesn\'t mean the message is safe: scammers copy reassuring lines too.</p>') if greens else ""
+    return (f'<h3 class="sec">How we read it</h3><div class="card mk-card">{legend}<div class="mk-text">{"".join(parts)}</div>{why}</div>')
 
 
 def _rescore(r: dict, extra: list, listing: bool) -> None:
