@@ -2097,6 +2097,37 @@ def admin_home(session: str | None = Cookie(default=None)):
     return shell(body, title="Review queue", admin=True)
 
 
+@app.get("/admin/ai", response_class=HTMLResponse)
+def admin_ai_usage(session: str | None = Cookie(default=None)):
+    """AI requests and tokens by day, model and feature, so real costs can be checked against Anthropic's price list."""
+    if not _is_admin(session):
+        return RedirectResponse("/admin", status_code=303)
+    rows = ai.usage_rows(31)
+    tot = {k: sum(r[k] for r in rows) for k in ("requests", "input_tokens", "output_tokens", "cache_read", "cache_write")}
+    by_feat: dict = {}
+    for r in rows:
+        f = by_feat.setdefault((r["feature"], r["model"]), {"requests": 0, "input_tokens": 0, "output_tokens": 0, "cache_read": 0})
+        for k in f:
+            f[k] += r[k]
+    n = lambda v: f"{int(v):,}"                                                  # noqa: E731
+    feat_rows = "".join(f"<tr><td>{esc(fe)}</td><td><code>{esc(mo)}</code></td><td>{n(v['requests'])}</td><td>{n(v['input_tokens'])}</td>"
+                        f"<td>{n(v['cache_read'])}</td><td>{n(v['output_tokens'])}</td></tr>"
+                        for (fe, mo), v in sorted(by_feat.items(), key=lambda kv: -kv[1]["requests"]))
+    day_rows = "".join(f"<tr><td>{esc(r['day'])}</td><td>{esc(r['feature'])}</td><td><code>{esc(r['model'])}</code></td><td>{n(r['requests'])}</td>"
+                       f"<td>{n(r['input_tokens'])}</td><td>{n(r['cache_read'])}</td><td>{n(r['output_tokens'])}</td></tr>" for r in rows[:200])
+    state = ("on" if ai.enabled() else "off (no ANTHROPIC_API_KEY, so every feature uses the built-in engines)")
+    body = (f'{admin_extra.tabs("/admin/live", "AI usage")}<p class="lead">AI is {esc(state)}. Main model <code>{esc(ai.model())}</code>, '
+            f'fast model <code>{esc(ai.model("fast"))}</code>. Last 31 days: {n(tot["requests"])} requests, {n(tot["input_tokens"])} input tokens '
+            f'(+{n(tot["cache_read"])} read from cache, {n(tot["cache_write"])} written to it) and {n(tot["output_tokens"])} output tokens. '
+            'Multiply by the per-token prices on Anthropic\'s pricing page to get the cost, and keep a monthly spend limit set in the '
+            'Anthropic Console: when it\'s reached, the site falls back to the built-in engines.</p>'
+            '<h3 class="sec">By feature</h3><table class="t"><tr><th>Feature</th><th>Model</th><th>Requests</th><th>Input</th><th>Cached input</th><th>Output</th></tr>'
+            f'{feat_rows or "<tr><td colspan=6>No AI requests yet.</td></tr>"}</table>'
+            '<h3 class="sec">By day</h3><table class="t"><tr><th>Day (UTC)</th><th>Feature</th><th>Model</th><th>Requests</th><th>Input</th><th>Cached input</th><th>Output</th></tr>'
+            f'{day_rows or "<tr><td colspan=7>No AI requests yet.</td></tr>"}</table>')
+    return HTMLResponse(shell(body, title="AI usage", admin=True), headers={"Cache-Control": "no-store"})
+
+
 @app.get("/admin/client-ip", response_class=HTMLResponse)
 def admin_client_ip(request: Request, session: str | None = Cookie(default=None)):
     """Shows which address the rate limits see for you, and where it came from. Open it once after deploying: the

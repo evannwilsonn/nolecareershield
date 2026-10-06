@@ -721,7 +721,7 @@ def ai_answer(history: list[dict], profile: dict | None, jobs: list[dict], *, ui
     ctx = _Ctx(uid, cid, profile, jobs)
     system = system_prompt(profile, mems or [], activity)
     for _ in range(6):
-        resp = ai.call(system, merged, tools=TOOLS, max_tokens=1100, temperature=0.5)
+        resp = ai.call(system, merged, tools=TOOLS, max_tokens=1100, temperature=0.5, feature="assistant")
         uses = ai.tool_uses(resp)
         if resp.get("stop_reason") != "tool_use" or not uses:
             text, ids, follow = split_reply(ai.text_of(resp))

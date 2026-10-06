@@ -174,7 +174,7 @@ sensitive is in the code or the repository.
 | `PARSE_MAX_PARALLEL` | `2` | Uploaded files parsed at once; extra uploads are asked to retry |
 | `LISTING_TTL_DAYS` | 90 | How long approved listings show |
 | `PURGE_REJECTED_DAYS` | 90 | Retention for rejected/removed rows |
-| `ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_DAILY_LIMIT`, `AI_SITE_DAILY_LIMIT` | optional | AI for the career assistant, resume tools and the scam check's second opinion, with per-person and site-wide daily caps |
+| `ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_MODEL_FAST`, `AI_DAILY_LIMIT`, `AI_SITE_DAILY_LIMIT` | key required for AI | AI for the career assistant, resume tools, feed moderation and the scam check's second opinion. Small jobs use the fast model; instructions are prompt-cached; per-person and site-wide daily caps; usage at `/admin/ai` |
 | `INTEL_NETWORK`, `INDICATOR_KEY`, `URLHAUS_AUTH_KEY`, `SPAMHAUS_DQS_KEY`, `CHAINABUSE_API_KEY`, `TWILIO_*` | optional | Scam intel: network lookups, the hashed contact-detail memory, and outside reputation checks |
 | `SHARE_HMAC_KEY`, `SHARE_FEED_KEY`, `SHARE_SOURCE_NAME`, `PEER_FEEDS`, `ARCHIVE_FEEDS` | optional | Sharing confirmed-scam details with partner schools and pulling public scam feeds |
 | `INBOUND_EMAIL_TOKEN`, `DECOY_ENABLED` | optional | Forward-by-email checks; the decoy desk (off until FSU legal signs off) |

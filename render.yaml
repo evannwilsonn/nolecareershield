@@ -67,6 +67,8 @@ services:
         value: "3000"
       - key: AI_MODEL
         value: claude-sonnet-5-5
+      - key: AI_MODEL_FAST
+        value: claude-haiku-4-5-20251001
       # ---- scam intel (optional: each outside check stays off until its key is set) ----
       - key: INTEL_NETWORK
         value: "1"

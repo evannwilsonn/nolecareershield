@@ -384,3 +384,40 @@ def test_browsing_sets_no_cookies_but_forms_do(client):
     assert "set-cookie" not in client.get("/static/app.js").headers
     r = client.get("/login/student")
     assert "ncs_pre=" in r.headers.get("set-cookie", "") and "HttpOnly" in r.headers["set-cookie"]
+
+
+# ---------- AI cost controls ----------
+
+def test_ai_uses_the_fast_model_for_small_jobs_caches_instructions_and_logs_usage(tmp_path, monkeypatch):
+    import json as _json, httpx, ai
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "u.db"))
+    monkeypatch.delenv("AI_MODEL", raising=False); monkeypatch.delenv("AI_MODEL_FAST", raising=False)
+    seen = []
+
+    def handler(req):
+        body = _json.loads(req.content); seen.append(body)
+        return httpx.Response(200, json={"content": [{"type": "tool_use", "name": "relevance", "input": {"ok": True}}],
+                                         "usage": {"input_tokens": 120, "output_tokens": 30, "cache_read_input_tokens": 900}})
+    monkeypatch.setattr(ai, "_transport", httpx.MockTransport(handler))
+    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+    assert ai.structured("Judge it.", "post text", "relevance", schema, tier="fast") == {"ok": True}
+    ai.structured("Judge it.", "post text", "relevance", schema)
+    assert seen[0]["model"].startswith("claude-haiku") and seen[1]["model"] == ai.model()
+    assert seen[0]["system"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert seen[0]["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+    rows = {(r["model"], r["feature"]): r for r in ai.usage_rows()}
+    fast = rows[(seen[0]["model"], "relevance")]
+    assert fast["requests"] == 1 and fast["input_tokens"] == 120 and fast["output_tokens"] == 30 and fast["cache_read"] == 900
+    monkeypatch.setenv("AI_MODEL_FAST", "")
+    assert ai.model("fast") == ai.model()                              # blank falls back to the main model
+
+
+def test_admin_ai_usage_page(client):
+    import ai
+    ai._record_usage("claude-haiku-4-5-20251001", "relevance", {"input_tokens": 10, "output_tokens": 5})
+    assert client.get("/admin/ai").status_code == 303
+    tok = csrf_from(client.get("/admin").text)
+    client.post("/admin/login", data={"password": "correct-horse-battery", "csrf": tok})
+    page = client.get("/admin/ai").text
+    assert "AI usage" in page and "relevance" in page and "claude-haiku" in page

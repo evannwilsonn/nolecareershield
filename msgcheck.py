@@ -157,7 +157,7 @@ def _ai_opinion(text: str, sender: str) -> dict | None:
     content = (ai.tag("message", f"From: {sender or '(not given)'}\n\n{text}", 8000) +
                "\n\nIs this message a scam? Report red flags with the exact evidence.")
     try:
-        return ai.structured(system, content, "scam_opinion", schema, max_tokens=900)
+        return ai.structured(system, content, "scam_opinion", schema, max_tokens=900, tier="fast")
     except ai.AIUnavailable:
         return None
 

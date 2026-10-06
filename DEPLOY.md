@@ -27,26 +27,35 @@ FSU mail is strict. Send only from a domain whose SPF and DKIM records are verif
    - Render also asks for the optional keys listed under step 4 (scam intel, partner sharing, SSO, the decoy desk). Leave any of them empty to keep that feature off.
 4. Deploy. Then open `/healthz`, which should say `ok`.
 
-## 3. Keep it private until launch
+## 3. Turn on the AI
+1. At console.anthropic.com, add billing and create an API key. API use is billed per token, separately from any Claude.ai plan.
+2. Set a **monthly spend limit** in the Console (Limits). That's the hard ceiling: if it's reached, the site keeps working
+   on its built-in engines until the next month.
+3. Add the key in Render as `ANTHROPIC_API_KEY`. `AI_MODEL` runs the career assistant and full resume work;
+   `AI_MODEL_FAST` (Haiku) handles the small, frequent jobs. `AI_DAILY_LIMIT` (per person, default 40) and
+   `AI_SITE_DAILY_LIMIT` (default 3000) cap requests.
+4. After a week of testing, open `/admin/ai` for requests and tokens by feature and model, multiply by the prices on
+   Anthropic's pricing page, and adjust the spend limit.
+
+## 4. Keep it private until launch
 Set `PRIVATE_BETA_CODE` in Render to a phrase only your testers know. Every page then asks for it once per browser, search
 engines are told not to index anything, and `robots.txt` blocks crawlers. The reviewer desk (`/admin`) still works with its
 own password. Change the code to lock everyone out again; delete it to open the site.
 
 Before you delete it:
 - Open `/admin/client-ip` and check it shows your own public IP (not a Cloudflare or Render one).
-- Run through step 4 below with real accounts, including email confirmation and password reset from a phone.
+- Run through step 5 below with real accounts, including email confirmation and password reset from a phone.
 - Make sure the GitHub repo is private and the Render secrets are set (nothing secret is in the code).
 - Have someone with legal training read `/privacy` and `/terms`.
 - Decide on the domain (`BASE_URL`) and set up FSU single sign-on if FSU ITS will register the app.
 - Check the backups (see Backups below) and download one off-site copy.
 
-## 4. Check it works
+## 5. Check it works
 - Sign up as a student with your `@fsu.edu` address, open the confirmation email, and confirm.
 - Sign up as an employer with another address and submit a listing.
 - Log in at `/admin` and approve it. It should appear on the board, and the Apply link should show only while you're logged in as a student.
 
-## 5. Optional
-- **AI features:** create a key at console.anthropic.com, set a monthly spend limit there, and add it as `ANTHROPIC_API_KEY`. `AI_DAILY_LIMIT` (per person, default 40) and `AI_SITE_DAILY_LIMIT` (default 3000) cap usage. Without a key everything still works on the built-in engines.
+## 6. Optional
 - **Bot check:** create a Cloudflare Turnstile widget for your hostname and add `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET`.
 - **Scam intel:** `INTEL_NETWORK=1` (set by the blueprint) turns on domain age, SPF/DMARC, link expansion and the daily look-alike-domain watch. `URLHAUS_AUTH_KEY`, `SPAMHAUS_DQS_KEY`, `CHAINABUSE_API_KEY` and `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` each switch on one outside check. `INDICATOR_KEY` is optional (empty = derived from `SECRET_KEY`); set it only on a fresh install, because changing it later forgets the stored contact details.
 - **Partner schools:** `SHARE_HMAC_KEY` (the same value at every school), `SHARE_FEED_KEY` (generated; give it to partners), `SHARE_SOURCE_NAME`, and `PEER_FEEDS` (`https://their-site/api/indicators|their-key`, comma-separated). `ARCHIVE_FEEDS` adds RSS/Atom feeds of published scams to the label queue weekly.

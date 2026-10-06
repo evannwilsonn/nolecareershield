@@ -94,7 +94,7 @@ def ai_bullet(bullet: str, context: str = "") -> dict | None:
               "Each option under 30 words. The tip is one sentence on what detail would make it stronger.")
     try:
         return ai.structured(system, ai.tag("resume", bullet, 600) + (("\nContext: " + ai.tag("job", context, 400)) if context else ""),
-                             "bullet_options", schema, max_tokens=600)
+                             "bullet_options", schema, max_tokens=600, tier="fast")
     except ai.AIUnavailable:
         return None
 

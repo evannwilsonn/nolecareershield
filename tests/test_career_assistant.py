@@ -350,7 +350,9 @@ def test_ai_agent_multi_turn_tools_memory_and_cards(net, claude):
     ]
     url, html = ask(s, "I want remote data internships. Can you find me some?")
     first = claude["calls"][0]
-    assert "<profile>" in first["system"] and "<memory>" in first["system"] and "Nothing saved yet" in first["system"]
+    sys_text = "".join(b["text"] for b in first["system"])          # the instructions are one cached block
+    assert first["system"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert "<profile>" in sys_text and "<memory>" in sys_text and "Nothing saved yet" in sys_text
     assert {t["name"] for t in first["tools"]} >= {"search_jobs", "get_job", "my_profile", "my_applications", "my_saved_jobs", "check_message",
                                                    "resume_review", "tailor_links", "remember", "forget"}
     assert _mem(net, sid) == ["Wants remote data internships"]
@@ -372,7 +374,7 @@ def test_ai_agent_multi_turn_tools_memory_and_cards(net, claude):
     assert [m["role"] for m in body["messages"]] == ["user", "assistant", "user"]
     assert "I want remote data internships" in body["messages"][0]["content"]
     assert f"[[job:{good}]] Data Analyst Intern" in body["messages"][1]["content"]
-    assert "Wants remote data internships" in body["system"]
+    assert "Wants remote data internships" in "".join(b["text"] for b in body["system"])
     res = _results(claude["calls"][3])
     assert json.loads(res["t0"])["saved"] is False and json.loads(res["t1"])["tailor_resume"] == f"/job/{good}/tailor"
     assert _mem(net, sid) == ["Wants remote data internships"]                            # sensitive fact refused

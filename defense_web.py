@@ -273,7 +273,7 @@ def draft_reply(persona: str, history: list[dict]) -> str:
     convo = "\n".join(f"{'Scammer' if h['direction'] == 'in' else 'Student'}: {h['body']}" for h in history[-12:])
     try:
         resp = ai.call(system, [{"role": "user", "content": ai.tag("conversation", convo) + "\nWrite the student's next reply only."}],
-                       max_tokens=200)
+                       max_tokens=200, tier="fast", feature="decoy_reply")
         return ai.text_of(resp).strip()[:600]
     except Exception:                                    # noqa: BLE001
         log.exception("decoy draft failed")

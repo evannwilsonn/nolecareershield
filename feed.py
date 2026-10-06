@@ -100,7 +100,7 @@ def ai_relevance(body: str, company: str) -> dict | None:
               "promotion, discounts, MLM or 'business opportunity' pitches, general company news, or anything unrelated to students' careers. "
               "Decide if the post is allowed. Reason in one sentence addressed to the employer.")
     try:
-        return ai.structured(system, ai.tag("post", f"From: {company}\n\n{body}", 3000), "relevance", schema, max_tokens=300)
+        return ai.structured(system, ai.tag("post", f"From: {company}\n\n{body}", 3000), "relevance", schema, max_tokens=300, tier="fast")
     except ai.AIUnavailable:
         return None
 
