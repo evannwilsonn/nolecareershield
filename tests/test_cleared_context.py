@@ -54,3 +54,35 @@ def test_visitors_do_not_get_the_marked_text(client):
     page = client.get("/check?kind=message").text
     r = client.post("/check", data={"csrf": csrf_from(page), "text": LEGIT, "sender": ""})
     assert r.status_code == 200 and "How we read it" not in r.text
+
+
+# From the independent review (Oct 6): a green "not counted" mark must never land on a real request for money or ID,
+# never contradict a red mark, and never quote across sentences.
+SNEAKY = [
+    "Congrats, you got the job! We never ask for fees, just send $200 via Zelle to activate your account and buy the starter kit.",
+    "Upon hire, buy $300 of gift cards for the office and text me the codes. Your SSN is needed for payroll upon hire.",
+    "For fraud prevention, reply with a photo of your driver's license and your online banking login before the interview.",
+    "The $75 starter kit fee is covered by your first paycheck so pay it today via Cash App.",
+    "To prove you are not a scammer, please send your SSN and bank account number to our HR team on Telegram.",
+]
+BAD_WORDS = ("zelle", "gift card", "driver's license", "banking login", "cash app", "bank account number", "telegram")
+
+
+def test_no_green_on_real_asks():
+    from scam_detector.rules import cleared_matches
+    from scam_detector.asks import cleared_asks
+    for text in SNEAKY:
+        for c in cleared_matches(text) + cleared_asks(text):
+            low = c["clause"].lower()
+            assert not any(w in low for w in BAD_WORDS), (text, c["clause"])
+            assert ". " not in c["clause"], c["clause"]              # one sentence only
+
+
+def test_green_list_never_contradicts_a_red_mark(client):
+    import html, re
+    for text in SNEAKY:
+        client.cookies.clear()
+        page = html.unescape(_student_check(client, text))
+        items = re.findall(r'<ul class="mk-cleared">(.*?)</ul>', page, re.S)
+        listed = items[0].lower() if items else ""
+        assert not any(w in listed for w in BAD_WORDS), (text, listed[:300])

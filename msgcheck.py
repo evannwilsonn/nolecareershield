@@ -603,10 +603,13 @@ def cleared(text: str, r: dict) -> list[dict]:
     from scam_detector.rules import cleared_matches
     from scam_detector.asks import cleared_asks
     fired = {f["rule_id"] for f in r.get("findings") or []} | {"ask:" + a["ask"] for a in r.get("asks") or []}
+    evidence = [e.lower() for f in r.get("findings") or [] for e in f.get("matched") or [] if len(e) >= 4]
+    evidence += [a["evidence"].lower() for a in r.get("asks") or [] if len(a.get("evidence") or "") >= 4]
+    text = text[:8000]                       # the panel shows the first 8,000 characters; only explain what's shown
     out, seen = [], set()
     for c in cleared_matches(text) + cleared_asks(text):
         key = c["clause"].lower()
-        if c["rule_id"] in fired or key in seen:
+        if c["rule_id"] in fired or key in seen or any(e in key or key in e for e in evidence):
             continue
         seen.add(key)
         out.append(c)
@@ -643,8 +646,12 @@ def marked_text_html(r: dict) -> str:
             add(e, cls)
     for a in r.get("asks") or []:
         add(a.get("evidence", ""), "mk-red" if a.get("money") else "mk-amb")
+    placed = []
     for c in r.get("cleared") or []:
+        before = len(spans)
         add(c["clause"], "mk-grn")
+        if len(spans) > before:
+            placed.append(c)                 # only explain green marks that are actually on the page
     if not spans:
         return ""
     spans.sort()
@@ -655,7 +662,7 @@ def marked_text_html(r: dict) -> str:
         at = b
     parts.append(ui.esc(text[at:]))
     greens = "".join(f'<li><mark class="mk-grn">“{ui.esc(c["clause"][:160])}”</mark><span><b>Not counted:</b> {ui.esc(c["title"])}. '
-                     f'{ui.esc(c["why"])}</span></li>' for c in r.get("cleared") or [])
+                     f'{ui.esc(c["why"])}</span></li>' for c in placed)
     used = {cls for _, _, cls in spans}
     legend = '<p class="mk-legend">' + "".join(f'<span class="{c}">{t}</span>' for c, t in (
         ("mk-red", "Scam signal"), ("mk-amb", "Warning"), ("mk-grn", "Ruled out by context")) if c in used) + "</p>"
