@@ -191,6 +191,8 @@ def init_db():
         cases.ensure_schema(conn)              # investigation cases opened from drift alerts
         import release
         release.ensure_schema(conn)            # staged model releases, background comparisons, rollback
+        import drift
+        drift.ensure_schema(conn)              # what the model sees in the wild, compared with what it trained on
     with closing(sqlite3.connect(DB_PATH)) as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS jobs (

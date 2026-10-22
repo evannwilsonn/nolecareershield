@@ -278,6 +278,29 @@ def known_bad(conn, items: list[dict]) -> list[dict]:
 def log_label(conn, target: str, target_id: int, label: str | None, reviewer: str = "", reason: str = "") -> None:
     conn.execute("INSERT INTO label_log (target, target_id, label, reviewer, reason, at) VALUES (?,?,?,?,?,?)",
                  (target, int(target_id), label, (reviewer or "")[:80], (reason or "")[:300], time.time()))
+    _remember_template(conn, target, int(target_id), label, reason)
+
+
+def _remember_template(conn, target: str, target_id: int, label: str | None, reason: str = "") -> None:
+    """Every reviewer decision is also a lesson for the template memory (scam_detector/memory.py): a confirmed scam's
+    wording is remembered at once; a legit label or an undo forgets it. Never raises into the review action."""
+    try:
+        from scam_detector import memory as template_memory
+        if target == "job":
+            r = conn.execute("SELECT title, description FROM jobs WHERE id = ?", (target_id,)).fetchone()
+            title, body = (r["title"], r["description"]) if r else ("", "")
+        else:
+            r = conn.execute("SELECT title, body FROM submitted_checks WHERE id = ?", (target_id,)).fetchone()
+            title, body = (r["title"], r["body"]) if r else ("", "")
+        if not body:
+            return
+        text = "\n".join(x for x in (title, strip_fingerprints(body)) if x)
+        if label == "scam":
+            template_memory.remember(text, title=title or body[:60], source=f"{target} #{target_id}", note=reason)
+        elif label in ("legit", None):
+            template_memory.forget(text)
+    except Exception:                                   # noqa: BLE001
+        log.exception("template memory update failed")
 
 
 def reviewer_name(session: str | None) -> str:
@@ -575,6 +598,11 @@ def extra_findings(text: str, *, sender: str = "", title: str = "", company: str
             peers = peer_hits(conn, items) if _share_key() else []
             out += clone_findings(conn, full, url, exclude_job)
             protected = employer_domains(conn)
+        # Template memory (scam_detector/memory.py): the wording of scams reviewers confirmed, matched before any retrain.
+        from scam_detector import memory as template_memory
+        tm = template_memory.finding("\n".join(x for x in (title, text) if x))
+        if tm:
+            out.append(tm)
             watch = {r["domain"] for r in store.rows(conn, "SELECT domain FROM ct_lookalikes")}
         if bad:
             out.append({"rule_id": "known_scam_identifier", "severity": "critical", "weight": 40,
@@ -664,6 +692,10 @@ def alerts(conn) -> list[dict]:
         out.append({"level": "bad", "title": f"New look-alike domain in certificate logs: {c['domain']}",
                     "detail": f"Imitates {c['brand']}. Check whether it's live and hosting a fake job or login page.", "ids": [],
                     "kind": "ct", "domain": c["domain"]})
+    import drift
+    d = drift.alert(conn)
+    if d:
+        out.append(d)
     for w in active_windows(conn):
         out.append({"level": "info", "title": f"Scam season: {w['name']}", "detail": w["note"], "ids": []})
     return out

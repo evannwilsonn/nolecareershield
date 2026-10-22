@@ -64,10 +64,13 @@ def model_path() -> Path:
 
 
 def configure() -> None:
-    """Point the detector at the live model (called at startup)."""
+    """Point the detector at the live model, the template memory and the drift monitor (called at startup)."""
     os.environ["SCAM_MODEL_PATH"] = str(model_path())
+    os.environ.setdefault("SCAM_MEMORY_PATH", str(learn_dir() / "templates.jsonl"))
+    import drift
     import release
     release.configure()
+    drift.configure()
 
 
 # ---------- scam waves ----------
@@ -173,6 +176,10 @@ def due_detail(conn) -> tuple[bool, str, str]:
             return True, f"reviewer confirmed a new scam campaign (case #{camp[0]['id']}); {new} new distinct labels", "new_campaign"
         if new >= EVIDENCE_MIN_NEW:
             return True, f"{new} new distinct labels (early retrain at {EVIDENCE_MIN_NEW})", "evidence"
+        import drift
+        moved, why = drift.drifted(conn)
+        if moved and new >= RETRAIN_MIN_NEW:
+            return True, f"model drift ({why}); {new} new distinct labels", "drift"
     if elapsed < RETRAIN_DAYS:
         days = int((since + RETRAIN_DAYS * 86400 - time.time()) // 86400) + 1
         return False, (f"next scheduled retrain in about {days} day{'s' if days != 1 else ''} "
@@ -475,7 +482,13 @@ def model_page(session: str | None = Cookie(default=None), started: int = 0):
             "UNION ALL SELECT learn_split FROM submitted_checks WHERE review_label IN ('scam','legit','lead_gen')) GROUP BY learn_split")}
         pending = pending_count(conn)
         import release
+        import drift
         rel = release_html(conn, csrf)
+        drift_block = drift.html(conn)
+        from scam_detector import memory as template_memory
+        tm = template_memory.load()
+        memory_line = (f'<p class="small muted">Template memory: <b>{len(tm)}</b> confirmed scam scripts remembered; a new copy of any of them '
+                       f'is flagged at once, before any retrain.</p>' if tm is not None else "")
     if m:
         h = m.spec.get("holdout", {})
         hr, hm = h.get("rules"), h.get("with_model")
@@ -492,7 +505,7 @@ def model_page(session: str | None = Cookie(default=None), started: int = 0):
                   f'{splits.get("holdout", 0)} frozen holdout, {splits.get("unused", 0)} not used yet). '
                   f'{pending} waiting in the <a href="/admin/checks">label queue</a>.</p>')
     sched = (f'<p class="small muted">Automatic retrain: {"due now" if ok else esc(why)}. Monthly once {RETRAIN_MIN_NEW} distinct new '
-             f'labels exist; sooner at {EVIDENCE_MIN_NEW} distinct new labels or when a reviewer confirms a new scam campaign, never more '
+             f'labels exist; sooner at {EVIDENCE_MIN_NEW} distinct new labels, when a reviewer confirms a new scam campaign, or when live traffic has drifted from the training data, never more '
              f'often than every {MIN_GAP_DAYS:g} days. A scam wave counts once and adds at most {WAVE_CAP} training rows. A new model '
              f'must pass the release gate, then scores alongside the active one before any student sees it.</p>')
     button = (f'<form method="post" action="/admin/model/retrain">{csrf}<button class="b" type="submit">Retrain now</button> '
@@ -501,7 +514,7 @@ def model_page(session: str | None = Cookie(default=None), started: int = 0):
                    f'{esc(r["trigger"])} · <span class="pill {"ok" if r["status"] in ("shipped", "candidate") else "bad" if r["status"] in ("error", "rolled_back") else ""}">{esc(r["status"])}</span>'
                    f'{" · " + esc(r["version"]) if r["version"] else ""} · {int(r["train_rows"])} rows</summary>'
                    f'<pre style="white-space:pre-wrap;font-size:12px">{esc(r["report"])}</pre></details>' for r in runs)
-    body = (cur + rel + f'<div class="card" style="margin-top:12px;display:grid;gap:10px">{label_line}{sched}{button}</div>'
+    body = (cur + rel + f'<div class="card" style="margin-top:12px;display:grid;gap:10px">{drift_block}{memory_line}{label_line}{sched}{button}</div>'
             + '<h3 class="sec">Training runs</h3>' + (rows or '<div class="empty">No runs yet.</div>'))
     return admin_extra._page(notice + body, "Model", "/admin/model")
 

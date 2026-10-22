@@ -14,8 +14,12 @@ Florida State University; it uses no university marks or logos.
 - **Employers** create an account (any email, confirmed by link) to send a listing.
   Clicking *Submit for review* while logged out takes them to employer log in / sign
   up and the listing sends by itself once they are in. Submitting is not publishing.
-- **Every submission is scored** by the rule-based detector in `scam_detector/`,
-  then waits in a review queue. Nothing goes live until a person approves it.
+- **Every submission is scored** by the detector in `scam_detector/`: the rules, then a
+  learned model that reads the rules' verdict, the wording, the spelling and the shape of the
+  text, then the memory of every scam a reviewer has confirmed. It waits in a review queue;
+  nothing goes live until a person approves it. The model retrains itself from reviewer
+  decisions, ships through a gated, staged release, and watches its own traffic for drift
+  (`scam_detector/MODEL.md`). It can only ever raise a verdict, never lower one.
 - **Any live listing can be removed** by a reviewer at any time, and listings
   expire on their own (default 90 days).
 
@@ -178,7 +182,7 @@ sensitive is in the code or the repository.
 | `INTEL_NETWORK`, `INDICATOR_KEY`, `URLHAUS_AUTH_KEY`, `SPAMHAUS_DQS_KEY`, `CHAINABUSE_API_KEY`, `TWILIO_*` | optional | Scam intel: network lookups, the hashed contact-detail memory, and outside reputation checks |
 | `SHARE_HMAC_KEY`, `SHARE_FEED_KEY`, `SHARE_SOURCE_NAME`, `PEER_FEEDS`, `ARCHIVE_FEEDS` | optional | Sharing confirmed-scam details with partner schools and pulling public scam feeds |
 | `INBOUND_EMAIL_TOKEN`, `DECOY_ENABLED` | optional | Forward-by-email checks; the decoy desk (off until FSU legal signs off) |
-| `SCAM_MODEL`, `SCAM_RULEPACK_EXTRA`, `MODEL_AUTO_RELEASE`, `RETRAIN_*`, `RELEASE_*`, `LOW_RISK_SAMPLE_*` | defaults in `.env.example` | The learned model, hot-fix rules, retraining triggers, staged release and random sampling of safe results |
+| `SCAM_MODEL`, `SCAM_MEMORY_PATH`, `SCAM_RULEPACK_EXTRA`, `MODEL_AUTO_RELEASE`, `RETRAIN_*`, `RELEASE_*`, `DRIFT_*`, `LOW_RISK_SAMPLE_*` | defaults in `.env.example` | The learned model, template memory, hot-fix rules, retraining triggers, staged release, drift monitor and random sampling of safe results |
 | `SSO_NAME`, `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` | optional | FSU single sign-on |
 
 In production the app **refuses to start** if `ADMIN_PASSWORD`, `SECRET_KEY`,
