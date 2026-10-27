@@ -52,6 +52,11 @@ CAMPAIGN_MIN = int(os.environ.get("RETRAIN_CAMPAIGN_MIN", "3"))      # labeled r
 MIN_GAP_DAYS = float(os.environ.get("RETRAIN_MIN_GAP_DAYS", "3"))    # never retrain more often than this
 WAVE_CAP = int(os.environ.get("RETRAIN_WAVE_CAP", "3"))              # most rows one scam wave may contribute to training
 HOLDOUT_EVERY = 3                # about 1 in 3 new labels is held out
+# Fast lane: a reviewer confirming scams the active model let through retrains within hours, not a month.
+FAST_ON = os.environ.get("RETRAIN_FAST", "on").lower() not in ("0", "off", "false", "no")
+FAST_MIN_NEW = int(os.environ.get("RETRAIN_FAST_MIN", "5"))             # distinct new labels, at least one a confirmed miss
+FAST_GAP_HOURS = float(os.environ.get("RETRAIN_FAST_GAP_HOURS", "12"))  # never more often than this
+FAST_AFTER_WATCH_DAYS = float(os.environ.get("RETRAIN_FAST_AFTER_WATCH_DAYS", "2"))  # a new release watched this long first
 _lock = threading.Lock()
 
 
@@ -158,17 +163,47 @@ def _since(conn, t: float) -> int:
             + conn.execute("SELECT COUNT(*) FROM jobs WHERE review_label IN ('scam','legit','lead_gen') AND reviewed_at > ?", (iso,)).fetchone()[0])
 
 
+def _misses_since(conn, t: float) -> int:
+    """Distinct scams a reviewer confirmed since t that the detector had called safe or only 'careful': what the fast lane is for."""
+    iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t))
+    return (conn.execute("SELECT COUNT(DISTINCT COALESCE(campaign, id)) FROM submitted_checks WHERE review_label = 'scam' "
+                         "AND band IN ('clear','caution','') AND reviewed_at > ?", (t,)).fetchone()[0]
+            + conn.execute("SELECT COUNT(*) FROM jobs WHERE review_label = 'scam' AND band IN ('clear','caution') AND reviewed_at > ?",
+                           (iso,)).fetchone()[0])
+
+
+def _fast_due(conn, st: dict, since: float, new: int) -> tuple[bool, str]:
+    """The fast lane: enough new labels, at least one of them a scam the detector missed, and FAST_GAP_HOURS since the last run.
+    It may start while a release is being watched (after FAST_AFTER_WATCH_DAYS), never during a rollout."""
+    if not FAST_ON or st["stage"] == "rollout":
+        return False, ""
+    if st["stage"] == "watch" and (time.time() - (st["stage_started"] or time.time())) / 86400 < FAST_AFTER_WATCH_DAYS:
+        return False, ""
+    if (time.time() - since) / 3600 < FAST_GAP_HOURS or new < FAST_MIN_NEW:
+        return False, ""
+    missed = _misses_since(conn, since)
+    if not missed:
+        return False, ""
+    return True, f"fast lane: {missed} confirmed scam{'s' if missed != 1 else ''} the detector missed; {new} new distinct labels"
+
+
 def due_detail(conn) -> tuple[bool, str, str]:
     """(due, why, trigger). Monthly when enough distinct labels exist; earlier when a lot of new evidence arrives or a reviewer
-    confirms a new scam campaign; never more often than MIN_GAP_DAYS, and not while a release is being rolled out."""
+    confirms a new scam campaign; never more often than MIN_GAP_DAYS, and not while a release is being rolled out. The fast lane
+    (_fast_due) retrains within hours when reviewers confirm scams the detector missed."""
     import release
     st = release.state(conn)
-    if st["stage"] in ("rollout", "watch"):
-        return False, f"a model release is in progress ({st['stage']}); retraining waits until it settles", ""
     last = store.row(conn, "SELECT * FROM model_runs WHERE status IN ('shipped','refused','candidate','rolled_back') ORDER BY started_at DESC LIMIT 1")
     since = last["started_at"] if last else 0.0
     elapsed = (time.time() - since) / 86400 if last else 1e9
     new = _since(conn, since)
+    fast, fast_why = _fast_due(conn, st, since, new)
+    if st["stage"] in ("rollout", "watch"):
+        if fast:
+            return True, fast_why, "fast"
+        return False, f"a model release is in progress ({st['stage']}); retraining waits until it settles", ""
+    if fast:
+        return True, fast_why, "fast"
     if elapsed >= MIN_GAP_DAYS:
         import cases
         camp = [c for c in cases.confirmed_since(conn, since) if json.loads(c["summary"] or "{}").get("distinct", 0) >= CAMPAIGN_MIN]
@@ -221,7 +256,7 @@ def run_retrain(trigger: str = "schedule", force: bool = False) -> dict:
                 ok, why = due(conn)
                 if not ok:
                     return {"status": "skipped", "why": why}
-            elif release.state(conn)["stage"] in ("rollout", "watch"):
+            elif release.state(conn)["stage"] == "rollout" or (release.state(conn)["stage"] == "watch" and trigger != "fast"):
                 return {"status": "skipped", "why": "a model release is in progress"}
             _assign_splits(conn)
             rows = labeled_rows(conn)
@@ -262,7 +297,7 @@ def run_retrain(trigger: str = "schedule", force: bool = False) -> dict:
             if not passed:
                 cand.unlink()
                 return _finish(run_id, "refused", version=res.get("version"), train_rows=res.get("rows", 0), report=report)
-            release.begin_shadow(conn, candidate.version, run_id, "passed the release gate")
+            release.begin_shadow(conn, candidate.version, run_id, "passed the release gate", lane="fast" if trigger == "fast" else "full")
         return _finish(run_id, "candidate", version=res.get("version"), train_rows=res.get("rows", 0),
                        report=report + "\nPassed. It now scores alongside the active model before any student sees it.")
     finally:
@@ -505,7 +540,7 @@ def model_page(session: str | None = Cookie(default=None), started: int = 0):
                   f'{splits.get("holdout", 0)} frozen holdout, {splits.get("unused", 0)} not used yet). '
                   f'{pending} waiting in the <a href="/admin/checks">label queue</a>.</p>')
     sched = (f'<p class="small muted">Automatic retrain: {"due now" if ok else esc(why)}. Monthly once {RETRAIN_MIN_NEW} distinct new '
-             f'labels exist; sooner at {EVIDENCE_MIN_NEW} distinct new labels, when a reviewer confirms a new scam campaign, or when live traffic has drifted from the training data, never more '
+             f'labels exist; within {FAST_GAP_HOURS:g} hours once {FAST_MIN_NEW} new labels include a scam the detector missed (fast lane); sooner at {EVIDENCE_MIN_NEW} distinct new labels, when a reviewer confirms a new scam campaign, or when live traffic has drifted from the training data, never more '
              f'often than every {MIN_GAP_DAYS:g} days. A scam wave counts once and adds at most {WAVE_CAP} training rows. A new model '
              f'must pass the release gate, then scores alongside the active one before any student sees it.</p>')
     button = (f'<form method="post" action="/admin/model/retrain">{csrf}<button class="b" type="submit">Retrain now</button> '
@@ -540,13 +575,16 @@ def release_html(conn, csrf: str) -> str:
     if st["stage"] == "watch" or (st["stage"] == "none" and release.previous_path().exists()):
         btns += '<button class="b sm ghost" name="action" value="rollback">Restore the previous model</button>'
     traffic = (f'<p class="small">Compared on {tr[0]} real listing checks: candidate flags {tr[1]:.0%}, active {tr[2]:.0%}.</p>' if tr else "")
-    return (f'<div class="card" style="margin-top:12px"><b>Release</b> <span class="pill">{esc(st["stage"])}</span>'
+    lane = (' <span class="pill">fast lane</span>' if st.get("lane") == "fast" and st["stage"] != "none" else "")
+    return (f'<div class="card" style="margin-top:12px"><b>Release</b> <span class="pill">{esc(st["stage"])}</span>{lane}'
             f'{" " + ("<span class=pill>" + esc(st["candidate_version"]) + "</span>") if st["candidate_version"] and st["stage"] != "none" else ""}'
             f'<p class="small">{esc(STAGE_NAMES.get(st["stage"], st["stage"]))}{" (" + str(st["pct"]) + "%)" if st["stage"] == "rollout" else ""}. '
             f'{esc(st["note"] or "")}</p>{traffic}'
             f'<p class="small muted">Automatic release is {"on" if release.auto() else "off (MODEL_AUTO_RELEASE=0)"}: shadow {release.SHADOW_DAYS:g} days, then '
             f'{", ".join(str(p) + "%" for p in release.STAGES)} of listings, {release.STAGE_DAYS:g} days each, each step only with at least '
-            f'{release.FRESH_MIN} labels the candidate never saw showing it isn\'t worse. Rollback is always automatic.</p>'
+            f'{release.FRESH_MIN} labels the candidate never saw showing it isn\'t worse. Rollback is always automatic. Fast lane (a retrain '
+            f'because reviewers confirmed scams the model missed): the same checks, shadow {release.FAST_SHADOW_DAYS:g} day, '
+            f'{release.FAST_STAGE_DAYS:g} day per step.</p>'
             f'{f"<form method=post action=/admin/model/release class=row>{csrf}{btns}</form>" if btns else ""}'
             f'{f"<ul class=small>{lines}</ul>" if lines else ""}</div>')
 

@@ -114,6 +114,7 @@ log = logging.getLogger("nolecareershield")
 
 
 MAINTENANCE_HOURS = float(os.environ.get("MAINTENANCE_HOURS", "24"))
+LEARN_TICK_MINUTES = float(os.environ.get("LEARN_TICK_MINUTES", "30"))   # how often the scam model checks for a retrain or release step
 
 
 def daily_maintenance():
@@ -143,14 +144,26 @@ async def _maintenance_loop():
         await asyncio.to_thread(daily_maintenance)
 
 
+async def _learning_loop():
+    """Moves a model release along and starts a fast-lane retrain within the hour of it being due (learning.py)."""
+    while True:
+        await asyncio.sleep(LEARN_TICK_MINUTES * 60)
+        try:
+            await asyncio.to_thread(learning.maybe_retrain)
+        except Exception:                  # noqa: BLE001
+            log.exception("learning tick failed")
+
+
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
     daily_maintenance()
     task = asyncio.create_task(_maintenance_loop()) if MAINTENANCE_HOURS > 0 else None
+    learn = asyncio.create_task(_learning_loop()) if LEARN_TICK_MINUTES > 0 else None
     yield
-    if task:
-        task.cancel()
+    for t in (task, learn):
+        if t:
+            t.cancel()
 
 
 app = FastAPI(title="NoleCareerShield", lifespan=lifespan,

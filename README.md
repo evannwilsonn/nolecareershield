@@ -182,7 +182,7 @@ sensitive is in the code or the repository.
 | `INTEL_NETWORK`, `INDICATOR_KEY`, `URLHAUS_AUTH_KEY`, `SPAMHAUS_DQS_KEY`, `CHAINABUSE_API_KEY`, `TWILIO_*` | optional | Scam intel: network lookups, the hashed contact-detail memory, and outside reputation checks |
 | `SHARE_HMAC_KEY`, `SHARE_FEED_KEY`, `SHARE_SOURCE_NAME`, `PEER_FEEDS`, `ARCHIVE_FEEDS` | optional | Sharing confirmed-scam details with partner schools and pulling public scam feeds |
 | `INBOUND_EMAIL_TOKEN`, `DECOY_ENABLED` | optional | Forward-by-email checks; the decoy desk (off until FSU legal signs off) |
-| `SCAM_MODEL`, `SCAM_MEMORY_PATH`, `SCAM_RULEPACK_EXTRA`, `MODEL_AUTO_RELEASE`, `RETRAIN_*`, `RELEASE_*`, `DRIFT_*`, `LOW_RISK_SAMPLE_*` | defaults in `.env.example` | The learned model, template memory, hot-fix rules, retraining triggers, staged release, drift monitor and random sampling of safe results |
+| `SCAM_MODEL`, `SCAM_MEMORY_PATH`, `SCAM_RULEPACK_EXTRA`, `MODEL_AUTO_RELEASE`, `RETRAIN_*`, `RELEASE_*`, `DRIFT_*`, `LEARN_TICK_MINUTES`, `LOW_RISK_SAMPLE_*` | defaults in `.env.example` | The learned model, template memory, hot-fix rules, retraining triggers, staged release, drift monitor and random sampling of safe results |
 | `SSO_NAME`, `SSO_TENANT_ID`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` | optional | FSU single sign-on |
 
 In production the app **refuses to start** if `ADMIN_PASSWORD`, `SECRET_KEY`,

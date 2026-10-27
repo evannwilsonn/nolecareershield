@@ -18,6 +18,10 @@ automatic rollback. The active model keeps serving the whole time, until a candi
 4. Watch (after 100%). The new model is active and the old one is kept. If fresh labels show the new one doing worse
    than the old one, the old one is restored automatically.
 
+Fast lane. A candidate retrained because a reviewer confirmed scams the active model missed (learning.py, trigger "fast")
+goes through the same gate and the same evidence checks, on a shorter clock: FAST_SHADOW_DAYS of shadow, FAST_STAGE_DAYS per
+rollout step and FAST_WATCH_DAYS of watch. Only the waiting is shorter; nothing it has to prove is.
+
 MODEL_AUTO_RELEASE=0 stops at "ready" before each step so a reviewer presses the button instead. Rollback is always
 automatic. Every step is written to release_log and shown on /admin/model.
 """
@@ -48,6 +52,7 @@ CREATE TABLE IF NOT EXISTS model_decisions (id INTEGER PRIMARY KEY AUTOINCREMENT
 CREATE INDEX IF NOT EXISTS ix_model_decisions_at ON model_decisions(at);
 CREATE INDEX IF NOT EXISTS ix_model_decisions_key ON model_decisions(key);
 """
+LANES = ("full", "fast")
 
 SHADOW_DAYS = float(os.environ.get("RELEASE_SHADOW_DAYS", "7"))
 STAGE_DAYS = float(os.environ.get("RELEASE_STAGE_DAYS", "3"))
@@ -57,6 +62,16 @@ FRESH_MIN = int(os.environ.get("RELEASE_FRESH_MIN", "5"))          # labels that
 TRAFFIC_MIN = int(os.environ.get("RELEASE_TRAFFIC_MIN", "30"))     # listing checks scored by both models
 FP_MAX_RATE = float(os.environ.get("RELEASE_FP_MAX_RATE", "0.02"))
 RECENT_DAYS = 120
+FAST_SHADOW_DAYS = float(os.environ.get("RELEASE_FAST_SHADOW_DAYS", "1"))
+FAST_STAGE_DAYS = float(os.environ.get("RELEASE_FAST_STAGE_DAYS", "1"))
+FAST_WATCH_DAYS = float(os.environ.get("RELEASE_FAST_WATCH_DAYS", "7"))
+
+
+def days(st: dict, stage: str) -> float:
+    """How long a stage lasts for this release's lane."""
+    fast = (st.get("lane") or "full") == "fast"
+    return {"shadow": FAST_SHADOW_DAYS if fast else SHADOW_DAYS, "rollout": FAST_STAGE_DAYS if fast else STAGE_DAYS,
+            "watch": FAST_WATCH_DAYS if fast else WATCH_DAYS}[stage]
 
 
 def auto() -> bool:
@@ -65,6 +80,9 @@ def auto() -> bool:
 
 def ensure_schema(conn) -> None:
     conn.executescript(SCHEMA)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(model_release)")}
+    if "lane" not in cols:
+        conn.execute("ALTER TABLE model_release ADD COLUMN lane TEXT NOT NULL DEFAULT 'full'")
     conn.execute("INSERT OR IGNORE INTO model_release (id, stage) VALUES (1, 'none')")
 
 
@@ -297,13 +315,17 @@ def configure() -> None:
 
 # ---------- the state machine ----------
 
-def begin_shadow(conn, version: str, run_id: int | None, report: str = "") -> None:
+def begin_shadow(conn, version: str, run_id: int | None, report: str = "", lane: str = "full") -> None:
     st = state(conn)
+    lane = lane if lane in LANES else "full"
     if st["stage"] in ("shadow",) and st["candidate_version"]:
         _log(conn, "replaced", st["candidate_version"], f"replaced in shadow by {version}")
+    if st["stage"] == "watch":
+        watched = (time.time() - (st["stage_started"] or time.time())) / 86400
+        _log(conn, "settled", st["candidate_version"], f"no problems in {watched:.1f} days; a fast-lane candidate takes over the watch")
     _set(conn, stage="shadow", candidate_version=version, run_id=run_id, pct=0, created_at=time.time(), stage_started=time.time(),
-         note="scoring alongside the active model")
-    _log(conn, "shadow", version, report)
+         lane=lane, note="scoring alongside the active model" + (" (fast lane)" if lane == "fast" else ""))
+    _log(conn, "shadow", version, (f"[fast lane] " if lane == "fast" else "") + report)
 
 
 def discard(conn, why: str, event: str = "rejected") -> None:
@@ -383,10 +405,10 @@ def tick(now: float | None = None) -> str:
             if why:
                 rollback(conn, why)
                 return f"stopped: {why}"
-            need = SHADOW_DAYS if stage == "shadow" else STAGE_DAYS
+            need = days(st, stage)
             if age_days < need:
                 doing = "scoring alongside" if stage == "shadow" else "serving %d%%" % int(st["pct"])
-                _set(conn, note=f"{doing}: day {int(age_days) + 1} of {int(need)}")
+                _set(conn, note=f"{doing}: day {int(age_days) + 1} of {need:g}" + (" (fast lane)" if st.get("lane") == "fast" else ""))
                 return "waiting: time"
             if fr["n"] < FRESH_MIN or (stage == "shadow" and n < TRAFFIC_MIN):
                 _set(conn, note=f"waiting for evidence: {fr['n']}/{FRESH_MIN} new labels, {n}/{TRAFFIC_MIN} listing checks compared")
@@ -411,9 +433,9 @@ def tick(now: float | None = None) -> str:
                 if why:
                     rollback(conn, "after release, the new model " + why)
                     return "rolled back"
-            if age_days >= WATCH_DAYS:
+            if age_days >= days(st, "watch"):
                 _set(conn, stage="none", note="release complete")
-                _log(conn, "settled", st["candidate_version"], f"no problems in {int(WATCH_DAYS)} days")
+                _log(conn, "settled", st["candidate_version"], f"no problems in {days(st, 'watch'):g} days")
                 return "settled"
             return "watching"
     return ""
