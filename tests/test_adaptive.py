@@ -176,3 +176,103 @@ def test_adversarial_copies_only_rewrite_scams():
     assert out and all(r["label"] == "scam" and r["_w"] == 0.3 for r in out)
     # a trick that has nothing to change (no dollar amount to drop here) leaves the text alone; most of them rewrite it
     assert sum(r["description"] != rows[0]["description"] for r in out) >= len(out) - 1
+
+
+# ---------- sharing confirmed scripts between schools ----------
+
+def test_identifiers_are_masked_before_hashing():
+    sh = memory.shingles("Reply to jane.doe@gmail.com or visit https://pay-me.example/x for the job today please")
+    assert not any("gmail" in s or "jane" in s or "pay" in s for s in sh) and any("reply to" in s for s in sh)
+
+
+def test_partner_templates_need_the_shared_key_and_only_warn(tmp_path, monkeypatch):
+    key = b"s" * 32
+    a, b = tmp_path / "a.jsonl", tmp_path / "b.jsonl"
+    monkeypatch.setenv("SCAM_MEMORY_KEY", key.decode())
+    memory._cache.clear()
+    memory.remember(SCAM, title="Remote personal assistant", path=a)
+    shared = memory.shareable(path=a, key=key)
+    assert len(shared) == 1 and set(shared[0]) == {"sketch", "when"}           # no title, no note, no text
+    # the partner school, with the shared key
+    monkeypatch.setenv("SCAM_MEMORY_KEY", "")
+    monkeypatch.setenv("SCAM_MEMORY_PEER_KEY", key.decode())
+    memory._cache.clear()
+    junk = [{"sketch": [1, 2]}, {"sketch": ["x"] * 20}, "nope"]
+    assert memory.import_peer("Peer U", shared + junk, path=b, key=key) == 1
+    f = memory.finding(SCAM_RENAMED, path=b)
+    assert f and f["rule_id"] == "peer_scam_template" and f["severity"] == "warning" and "Peer U" in f["why"]
+    # without the key the sketch is just numbers
+    monkeypatch.setenv("SCAM_MEMORY_PEER_KEY", "other-key")
+    memory._cache.clear()
+    assert memory.finding(SCAM_RENAMED, path=b) is None
+    # the partner's feed is the whole list: when they retract it, it's gone here too
+    monkeypatch.setenv("SCAM_MEMORY_PEER_KEY", key.decode())
+    memory.import_peer("Peer U", [], path=b, key=key)
+    memory._cache.clear()
+    assert memory.finding(SCAM_RENAMED, path=b) is None
+
+
+def test_feed_carries_templates_and_the_partner_job_imports_them(mem, client, monkeypatch):
+    import defense, learning, store
+    key = "k" * 32
+    monkeypatch.setenv("SHARE_HMAC_KEY", key)
+    monkeypatch.setenv("SCAM_MEMORY_KEY", key)
+    monkeypatch.setenv("SCAM_MEMORY_PEER_KEY", key)
+    with store.db() as conn:
+        cid = learning.add_submission(conn, body=SCAM, band="clear", kind="listing", title="Remote personal assistant")
+        defense.log_label(conn, "check", cid, "scam", "tester", "")
+        feed = defense.share_feed(conn)
+    assert feed["templates"] and "personal assistant" not in json.dumps(feed["templates"])
+    memory.forget("Remote personal assistant\n" + SCAM)      # pretend we are the partner: nothing of our own
+    monkeypatch.setenv("PEER_FEEDS", "https://peer.example/api/indicators|pk")
+
+    class R:
+        status_code = 200
+        def json(self):
+            return {"source": "Peer U", "indicators": [], "templates": feed["templates"]}
+
+    class C:
+        def get(self, *a, **k):
+            return R()
+    defense.peer_feed_job(client=C())
+    found = defense.extra_findings(SCAM_RENAMED, title="Admin assistant")
+    assert any(f["rule_id"] == "peer_scam_template" for f in found)
+
+
+# ---------- report accuracy orders the queue, never the training ----------
+
+def test_reliable_reporters_move_up_the_queue():
+    import learning
+    row = lambda uid: {"title": "", "body": "", "company": "", "url": "", "band": "clear", "user_label": "scam", "user_id": uid,
+                       "source": "student", "id": uid}
+    groups = {"i1": [row(1)], "i2": [row(2)]}
+    reporters = {1: (1, 5), 2: (5, 5)}                        # student 1 is usually wrong, student 2 usually right
+    import random
+    out = learning.prioritize(groups, {}, [], reporters)
+    assert out[0][0] == "i2" and any("Reliable reporter (5/5 right)" in w for w in out[0][2])
+
+
+def test_reporter_accuracy_counts_only_decided_reports(client):
+    import learning, store
+    with store.db() as conn:
+        for label, review in (("scam", "scam"), ("scam", "legit"), ("legit", "legit"), ("scam", None), ("unsure", "scam")):
+            conn.execute("""INSERT INTO submitted_checks (user_id, body, band, user_label, created_at, kind, review_label)
+                            VALUES (7, 'x', 'clear', ?, ?, 'message', ?)""", (label, time.time(), review))
+        assert learning.reporter_accuracy(conn)[7] == (2, 3)
+
+
+def test_a_template_match_never_hides_identifier_or_lookalike_findings(mem, client):
+    # Regression: the template-memory hook once broke the rest of extra_findings (closed database / undefined name), silently
+    # dropping confirmed-identifier and look-alike-domain findings.
+    import defense, learning, store
+    text = SCAM + " Text 850-555-0177 or apply at fsu-careers-portal.com today."
+    with store.db() as conn:
+        cid = learning.add_submission(conn, body=text, band="clear", kind="message", title="Assistant")
+        conn.execute("UPDATE submitted_checks SET review_label = 'scam', reviewed_at = ? WHERE id = ?", (time.time(), cid))
+        defense.log_label(conn, "check", cid, "scam", "tester", "")
+    ids = {f["rule_id"] for f in defense.extra_findings(SCAM_RENAMED + " Text 850-555-0177 or apply at fsu-careers-portal.com today.")}
+    assert {"known_scam_identifier"} <= ids and ids & {"confirmed_scam_copy", "confirmed_scam_template"}
+    assert any("lookalike" in i for i in ids), ids
+    memory.forget(text)
+    ids = {f["rule_id"] for f in defense.extra_findings("Apply at fsu-careers-portal.com for the campus job.")}
+    assert any("lookalike" in i for i in ids), ids

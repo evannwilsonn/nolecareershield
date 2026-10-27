@@ -598,12 +598,12 @@ def extra_findings(text: str, *, sender: str = "", title: str = "", company: str
             peers = peer_hits(conn, items) if _share_key() else []
             out += clone_findings(conn, full, url, exclude_job)
             protected = employer_domains(conn)
+            watch = {r["domain"] for r in store.rows(conn, "SELECT domain FROM ct_lookalikes")}
         # Template memory (scam_detector/memory.py): the wording of scams reviewers confirmed, matched before any retrain.
         from scam_detector import memory as template_memory
         tm = template_memory.finding("\n".join(x for x in (title, text) if x))
         if tm:
             out.append(tm)
-            watch = {r["domain"] for r in store.rows(conn, "SELECT domain FROM ct_lookalikes")}
         if bad:
             out.append({"rule_id": "known_scam_identifier", "severity": "critical", "weight": 40,
                         "title": "Uses contact details from confirmed scams",
@@ -743,6 +743,9 @@ def peer_feed_job(client=None) -> str:
             continue
         if not isinstance(data.get("indicators"), list):
             continue
+        if isinstance(data.get("templates"), list):         # scam scripts their reviewers confirmed, as keyed sketches
+            from scam_detector import memory as template_memory
+            n += template_memory.import_peer(str(data.get("source", url))[:60], data["templates"], key=_share_key())
         with store.db() as conn:
             # The partner's feed is the whole current list: anything they revoked or let expire disappears here too.
             conn.execute("DELETE FROM peer_indicators WHERE source = ?", (str(data.get("source", url))[:80],))
@@ -757,8 +760,13 @@ def peer_feed_job(client=None) -> str:
 
 def share_feed(conn) -> dict:
     items = [{"hash": d["peer_hash"], "kind": d["kind"]} for d in _confirmed(conn).values() if d["scam"] and not d["legit"] and d["peer_hash"]]
+    from scam_detector import memory as template_memory
+    key = _share_key()
     return {"source": os.environ.get("SHARE_SOURCE_NAME", "NoleCareerShield (FSU)"), "generated": int(time.time()),
-            "hash": "HMAC-SHA256(SHARE_HMAC_KEY, kind:value)", "indicators": items}
+            "hash": "HMAC-SHA256(SHARE_HMAC_KEY, kind:value)", "indicators": items,
+            # Scam scripts our reviewers confirmed: bottom-k sketches of keyed word-trigram hashes (scam_detector/memory.py).
+            "templates": template_memory.shareable(key=key) if key else [],
+            "template_hash": "blake2b-64(key=SHARE_HMAC_KEY, word trigram), bottom 128"}
 
 
 def _rss_items(xml_text: str) -> list[dict]:

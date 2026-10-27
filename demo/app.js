@@ -3490,7 +3490,7 @@ const GD_MODULES = [
   ["pay", "Pay", "Pay anomaly", ["pay_anomaly", "implied_hourly", "weekly_stipend", "too_good", "income_claim"], "No pay anomaly"],
   ["identity", "Identity", "Identity & email", ["personal_email", "personal_sender", "fsu_lookalike", "display_spoof", "banking_pii", "pii_upfront", "new_domain", "unregistered_domain", "no_mail"], "No ID or bank asks"],
   ["link", "Link", "Link forensics", ["short_link", "ip_link", "fsu_lookalike_link", "form_link", "lead_gen"], "Apply link clean"],
-  ["model", "Model", "Learned model", ["model_second_look", "confirmed_scam_copy", "confirmed_scam_template"], ""]];
+  ["model", "Model", "Learned model", ["model_second_look", "confirmed_scam_copy", "confirmed_scam_template", "peer_scam_template"], ""]];
 const GD_OF = {}; GD_MODULES.forEach(([k, , , ids]) => ids.forEach(id => { GD_OF[id] = k; }));
 const GD_LEVELS = ["SECURE", "LOW", "ELEVATED", "CRITICAL"], GD_BAND = {clear: 0, caution: 1, review: 2, block: 3};
 const GD_SEV = {critical: "CRITICAL", warning: "WARNING", note: "NOTE"}, GD_ORDER = {critical: 0, warning: 1, note: 2};

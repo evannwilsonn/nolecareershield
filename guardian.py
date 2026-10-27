@@ -55,7 +55,7 @@ MODULES = [
      {"personal_email", "personal_sender", "fsu_lookalike", "display_spoof", "banking_pii", "pii_upfront", "new_domain",
       "unregistered_domain", "no_mail"}, "No ID or bank asks"),
     ("link", "Link", "Link forensics", {"short_link", "ip_link", "fsu_lookalike_link", "form_link", "lead_gen"}, "Apply link clean"),
-    ("model", "Model", "Learned model", {"model_second_look", "confirmed_scam_copy", "confirmed_scam_template"}, ""),
+    ("model", "Model", "Learned model", {"model_second_look", "confirmed_scam_copy", "confirmed_scam_template", "peer_scam_template"}, ""),
 ]
 _OF = {rid: key for key, _, _, ids, _ in MODULES for rid in ids}
 LEVELS = ["SECURE", "LOW", "ELEVATED", "CRITICAL"]          # from the scorer's bands: clear, caution, review, block

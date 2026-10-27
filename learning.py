@@ -72,6 +72,10 @@ def configure() -> None:
     """Point the detector at the live model, the template memory and the drift monitor (called at startup)."""
     os.environ["SCAM_MODEL_PATH"] = str(model_path())
     os.environ.setdefault("SCAM_MEMORY_PATH", str(learn_dir() / "templates.jsonl"))
+    share = os.environ.get("SHARE_HMAC_KEY", "")
+    if share:                              # templates confirmed here are made shareable; partners' templates can be read
+        os.environ.setdefault("SCAM_MEMORY_KEY", share)
+        os.environ.setdefault("SCAM_MEMORY_PEER_KEY", share)
     import drift
     import release
     release.configure()
@@ -332,7 +336,21 @@ def maybe_retrain() -> None:
 
 # ---------- reviewer pages ----------
 
-def prioritize(groups: dict, rings: dict, scam_styles: list) -> list:
+REPORTER_MIN = 3                 # decided reports before a student's track record counts
+
+
+def reporter_accuracy(conn) -> dict:
+    """user_id -> (right, decided): how often a signed-in student's "scam" / "not a scam" matched the reviewer's label.
+    Used only to order the label queue. It never becomes a label and never reaches training: a reviewer always decides."""
+    out: dict = {}
+    for r in store.rows(conn, """SELECT user_id, user_label, review_label FROM submitted_checks WHERE user_id IS NOT NULL
+                                 AND user_label IN ('scam','legit') AND review_label IN ('scam','legit','lead_gen')"""):
+        right, n = out.get(r["user_id"], (0, 0))
+        out[r["user_id"]] = (right + int((r["user_label"] == "scam") == (r["review_label"] == "scam")), n + 1)
+    return out
+
+
+def prioritize(groups: dict, rings: dict, scam_styles: list, reporters: dict | None = None) -> list:
     """Active learning: show the items whose labels teach the model the most first. Uncertain model calls, disagreement
     between the detector, the student and the AI, new patterns, and rings; every fifth slot is a random pick so obvious
     but new scams aren't starved. Returns [(group key, rows, reasons)]."""
@@ -352,6 +370,18 @@ def prioritize(groups: dict, rings: dict, scam_styles: list) -> list:
                 score += 1
                 why.append("Model unsure")
         said = {x["user_label"] for x in rs}
+        # A student whose reports usually match the reviewers' decisions moves their new report up; one who is usually wrong
+        # moves it down a little (the random picks below still reach it). Ordering only.
+        track = [reporters[x["user_id"]] for x in rs if reporters and x["user_id"] in reporters and x["user_label"] == "scam"
+                 and reporters[x["user_id"]][1] >= REPORTER_MIN]
+        if track:
+            right, n = max(track, key=lambda t: (t[0] + 1) / (t[1] + 2))
+            acc = (right + 1) / (n + 2)
+            if acc >= 0.7:
+                score += 0.6
+                why.append(f"Reliable reporter ({right}/{n} right)")
+            elif acc <= 0.3:
+                score -= 0.4
         if ("scam" in said and r["band"] in ("clear", "caution")) or ("legit" in said and r["band"] in ("review", "block")):
             score += 1
             why.append("Student and detector disagree")
@@ -425,7 +455,9 @@ def label_queue(session: str | None = Cookie(default=None)):
         rings = {k: defense.ring_summary(conn, rs[0]["id"], ring_map) for k, rs in groups.items()}
         scams = store.rows(conn, "SELECT id, campaign, title, body FROM submitted_checks WHERE review_label = 'scam' ORDER BY reviewed_at DESC LIMIT 200")
     scam_styles = [(s["id"], s["campaign"] or s["id"], defense.style_vector(f"{s['title']}\n{s['body']}")) for s in scams]
-    ordered = prioritize(groups, rings, scam_styles)
+    with store.db() as conn:
+        reporters = reporter_accuracy(conn)
+    ordered = prioritize(groups, rings, scam_styles, reporters)
     cards = ""
     for k, rs, why in ordered:
         r = rs[0]

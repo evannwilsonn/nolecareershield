@@ -158,6 +158,20 @@ matches a remembered scam at 60% or more gets `confirmed_scam_template` (warning
 mistaken label cannot keep flagging real listings. The store is `learning/templates.jsonl` next to the database
 (`SCAM_MEMORY_PATH`), and the identifier memory in `defense.py` works the same way for emails, numbers and wallets.
 
+### Sharing scripts between schools
+
+With `SHARE_HMAC_KEY` set (the key partner schools already use for contact details), every confirmed template is
+hashed with that key and published in the `/api/indicators` feed as a sketch and a date: no title, no note, no text,
+and email addresses and links are masked before hashing. Partners' feeds (`PEER_FEEDS`) are imported daily; each feed
+replaces that partner's earlier list, so a retraction there is a retraction here. A match against a partner's template
+is `peer_scam_template`, a warning (20, or 25 for a near-verbatim copy), never critical: our own reviewers decide.
+
+### Report accuracy (queue order only)
+
+A signed-in student's "scam" / "not a scam" never becomes a label. Once they have 3 decided reports, their track record
+orders the label queue: a reporter usually right (smoothed accuracy 70% or more) moves up with the note "Reliable
+reporter (n/m right)", one usually wrong moves down slightly; every fifth slot is still a random pick.
+
 ## Drift (drift.py): noticing when the world moved
 
 For every listing check the site records the model's probability and the share of the text's words the model has
